@@ -1,0 +1,20 @@
+{
+  "manifestVersion": 1,
+  "bfrostApiVersion": "0.1",
+  "id": "local.dashboard-view-example",
+  "name": "Dashboard View Example",
+  "version": "0.1.0",
+  "description": "Demonstrates a local worker that ships a compiled UI bundle BFrost loads at runtime.",
+  "owner": "BFrost contributors",
+  "dashboardSource": "dashboard.tsx",
+  "dashboard": {
+    "routes": [
+      {
+        "id": "dashboard-view-example-tab",
+        "label": "Example View",
+        "description": "Live-rendered by a runtime-loaded dashboard bundle.",
+        "tab": "dashboard-view-example-tab"
+      }
+    ]
+  }
+}

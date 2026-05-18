@@ -1,0 +1,30 @@
+{
+  "manifestVersion": 1,
+  "bfrostApiVersion": "0.1",
+  "id": "local.simple-job",
+  "name": "Simple Job Example",
+  "version": "0.1.0",
+  "description": "A minimal manifest-only worker example for local development.",
+  "owner": "BFrost contributors",
+  "ownedSettings": [
+    {
+      "key": "simple-job-settings",
+      "label": "Simple job settings",
+      "description": "Placeholder settings ownership for a future local job.",
+      "scope": "job",
+      "storageKey": "admin.settings.jobs.local-simple-job",
+      "dashboardTarget": "jobs"
+    }
+  ],
+  "dashboard": {
+    "settings": [
+      {
+        "id": "simple-job-settings",
+        "label": "Simple job settings",
+        "description": "Where a future schema-driven settings form would appear.",
+        "tab": "workers",
+        "path": "/api/dashboard#workers"
+      }
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "manifestVersion": 1,
+  "bfrostApiVersion": "0.1",
+  "id": "local.publisher.wordpress",
+  "name": "WordPress Publisher",
+  "version": "0.1.0",
+  "description": "Consumes news.article items and publishes them to a self-hosted WordPress site via the REST API.",
+  "owner": "BFrost contributors",
+  "language": "typescript",
+  "backendSource": "src/index.ts",
+  "backendEntrypoint": "dist/index.js"
+}

@@ -1,0 +1,61 @@
+{
+  "manifestVersion": 1,
+  "bfrostApiVersion": "0.1",
+  "id": "local.research-style-job",
+  "name": "Research Style Job Example",
+  "version": "0.1.0",
+  "description": "A richer manifest-only example for a search-and-synthesize automation.",
+  "owner": "BFrost contributors",
+  "requiredCredentials": [
+    {
+      "key": "googleSearchConfigured",
+      "label": "Google Search credentials",
+      "settingsTarget": "health-google"
+    }
+  ],
+  "optionalDependencies": [
+    {
+      "key": "sqliteCli",
+      "label": "SQLite CLI",
+      "settingsTarget": "health-dependencies"
+    }
+  ],
+  "ownedSettings": [
+    {
+      "key": "research-style-topics",
+      "label": "Research topics",
+      "description": "Topics this worker would read before collecting web results.",
+      "scope": "worker",
+      "storageKey": "worker.local.research-style-job.topics",
+      "dashboardTarget": "research"
+    },
+    {
+      "key": "research-style-job-settings",
+      "label": "Research schedule",
+      "description": "Cron, model, prompt, and parameter settings for the future job.",
+      "scope": "job",
+      "storageKey": "admin.settings.jobs.local-research-style-job",
+      "dashboardTarget": "jobs"
+    }
+  ],
+  "dashboard": {
+    "settings": [
+      {
+        "id": "research-style-topics",
+        "label": "Research topics",
+        "description": "Dashboard-owned topic list for this worker.",
+        "tab": "research",
+        "path": "/api/dashboard#research"
+      }
+    ],
+    "routes": [
+      {
+        "id": "research-style-events",
+        "label": "Research events",
+        "description": "Recent operational events for the worker.",
+        "tab": "events",
+        "path": "/api/dashboard#events"
+      }
+    ]
+  }
+}

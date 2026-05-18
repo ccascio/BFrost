@@ -1,0 +1,100 @@
+import { startScheduler } from './scheduler';
+import { startAdminServer, stopAdminServer } from './admin-server';
+import { assertStartupReadiness, getAppHealthSnapshot, logStartupHealthSummary } from './health';
+import { hydrateConversations, flushConversations } from './conversation';
+import {
+  getActiveLocalProvider,
+  listRegisteredChannels,
+  listRegisteredProviders,
+  getProviderAdapter,
+} from './workers/registry';
+import { bootstrapLocalWorkers } from './workers/bootstrap';
+import { applyPlatformSettingsToConfig, loadAdminSettings } from './admin-config';
+import { releaseStaleQueueLockOnBoot } from './jobs/queue';
+import { registerBfrostRuntimeModule } from './sdk-runtime';
+import { refreshActiveLocalProviderModels } from './model-discovery';
+import type { ChannelAdapter, ProviderAdapter } from './workers/module';
+
+async function main(): Promise<void> {
+  const health = await getAppHealthSnapshot();
+  assertStartupReadiness(health);
+  logStartupHealthSummary(health);
+  await hydrateConversations();
+  await releaseStaleQueueLockOnBoot();
+  // Make `import { ... } from 'bfrost'` resolvable inside local worker bundles.
+  // Must happen before bootstrapLocalWorkers so the first require() inside a worker
+  // entrypoint sees the synthetic module.
+  registerBfrostRuntimeModule();
+
+  const localWorkers = await bootstrapLocalWorkers();
+  await refreshActiveLocalProviderModels();
+
+  // Apply persisted platform settings (active local provider, primary channel) so the
+  // selection survives restarts. Done after bootstrapLocalWorkers so any worker the user
+  // chose previously is already registered.
+  const persistedAdminSettings = await loadAdminSettings();
+  applyPlatformSettingsToConfig(persistedAdminSettings.platform);
+  if (localWorkers.loaded.length) {
+    console.log(`[BFrost] Loaded ${localWorkers.loaded.length} local worker(s): ${localWorkers.loaded.join(', ')}`);
+  }
+  for (const issue of localWorkers.issues) {
+    console.warn(`[BFrost] Local worker issue (${issue.sourcePath}): ${issue.message}`);
+  }
+
+  // Boot any local-runtime providers (e.g. LM Studio) so chat models are reachable.
+  const startedRuntimes: ProviderAdapter[] = [];
+  for (const registered of listRegisteredProviders()) {
+    if (!registered.manifest.capabilities.localRuntime) continue;
+    const adapter = getProviderAdapter(registered.manifest.id);
+    if (!adapter || !adapter.isConfigured() || !adapter.startRuntime) {
+      console.log(`[BFrost] Provider ${registered.manifest.id} not configured for runtime start, skipping.`);
+      continue;
+    }
+    const weStarted = await adapter.startRuntime();
+    if (weStarted) {
+      startedRuntimes.push(adapter);
+    }
+    console.log(`[BFrost] Provider ${registered.manifest.id} ready.`);
+  }
+  void getActiveLocalProvider();
+  await refreshActiveLocalProviderModels();
+
+  await startScheduler();
+  await startAdminServer();
+
+  const channels: ChannelAdapter[] = [];
+  for (const registered of listRegisteredChannels()) {
+    const adapter = registered.factory.create();
+    if (!(await adapter.isConfigured())) {
+      console.log(`[BFrost] Channel ${registered.manifest.id} not configured, skipping.`);
+      continue;
+    }
+    await adapter.start();
+    channels.push(adapter);
+    console.log(`[BFrost] Channel ${registered.manifest.id} started.`);
+  }
+
+  const shutdown = async (signal: string) => {
+    for (const adapter of channels) {
+      await adapter.stop(signal).catch((err) => {
+        console.warn(`[BFrost] Channel ${adapter.channelId} stop failed:`, err);
+      });
+    }
+    await flushConversations();
+    await stopAdminServer();
+    for (const adapter of startedRuntimes) {
+      if (!adapter.stopRuntime) continue;
+      await adapter.stopRuntime().catch((err) => {
+        console.warn(`[BFrost] Provider ${adapter.providerId} runtime stop failed:`, err);
+      });
+    }
+  };
+
+  process.once('SIGINT', () => shutdown('SIGINT'));
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+}
+
+main().catch((err) => {
+  console.error('[BFrost] Fatal error:', err);
+  process.exit(1);
+});

@@ -1,0 +1,172 @@
+import {
+  DEFAULT_NEWS_DIGEST_PARAMS,
+  NewsDigestParamsSchema,
+  runNewsDigest,
+} from './job';
+import type { WorkerManifest } from '../../types';
+
+// Built-in workers are the contributor reference path: keep behavior in
+// worker folders, then describe ownership, defaults, health, and dashboard
+// fields beside that behavior so core scheduler/UI code stays generic.
+export const newsWorker: WorkerManifest = {
+  id: 'core.news',
+  name: 'News',
+  version: '0.1.0',
+  description: 'Collects, evaluates, deduplicates, and queues news digest items.',
+  builtIn: true,
+  requiredCredentials: [
+    { key: 'googleSearchConfigured', label: 'Google Search credentials', settingsTarget: 'health-google' },
+  ],
+  optionalDependencies: [
+    { key: 'sqliteCli', label: 'SQLite CLI', settingsTarget: 'health-dependencies' },
+  ],
+  ownedSettings: [
+    {
+      key: 'news-digest-job',
+      label: 'News digest schedule',
+      description: 'Cron, model, prompt, and parameter settings for the news digest job.',
+      scope: 'job',
+      storageKey: 'admin.settings.jobs.news-digest',
+      dashboardTarget: 'jobs',
+    },
+    {
+      key: 'google-search-credentials',
+      label: 'Google Search credentials',
+      description: 'Local environment values used by the News worker for Google Custom Search.',
+      scope: 'worker',
+      storageKey: '.env.GOOGLE_*',
+      dashboardTarget: 'config',
+    },
+    {
+      key: 'source-quality-rules',
+      label: 'Source quality rules',
+      description: 'Host allow/block/preference rules used before queueing digest items.',
+      scope: 'worker',
+      storageKey: 'source.rules',
+      dashboardTarget: 'queue',
+    },
+  ],
+  dashboard: {
+    settings: [
+      {
+        id: 'google-credentials',
+        label: 'Google Search credentials',
+        description: 'API key and search engine ID used by the News worker.',
+        tab: 'config',
+        path: '/api/google-credentials',
+        fields: [
+          {
+            key: 'googleApiKey',
+            label: 'Google API key',
+            type: 'secret-reference',
+            defaultValue: '',
+            placeholder: 'Configured in local .env',
+            helpText: 'Stored as GOOGLE_API_KEY. Leave blank to keep the current value.',
+          },
+          {
+            key: 'googleSearchEngineId',
+            label: 'Search engine ID',
+            type: 'text',
+            defaultValue: '',
+            helpText: 'Stored as GOOGLE_SEARCH_ENGINE_ID. Leave blank to keep the current value.',
+          },
+        ],
+      },
+      {
+        id: 'source-quality-rules',
+        label: 'Source quality rules',
+        description: 'Allow, block, and score source hosts before digest items enter the queue.',
+        tab: 'config',
+        path: '/api/source-rules',
+        fields: [
+          {
+            key: 'minScore',
+            label: 'Minimum score',
+            type: 'number',
+            defaultValue: 0,
+            helpText: 'Reject sources scoring below this value unless they are allowlisted.',
+            seedPath: 'core.news.sourceRules.minScore',
+          },
+          {
+            key: 'allowHosts',
+            label: 'Allow hosts',
+            type: 'string-list',
+            defaultValue: [],
+            rows: 4,
+            helpText: 'One host per line. Items from these hosts skip the score check.',
+            seedPath: 'core.news.sourceRules.allowHosts',
+          },
+          {
+            key: 'blockHosts',
+            label: 'Block hosts',
+            type: 'string-list',
+            defaultValue: [],
+            rows: 5,
+            helpText: 'One host per line. Items from these hosts are dropped before the LLM filter.',
+            seedPath: 'core.news.sourceRules.blockHosts',
+          },
+          {
+            key: 'preferredHosts',
+            label: 'Preferred hosts',
+            type: 'string-list',
+            defaultValue: [],
+            rows: 6,
+            helpText: 'One host per line. Boosts score for items from these hosts.',
+            seedPath: 'core.news.sourceRules.preferredHosts',
+          },
+          {
+            key: 'lowQualityHosts',
+            label: 'Low-quality hosts',
+            type: 'string-list',
+            defaultValue: [],
+            rows: 5,
+            helpText: 'One host per line. Penalises score for items from these hosts.',
+            seedPath: 'core.news.sourceRules.lowQualityHosts',
+          },
+        ],
+      },
+    ],
+    routes: [
+      {
+        id: 'news-runs',
+        label: 'Digest run history',
+        description: 'Recent digest run metrics surfaced in the queue dashboard.',
+        tab: 'runs',
+        path: '/api/dashboard#workerData.core.news.recentRuns',
+      },
+    ],
+  },
+  jobs: [
+    {
+      id: 'news-digest',
+      workerId: 'core.news',
+      label: 'News Digest',
+      description: 'Searches current news, fetches article context, scores sources, and queues useful items.',
+      defaultEnabled: false,
+      defaultCron: '0 0,7 * * *',
+      defaultModelAlias: '',
+      approvalRequiredDefault: false,
+      approvalRequiredEditable: false,
+      defaultPrompt: '',
+      prompt: { editable: false },
+      paramsSchema: NewsDigestParamsSchema,
+      defaultParams: DEFAULT_NEWS_DIGEST_PARAMS,
+      dashboardFields: [
+        {
+          key: 'queries',
+          label: 'Search queries',
+          type: 'string-list',
+          defaultValue: DEFAULT_NEWS_DIGEST_PARAMS.queries,
+          rows: 4,
+          helpText: 'One query per line.',
+        },
+        { key: 'maxResultsPerQuery', label: 'Max results / query', type: 'number', defaultValue: DEFAULT_NEWS_DIGEST_PARAMS.maxResultsPerQuery, min: 1, max: 20 },
+        { key: 'maxLlmCandidates', label: 'Max LLM candidates', type: 'number', defaultValue: DEFAULT_NEWS_DIGEST_PARAMS.maxLlmCandidates, min: 1, max: 30 },
+        { key: 'maxTelegramItems', label: 'Max digest items', type: 'number', defaultValue: DEFAULT_NEWS_DIGEST_PARAMS.maxTelegramItems, min: 1, max: 20 },
+        { key: 'seenTtlHours', label: 'Seen URL TTL (hours)', type: 'number', defaultValue: DEFAULT_NEWS_DIGEST_PARAMS.seenTtlHours, min: 1, max: 168 },
+        { key: 'dateRestrict', label: 'Date restrict', type: 'text', defaultValue: DEFAULT_NEWS_DIGEST_PARAMS.dateRestrict },
+      ],
+      run: (modelId, params) => runNewsDigest(modelId, NewsDigestParamsSchema.parse(params ?? {})),
+    },
+  ],
+};

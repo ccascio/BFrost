@@ -1,0 +1,46 @@
+{
+  "name": "bfrost",
+  "version": "0.1.0",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "description": "Local AI assistant and automation control room",
+  "scripts": {
+    "clean": "rm -rf dist web/dist",
+    "clean:server": "rm -rf dist",
+    "build": "npm run clean && tsc && vite build",
+    "build:server": "npm run clean:server && tsc",
+    "build:web": "vite build",
+    "start": "node dist/index.js",
+    "test": "rm -rf dist && tsc && node --test \"dist/**/*.test.js\"",
+    "task": "node dist/cron.js",
+    "dev": "node scripts/dev.mjs",
+    "dev:watch": "tsc --watch",
+    "dev:web": "vite"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "typescript": "^5.5.4",
+    "vite": "^8.0.10"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.74",
+    "@ai-sdk/openai": "^3.0.58",
+    "@ai-sdk/openai-compatible": "^2.0.41",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/dompurify": "^3.0.5",
+    "ai": "^6.0.154",
+    "better-sqlite3": "^12.9.0",
+    "dompurify": "^3.4.3",
+    "dotenv": "^17.4.1",
+    "esbuild": "^0.28.0",
+    "marked": "^18.0.3",
+    "node-cron": "^4.2.1",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "telegraf": "^4.16.3",
+    "zod": "^3.25.76"
+  }
+}

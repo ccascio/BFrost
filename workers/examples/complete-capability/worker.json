@@ -1,0 +1,145 @@
+{
+  "manifestVersion": 1,
+  "bfrostApiVersion": "0.1",
+  "id": "local.complete-capability",
+  "name": "News Worker Example",
+  "version": "0.1.0",
+  "description": "A complete News-like worker anatomy example with configuration, health, job ownership, dashboard output, and future entrypoints.",
+  "owner": "BFrost contributors",
+  "backendEntrypoint": "backend/module.js",
+  "requiredCredentials": [
+    {
+      "key": "googleSearchConfigured",
+      "label": "Google Search credentials",
+      "settingsTarget": "system"
+    }
+  ],
+  "optionalCredentials": [
+    {
+      "key": "openaiConfigured",
+      "label": "OpenAI API key",
+      "settingsTarget": "system"
+    }
+  ],
+  "requiredDependencies": [
+    {
+      "key": "sqliteCli",
+      "label": "SQLite CLI",
+      "settingsTarget": "system"
+    }
+  ],
+  "ownedSettings": [
+    {
+      "key": "complete-capability-config",
+      "label": "News search configuration",
+      "description": "Schema-driven query and limit settings shown centrally in the Config tab.",
+      "scope": "worker",
+      "storageKey": "worker.local.complete-capability.config",
+      "dashboardTarget": "config"
+    },
+    {
+      "key": "google-search-credentials",
+      "label": "Google Search credentials",
+      "description": "Placeholder-owned environment values for GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID; secrets are never stored in worker.json.",
+      "scope": "worker",
+      "storageKey": ".env.GOOGLE_*",
+      "dashboardTarget": "config"
+    },
+    {
+      "key": "complete-capability-job",
+      "label": "News digest schedule",
+      "description": "Enable flag, cron expression, model override, and approval settings for a News-like digest job.",
+      "scope": "job",
+      "storageKey": "admin.settings.jobs.local-complete-capability",
+      "dashboardTarget": "jobs"
+    },
+    {
+      "key": "complete-capability-output",
+      "label": "News digest output",
+      "description": "Fetched, filtered, queued, and rejected news items visualized in a worker-owned dashboard tab.",
+      "scope": "worker",
+      "storageKey": "worker.local.complete-capability.output",
+      "dashboardTarget": "worker"
+    }
+  ],
+  "dashboard": {
+    "settings": [
+      {
+        "id": "complete-capability-config",
+        "label": "Search configuration",
+        "description": "Worker-provided form metadata and defaults for queries, date restriction, and digest limits.",
+        "tab": "config",
+        "fields": [
+          {
+            "key": "queries",
+            "label": "Search queries",
+            "type": "string-list",
+            "defaultValue": [
+              "artificial intelligence",
+              "privacy technology",
+              "software security"
+            ],
+            "rows": 4,
+            "helpText": "One query per line. The installer exposes these defaults from the manifest."
+          },
+          {
+            "key": "dateRestrict",
+            "label": "Date restrict",
+            "type": "text",
+            "defaultValue": "d7",
+            "helpText": "Google Custom Search date restriction, such as d1, d7, or m1."
+          },
+          {
+            "key": "maxResultsPerQuery",
+            "label": "Max results per query",
+            "type": "number",
+            "defaultValue": 5,
+            "min": 1,
+            "max": 20,
+            "helpText": "Upper bound for search results fetched for each query."
+          },
+          {
+            "key": "sendToQueue",
+            "label": "Send selected items to queue",
+            "type": "boolean",
+            "defaultValue": true,
+            "helpText": "Example boolean setting owned by the worker."
+          }
+        ]
+      },
+      {
+        "id": "google-credentials",
+        "label": "Google Search credentials",
+        "description": "Placeholder credential surface for API key and search engine ID. Store real values in local environment, not in the manifest.",
+        "tab": "config",
+        "path": "/api/google-credentials",
+        "fields": [
+          {
+            "key": "googleApiKey",
+            "label": "Google API key",
+            "type": "secret-reference",
+            "defaultValue": "",
+            "placeholder": "GOOGLE_API_KEY",
+            "helpText": "Placeholder only. Real secrets belong in local environment storage."
+          },
+          {
+            "key": "googleSearchEngineId",
+            "label": "Search engine ID",
+            "type": "text",
+            "defaultValue": "",
+            "helpText": "Stored locally as GOOGLE_SEARCH_ENGINE_ID by a real worker endpoint."
+          }
+        ]
+      }
+    ],
+    "routes": [
+      {
+        "id": "complete-capability-dashboard",
+        "label": "Digest dashboard",
+        "description": "Worker-owned output view for run metrics and queued news items, shown as a dedicated tab named after the worker.",
+        "tab": "worker",
+        "path": "/api/dashboard#workers.local.complete-capability"
+      }
+    ]
+  }
+}

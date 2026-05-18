@@ -1,0 +1,4 @@
+- [x] Create a TypeScript starter project for BFrost.
+- [x] Add `package.json`, `tsconfig.json`, `src/index.ts`, and `README.md`.
+- [x] Add `.gitignore` for `node_modules` and `dist`.
+- [x] Install dependencies and verify build.
