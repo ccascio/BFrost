@@ -6,9 +6,11 @@ export const searchGoogleWorker: WorkerManifest = {
   bfrostApiVersion: '0.1',
   id: 'core.search.google',
   name: 'Google Search',
+  displayName: 'Google Web Search',
   version: '0.1.0',
   description:
     'Provides Google Custom Search to the assistant and to other workers that need web search.',
+  tagline: 'Gives the assistant and other workers a way to look things up on the web using your Google Custom Search account.',
   builtIn: true,
   requiredCredentials: [
     { key: 'googleSearchConfigured', label: 'Google Search credentials', settingsTarget: 'health-google' },

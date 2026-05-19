@@ -247,16 +247,92 @@ async function waitForModelToUnload(modelKey: string, timeoutMs = UNLOAD_SETTLE_
   throw new Error(`Timed out waiting for LM Studio model to unload${labels ? `: ${labels}` : `: ${modelKey}`}.`);
 }
 
-// Requires passwordless sudo for /usr/sbin/purge in /etc/sudoers, e.g.:
-//   youruser ALL=(ALL) NOPASSWD: /usr/sbin/purge
-async function purgeMemory(): Promise<void> {
-  console.log('[LMStudio] Purging RAM...');
-  try {
-    await execFileAsync('sudo', ['purge']);
-    console.log('[LMStudio] RAM purged.');
-  } catch (err) {
-    console.log('[LMStudio] RAM purge failed (sudo access may be required):', err instanceof Error ? err.message : err);
+/**
+ * Best-effort reclaim of inactive memory after a model unloads. Each platform has its own
+ * mechanism — none are load-bearing, so we never throw. The dashboard surfaces the platform
+ * setup line (passwordless sudo for the relevant command) so users can opt in.
+ *
+ * - macOS:  `sudo /usr/sbin/purge` — flushes inactive memory + disk cache.
+ * - Linux:  `sudo sysctl -w vm.drop_caches=3` — drops page cache, dentries, inodes.
+ * - Windows: no built-in equivalent worth shipping; the OS manages this fine on its own.
+ */
+export type MemoryCleanupPlatform = 'darwin' | 'linux' | 'win32' | 'unsupported';
+
+export interface MemoryCleanupSpec {
+  platform: MemoryCleanupPlatform;
+  /** The sudoers line a user should add to /etc/sudoers.d/bfrost-memory to enable cleanup. */
+  sudoersLine?: string;
+  /** Human-readable command BFrost will run when cleanup is invoked. */
+  command?: string;
+  /** Argv used internally — the first element is `sudo`, the rest are the binary + args. */
+  argv?: string[];
+  /** Non-interactive probe argv (uses `sudo -n`) to detect whether cleanup is configured. */
+  probeArgv?: string[];
+}
+
+export function getMemoryCleanupSpec(): MemoryCleanupSpec {
+  const platform = process.platform;
+  if (platform === 'darwin') {
+    return {
+      platform: 'darwin',
+      command: 'sudo /usr/sbin/purge',
+      argv: ['sudo', '/usr/sbin/purge'],
+      probeArgv: ['sudo', '-n', '/usr/sbin/purge'],
+      sudoersLine: `${process.env.USER ?? 'youruser'} ALL=(ALL) NOPASSWD: /usr/sbin/purge`,
+    };
   }
+  if (platform === 'linux') {
+    return {
+      platform: 'linux',
+      command: 'sudo sysctl -w vm.drop_caches=3',
+      argv: ['sudo', 'sysctl', '-w', 'vm.drop_caches=3'],
+      probeArgv: ['sudo', '-n', 'sysctl', '-w', 'vm.drop_caches=3'],
+      sudoersLine: `${process.env.USER ?? 'youruser'} ALL=(ALL) NOPASSWD: /usr/sbin/sysctl -w vm.drop_caches=3`,
+    };
+  }
+  if (platform === 'win32') {
+    return { platform: 'win32' };
+  }
+  return { platform: 'unsupported' };
+}
+
+async function purgeMemory(): Promise<void> {
+  const spec = getMemoryCleanupSpec();
+  if (!spec.argv) {
+    console.log(`[LMStudio] Memory cleanup not supported on ${spec.platform}; skipping.`);
+    return;
+  }
+  console.log(`[LMStudio] Reclaiming inactive memory via \`${spec.command}\`...`);
+  try {
+    const [bin, ...args] = spec.argv;
+    await execFileAsync(bin, args);
+    console.log('[LMStudio] Memory cleanup completed.');
+  } catch (err) {
+    console.log(
+      `[LMStudio] Memory cleanup failed (passwordless sudo may not be configured): ${err instanceof Error ? err.message : err}`,
+    );
+  }
+}
+
+/**
+ * Non-interactive probe — returns true when passwordless sudo is configured for the
+ * platform's cleanup command. Used by the dashboard to show setup status without
+ * actually running the cleanup or triggering a password prompt.
+ */
+export async function probeMemoryCleanup(): Promise<boolean> {
+  const spec = getMemoryCleanupSpec();
+  if (!spec.probeArgv) return false;
+  try {
+    const [bin, ...args] = spec.probeArgv;
+    await execFileAsync(bin, args);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function runMemoryCleanup(): Promise<void> {
+  await purgeMemory();
 }
 
 function delay(ms: number): Promise<void> {

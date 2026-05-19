@@ -5,8 +5,10 @@ export const telegramChannelWorker: WorkerManifest = {
   bfrostApiVersion: '0.1',
   id: 'core.channels.telegram',
   name: 'Telegram Channel',
+  displayName: 'Telegram',
   version: '0.1.0',
   description: 'Reach the BFrost assistant from a Telegram bot.',
+  tagline: 'Chat with your BFrost assistant from Telegram — text, voice notes, and photos all work.',
   builtIn: true,
   kind: 'channel',
   requiredCredentials: [

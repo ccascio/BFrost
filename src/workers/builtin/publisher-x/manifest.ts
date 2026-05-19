@@ -11,8 +11,10 @@ import type { WorkerManifest } from '../../types';
 export const xPublisherWorker: WorkerManifest = {
   id: 'core.publisher.x',
   name: 'X Publisher',
+  displayName: 'Post to X',
   version: '0.1.0',
   description: 'Selects approved queue items and drafts or publishes X posts.',
+  tagline: 'Turns digest items you have approved into X posts. Drafts go out only after you say yes — nothing is published behind your back.',
   builtIn: true,
   requiredCredentials: [
     { key: 'xConfigured', label: 'X API credentials', settingsTarget: 'health-x' },

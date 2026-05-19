@@ -1,43 +1,28 @@
-import { createOpenAI } from '@ai-sdk/openai';
-import { createAnthropic } from '@ai-sdk/anthropic';
 import { LanguageModel } from 'ai';
-import { config, type ModelOption } from './config';
+import { type ModelOption } from './config';
 
 // Imported lazily to break a CJS cycle: registry → builtin/workers → publisher-x/job → llm.
-function activeLocalProvider() {
+function lookupProvider(providerId: string) {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require('./workers/registry').getActiveLocalProvider();
+  return require('./workers/registry').getProviderAdapter(providerId);
 }
 
 export function isModelProviderConfigured(model: ModelOption): boolean {
-  if (model.provider === 'openai') return Boolean(config.openaiApiKey);
-  if (model.provider === 'anthropic') return Boolean(config.anthropicApiKey);
-  const local = activeLocalProvider();
-  return Boolean(local && local.providerId === model.provider && local.isConfigured());
+  const adapter = lookupProvider(model.provider);
+  return Boolean(adapter && adapter.isConfigured());
 }
 
 export function getChatModel(model: ModelOption): LanguageModel {
-  if (model.provider === 'openai') {
-    if (!config.openaiApiKey) {
-      throw new Error(`OPENAI_API_KEY is required for ${model.alias}.`);
-    }
-    const openai = createOpenAI({ apiKey: config.openaiApiKey });
-    return openai.chat(model.id);
-  }
-
-  if (model.provider === 'anthropic') {
-    if (!config.anthropicApiKey) {
-      throw new Error(`ANTHROPIC_API_KEY is required for ${model.alias}.`);
-    }
-    const anthropic = createAnthropic({ apiKey: config.anthropicApiKey });
-    return anthropic(model.id);
-  }
-
-  const local = activeLocalProvider();
-  if (!local || local.providerId !== model.provider) {
+  const adapter = lookupProvider(model.provider);
+  if (!adapter) {
     throw new Error(
-      `No active local provider worker is configured to serve model ${model.alias}. Enable or select provider "${model.provider}".`,
+      `No provider worker is registered for "${model.provider}". Install or enable the matching provider worker to use model ${model.alias}.`,
     );
   }
-  return local.getChatModel(model.id) as LanguageModel;
+  if (!adapter.isConfigured()) {
+    throw new Error(
+      `Provider "${model.provider}" is not configured. Add the required credentials before using model ${model.alias}.`,
+    );
+  }
+  return adapter.getChatModel(model.id) as LanguageModel;
 }

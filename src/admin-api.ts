@@ -255,8 +255,10 @@ export const WorkerDashboardManifestSchema = z.object({
 export const WorkerSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
+  displayName: z.string().optional(),
   version: z.string(),
   description: z.string(),
+  tagline: z.string().optional(),
   builtIn: z.boolean(),
   kind: z.enum(['feature', 'channel', 'provider']),
   enabled: z.boolean(),

@@ -6,7 +6,7 @@ test('built-in workers expose the assistant tool catalog', () => {
   const tools = listRegisteredTools();
   const names = tools.map((entry) => entry.manifest.name).sort();
 
-  assert.deepEqual(names, ['fetchArticle', 'recallMemory', 'saveMemory', 'webSearch']);
+  assert.deepEqual(names, ['fetchArticle', 'queryItems', 'recallMemory', 'recentRuns', 'saveMemory', 'webSearch']);
 });
 
 test('tool ownership and metadata are consistent with the manifest', () => {

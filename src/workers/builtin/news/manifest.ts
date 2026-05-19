@@ -11,8 +11,10 @@ import type { WorkerManifest } from '../../types';
 export const newsWorker: WorkerManifest = {
   id: 'core.news',
   name: 'News',
+  displayName: 'Daily News Digest',
   version: '0.1.0',
   description: 'Collects, evaluates, deduplicates, and queues news digest items.',
+  tagline: 'Pulls articles from sources you choose, scores them for quality, and queues a short digest you can review before anything else uses it.',
   builtIn: true,
   requiredCredentials: [
     { key: 'googleSearchConfigured', label: 'Google Search credentials', settingsTarget: 'health-google' },

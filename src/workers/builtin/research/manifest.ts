@@ -11,8 +11,10 @@ import type { WorkerManifest } from '../../types';
 export const researchWorker: WorkerManifest = {
   id: 'core.research',
   name: 'Research',
+  displayName: 'Research Notes',
   version: '0.1.0',
   description: 'Creates durable Markdown research notes from configured topics.',
+  tagline: 'Writes a Markdown research note on each topic you care about, on a schedule. Notes are saved locally so you can read, edit, and keep them.',
   builtIn: true,
   requiredCredentials: [
     { key: 'googleSearchConfigured', label: 'Google Search credentials', settingsTarget: 'health-google' },

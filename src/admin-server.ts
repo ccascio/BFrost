@@ -1007,8 +1007,10 @@ function listWorkerSummaries(
     return {
       id: worker.id,
       name: worker.name,
+      displayName: worker.displayName,
       version: worker.version,
       description: worker.description,
+      tagline: worker.tagline,
       builtIn: worker.builtIn,
       kind: deriveWorkerKind(worker),
       enabled,

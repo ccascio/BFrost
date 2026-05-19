@@ -6,9 +6,11 @@ export const articleFetchWorker: WorkerManifest = {
   bfrostApiVersion: '0.1',
   id: 'core.article-fetch',
   name: 'Article Fetch',
+  displayName: 'Article Reader',
   version: '0.1.0',
   description:
     'Fetches and extracts readable article content from a URL. Used by the assistant and by other workers that need page bodies.',
+  tagline: 'Lets the assistant open a web page and read it back in clean text — the same kind of reader-view your browser gives you.',
   builtIn: true,
   jobs: [],
   tools: [

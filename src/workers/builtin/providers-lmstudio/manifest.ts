@@ -5,9 +5,11 @@ export const lmStudioProviderWorker: WorkerManifest = {
   bfrostApiVersion: '0.1',
   id: 'core.providers.lmstudio',
   name: 'LM Studio Provider',
+  displayName: 'LM Studio (local AI)',
   version: '0.1.0',
   description:
     'Runs and serves local OpenAI-compatible chat models through the LM Studio CLI and HTTP server.',
+  tagline: 'Runs AI models on your own computer through LM Studio — no API keys, no monthly bill, your data never leaves the machine.',
   builtIn: true,
   kind: 'provider',
   requiredDependencies: [

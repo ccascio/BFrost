@@ -29,7 +29,7 @@ test('built-in worker registry exposes existing jobs with stable ids', () => {
 
 test('built-in jobs include worker ownership and defaults', () => {
   const workers = listWorkers();
-  assert.equal(workers.length, 8);
+  assert.equal(workers.length, 11);
   assert.equal(workers.every((worker) => worker.builtIn), true);
 
   const tweetPost = getRegisteredWorkerJob('tweet-post');

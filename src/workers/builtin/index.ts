@@ -5,7 +5,10 @@ import { telegramChannelModule } from './channels-telegram/module';
 import { memoryModule } from './memory/module';
 import { searchGoogleModule } from './search-google/module';
 import { articleFetchModule } from './article-fetch/module';
+import { itemsQueryModule } from './items-query/module';
 import { lmStudioProviderModule } from './providers-lmstudio/module';
+import { openaiProviderModule } from './providers-openai/module';
+import { anthropicProviderModule } from './providers-anthropic/module';
 import type { BackendWorkerModule } from '../module';
 import type { WorkerManifest } from '../types';
 import { validateBackendWorkerModules } from '../validation';
@@ -18,7 +21,10 @@ const modules: BackendWorkerModule[] = [
   memoryModule,
   searchGoogleModule,
   articleFetchModule,
+  itemsQueryModule,
   lmStudioProviderModule,
+  openaiProviderModule,
+  anthropicProviderModule,
 ];
 
 validateBackendWorkerModules(modules);

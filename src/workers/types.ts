@@ -17,8 +17,21 @@ export interface WorkerManifest {
   bfrostApiVersion?: string;
   id: string;
   name: string;
+  /**
+   * Optional plain-language display name shown in user-facing dashboard surfaces
+   * (Overview, Workers tab, future catalog). Falls back to `name` when absent.
+   * Use this to make a worker readable to non-developers — e.g. "Daily News Digest"
+   * instead of "News". `name` stays as the short technical label used in logs.
+   */
+  displayName?: string;
   version: string;
   description: string;
+  /**
+   * Optional one-sentence pitch shown in user-facing dashboard surfaces. Falls back
+   * to `description` when absent. Write for a non-developer reader: explain what the
+   * worker does for them, not how it works internally.
+   */
+  tagline?: string;
   owner?: string;
   builtIn: boolean;
   kind?: WorkerKind;

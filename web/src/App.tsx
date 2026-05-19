@@ -14,15 +14,163 @@ type CoreConfigKey = 'cloud-api-keys' | 'platform-routing' | 'embedding-model';
 const DASHBOARD_REFRESH_INTERVAL_MS = 30000;
 const JOBS_REFRESH_INTERVAL_MS = 5000;
 
+interface MemoryCleanupStatus {
+  platform: 'darwin' | 'linux' | 'win32' | 'unsupported';
+  supported: boolean;
+  configured: boolean;
+  command: string | null;
+  sudoersLine: string | null;
+  sudoersDropInPath: string;
+}
+
+function MemoryCleanupPanel() {
+  const [status, setStatus] = useState<MemoryCleanupStatus | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function refresh() {
+    try {
+      const res = await fetch('/api/workers/lmstudio/memory-cleanup', { credentials: 'include' });
+      if (!res.ok) return;
+      setStatus(await res.json());
+    } catch {
+      // best-effort; panel hides on failure
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  async function runTest() {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch('/api/workers/lmstudio/memory-cleanup/test', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const payload = await res.json();
+      setTestResult(
+        payload.ok
+          ? `Memory cleanup ran in ${payload.durationMs} ms.`
+          : `Cleanup did not complete${payload.errorMessage ? `: ${payload.errorMessage}` : '.'} Add the sudoers line below and try again.`,
+      );
+      await refresh();
+    } catch (err) {
+      setTestResult(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function copySudoersLine() {
+    if (!status?.sudoersLine) return;
+    try {
+      await navigator.clipboard.writeText(status.sudoersLine);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard denial — surface nothing, user can select manually
+    }
+  }
+
+  if (!status) return null;
+
+  if (!status.supported) {
+    return (
+      <p className="footnote" style={{ marginTop: '0.5rem' }}>
+        Memory cleanup after model unload is not supported on this platform ({status.platform}); the
+        OS reclaims memory on its own.
+      </p>
+    );
+  }
+
+  const toneClass = status.configured ? 'good' : 'warning';
+  const statusLabel = status.configured ? 'Configured' : 'Not configured';
+
+  return (
+    <div style={{ marginTop: '0.75rem', borderTop: '1px solid var(--border)', paddingTop: '0.75rem' }}>
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit' }}
+      >
+        <span className={`status-pill ${toneClass}`} style={{ marginRight: '0.5rem' }}>
+          {statusLabel}
+        </span>
+        Memory cleanup after unload {expanded ? '▾' : '▸'}
+      </button>
+
+      {expanded ? (
+        <div style={{ marginTop: '0.5rem' }}>
+          <p className="footnote">
+            BFrost runs <code>{status.command}</code> after a model unload to help the OS reclaim
+            inactive memory. The command needs <strong>passwordless sudo</strong> so it can run
+            unattended (including from cron jobs).
+          </p>
+          {status.configured ? (
+            <p className="footnote" style={{ color: 'var(--good)' }}>
+              Passwordless sudo is configured — no action needed.
+            </p>
+          ) : (
+            <>
+              <p className="footnote">
+                Add the line below to a sudoers drop-in file. Open a terminal and run:
+              </p>
+              <pre className="codeblock" style={{ userSelect: 'all' }}>
+                {`sudo visudo -f ${status.sudoersDropInPath}`}
+              </pre>
+              <p className="footnote">Then paste this line and save:</p>
+              <pre className="codeblock" style={{ userSelect: 'all' }}>
+                {status.sudoersLine}
+              </pre>
+              <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+                <button type="button" onClick={() => void copySudoersLine()}>
+                  {copied ? 'Copied!' : 'Copy line'}
+                </button>
+                <button type="button" disabled={testing} onClick={() => void runTest()}>
+                  {testing ? 'Testing...' : 'Test memory cleanup'}
+                </button>
+              </div>
+              <p className="footnote" style={{ marginTop: '0.5rem' }}>
+                To remove this access later, delete <code>{status.sudoersDropInPath}</code>.
+              </p>
+            </>
+          )}
+          {status.configured ? (
+            <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+              <button type="button" disabled={testing} onClick={() => void runTest()}>
+                {testing ? 'Testing...' : 'Test memory cleanup'}
+              </button>
+            </div>
+          ) : null}
+          {testResult ? <p className="footnote" style={{ marginTop: '0.5rem' }}>{testResult}</p> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 const CHAT_WELCOME = (
   <div className="chat-empty" role="note">
     <p className="chat-empty-kicker">Welcome to dashboard chat</p>
     <h3>Ask freely, or hand work to a worker.</h3>
     <p>
-      You can ask an open question about BFrost, your queue, schedules, models, or recent events.
-      You can also request a worker execution in plain language, such as "run a news digest" or
-      "start personal research".
+      Ask open questions about BFrost, your queue, your schedules, or your models — or ask a worker
+      to do something, in plain language.
     </p>
+    <p className="footnote" style={{ marginTop: '0.75rem' }}>
+      Try one of these:
+    </p>
+    <ul className="footnote" style={{ marginTop: '0.25rem', paddingLeft: '1.2rem' }}>
+      <li>"Run a news digest now."</li>
+      <li>"What are the latest news items I have queued?"</li>
+      <li>"Did the research job run today?"</li>
+      <li>"What models are loaded?"</li>
+    </ul>
   </div>
 );
 
@@ -1279,8 +1427,8 @@ export default function App() {
                 {dashboard.workers.map((worker) => (
                   <div className="summary-row" key={`${worker.id}-overview`}>
                     <div>
-                      <strong>{worker.name}</strong>
-                      <span>{worker.description}</span>
+                      <strong>{worker.displayName ?? worker.name}</strong>
+                      <span>{worker.tagline ?? worker.description}</span>
                       <span>{worker.builtIn ? 'built-in' : 'local'} · {worker.jobCount} jobs</span>
                     </div>
                     <StatusPill tone={workerHealthTone(worker.healthState)}>
@@ -1311,7 +1459,21 @@ export default function App() {
                   </div>
                 ))}
                 {dashboard.events.length === 0 ? (
-                  <p className="empty-state">No recent events yet.</p>
+                  <div className="empty-state">
+                    <p>Nothing has happened here yet.</p>
+                    <p className="footnote">
+                      Events show up when a worker runs, finishes, or changes state. Enable a worker
+                      to start collecting activity, or open Chat to ask the assistant a question.
+                    </p>
+                    <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+                      <button type="button" onClick={() => setActiveTab('workers')}>
+                        Open Workers
+                      </button>
+                      <button type="button" onClick={() => setActiveTab('chat')}>
+                        Open Chat
+                      </button>
+                    </div>
+                  </div>
                 ) : null}
               </div>
             </article>
@@ -1409,7 +1571,7 @@ export default function App() {
                   <div className="job-worker-head">
                     <div>
                       <p className="panel-kicker">{worker.builtIn ? 'Built-in worker' : 'Local worker'}</p>
-                      <h3>{worker.name}</h3>
+                      <h3>{worker.displayName ?? worker.name}</h3>
                       <span>{worker.id} · {worker.enabledJobCount}/{worker.jobCount} jobs enabled</span>
                     </div>
                     <StatusPill tone={workerHealthTone(worker.healthState)}>
@@ -1556,7 +1718,7 @@ export default function App() {
                   <div className="job-worker-head">
                     <div>
                       <p className="panel-kicker">{worker.builtIn ? 'Built-in worker' : 'Local worker'}</p>
-                      <h3>{worker.name}</h3>
+                      <h3>{worker.displayName ?? worker.name}</h3>
                       <span>{worker.id}</span>
                     </div>
                     <StatusPill tone={workerHealthTone(worker.healthState)}>
@@ -1704,7 +1866,18 @@ export default function App() {
             </div>
           ) : null}
 
-          {renderWorkerGroups(dashboard.workers)}
+          {dashboard.workers.length === 0 ? (
+            <div className="empty-state">
+              <p>No workers loaded.</p>
+              <p className="footnote">
+                BFrost ships with bundled workers (news, research, publishers, channels, providers).
+                If none are showing here, click <strong>Rescan</strong> above. To add a community
+                worker, drop its folder under <code>workers/local/</code> and rescan.
+              </p>
+            </div>
+          ) : (
+            renderWorkerGroups(dashboard.workers)
+          )}
         </section>
       ) : null}
 
@@ -1771,7 +1944,14 @@ export default function App() {
               </div>
             ))}
             {dashboard.backups.length === 0 ? (
-              <p className="empty-state">No SQLite backups have been created yet.</p>
+              <div className="empty-state">
+                <p>No backups yet.</p>
+                <p className="footnote">
+                  A backup is a snapshot of your local BFrost database — workers, settings,
+                  queue, events, and run history. Click <strong>Create backup</strong> above to
+                  make your first one; backups stay on this machine.
+                </p>
+              </div>
             ) : null}
           </div>
         </section>
@@ -1800,7 +1980,21 @@ export default function App() {
               </div>
             ))}
             {dashboard.events.length === 0 ? (
-              <p className="empty-state">No events have been recorded yet.</p>
+              <div className="empty-state">
+                <p>No events recorded yet.</p>
+                <p className="footnote">
+                  Every job run, worker change, queue update, and credential edit shows up here as a
+                  durable record. Enable a worker and trigger a run to populate this list.
+                </p>
+                <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+                  <button type="button" onClick={() => setActiveTab('workers')}>
+                    Open Workers
+                  </button>
+                  <button type="button" onClick={() => setActiveTab('jobs')}>
+                    Open Jobs
+                  </button>
+                </div>
+              </div>
             ) : null}
           </div>
         </section>
@@ -1955,6 +2149,7 @@ export default function App() {
             Free LM Studio memory
           </button>
         </div>
+        <MemoryCleanupPanel />
       </article>
     );
   }
@@ -2227,8 +2422,8 @@ export default function App() {
     return (
       <div className="summary-row" key={worker.id}>
         <div>
-          <strong>{worker.name}</strong>
-          <span>{worker.description}</span>
+          <strong>{worker.displayName ?? worker.name}</strong>
+          <span>{worker.tagline ?? worker.description}</span>
           <span>
             {worker.id} · v{worker.version} · {worker.builtIn ? 'built-in' : 'local'} ·{' '}
             {worker.enabledJobCount}/{worker.jobCount} jobs enabled
@@ -2566,7 +2761,13 @@ export default function App() {
             </div>
           ))}
           {runs.length === 0 ? (
-            <p className="empty-state">No stored scheduler runs for this job yet.</p>
+            <div className="empty-state">
+              <p>This job has not run yet.</p>
+              <p className="footnote">
+                Click <strong>Run now</strong> in the job row above to trigger it once, or wait for
+                its next scheduled time. Runs appear here as soon as the job finishes.
+              </p>
+            </div>
           ) : null}
         </div>
       </div>
