@@ -8,6 +8,7 @@ import type { WorkerJobDashboardField, WorkerJobPreset } from './workers/types';
 import { recordEventSafe } from './event-log';
 import { loadKvJson, saveKvJson } from './sqlite';
 import { finishSchedulerRun, startSchedulerRun } from './scheduler-runs';
+import { acquireSchedulerExecutionLock } from './scheduler-locks';
 import { isWorkerEnabled, loadWorkerState, type WorkerStateStore } from './workers/state';
 
 const SCHEDULER_STATE_STORE_KEY = 'scheduler.state';
@@ -184,8 +185,8 @@ async function reloadSchedules(): Promise<void> {
 
     const task = cron.schedule(
       jobSettings.cron,
-      () => {
-        void runJob(name, jobSettings, 'schedule');
+      (ctx) => {
+        void runJob(name, jobSettings, 'schedule', { scheduledAt: ctx.date.toISOString() });
       },
       {
         timezone: settings.timezone,
@@ -267,7 +268,20 @@ async function runJob(
   name: JobName,
   jobSettings: CronJobSettings,
   trigger: 'schedule' | 'manual',
+  options: { scheduledAt?: string } = {},
 ): Promise<void> {
+  if (trigger === 'schedule') {
+    const scheduledAt = options.scheduledAt ?? schedulerSlotIso(new Date());
+    const acquired = await acquireSchedulerExecutionLock({
+      commandKey: schedulerCommandKey(name),
+      scheduledAt,
+    });
+    if (!acquired) {
+      console.warn(`[Scheduler] Duplicate scheduled execution ignored for ${name} at ${scheduledAt}.`);
+      return;
+    }
+  }
+
   const workerState = await loadWorkerState();
   const registered = getRegisteredWorkerJob(name);
   const current = buildJobState(name, jobSettings, workerState);
@@ -307,6 +321,16 @@ async function runJob(
     },
   });
   await runJobWork(name, jobSettings, trigger, startedAt, runRecord, current.effectiveModelAlias);
+}
+
+function schedulerCommandKey(name: JobName): string {
+  return `job:${name}`;
+}
+
+function schedulerSlotIso(date: Date): string {
+  const slot = new Date(date);
+  slot.setSeconds(0, 0);
+  return slot.toISOString();
 }
 
 interface RunJobWorkOptions {

@@ -6,6 +6,7 @@ import {
   ChatMessageBodySchema,
   CloudApiKeysBodySchema,
   DefaultModelBodySchema,
+  JobDashboardFieldSchema,
   LmStudioActionBodySchema,
   QueueItemActionBodySchema,
   SourceQualityRulesSchema,
@@ -51,6 +52,26 @@ test('admin API schemas accept expected dashboard payloads', () => {
   assert.deepEqual(
     ChatMessageBodySchema.parse({ message: 'Hello', conversationId: 'dashboard' }),
     { message: 'Hello', conversationId: 'dashboard' },
+  );
+  assert.deepEqual(
+    JobDashboardFieldSchema.parse({
+      key: 'queries',
+      label: 'News interests',
+      type: 'string-list',
+      defaultValue: ['World news'],
+      suggestions: ['World news', 'Technology news'],
+      placeholder: 'Add another interest',
+      helpText: 'Choose the topics this digest should follow.',
+    }),
+    {
+      key: 'queries',
+      label: 'News interests',
+      type: 'string-list',
+      defaultValue: ['World news'],
+      suggestions: ['World news', 'Technology news'],
+      placeholder: 'Add another interest',
+      helpText: 'Choose the topics this digest should follow.',
+    },
   );
   assert.deepEqual(
     SourceQualityRulesSchema.parse({

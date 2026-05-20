@@ -829,6 +829,8 @@ interface JobStringListField extends JobBaseField {
   type: 'string-list';
   defaultValue: string[];
   rows?: number;
+  suggestions?: string[];
+  placeholder?: string;
 }
 
 interface JobSecretReferenceField extends JobBaseField {
@@ -1089,6 +1091,8 @@ export default function App() {
   const [selectedConfigJobName, setSelectedConfigJobName] = useState<string | null>(null);
   const [selectedConfigSurfaceKey, setSelectedConfigSurfaceKey] = useState<string | null>(null);
   const [surfaceDrafts, setSurfaceDrafts] = useState<Record<string, Record<string, JobParamDraftValue>>>({});
+  const [openPromptEditors, setOpenPromptEditors] = useState<Record<string, boolean>>({});
+  const [customListItemDrafts, setCustomListItemDrafts] = useState<Record<string, string>>({});
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('all');
   const [selectedQueueItemId, setSelectedQueueItemId] = useState<string | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
@@ -1833,6 +1837,7 @@ export default function App() {
     field: JobDashboardField,
     value: JobParamDraftValue,
     onChange: (value: JobParamDraftValue) => void,
+    options: { draftKey?: string } = {},
   ) {
     if (field.type === 'boolean') {
       return (
@@ -1848,7 +1853,117 @@ export default function App() {
       );
     }
 
-    if (field.type === 'textarea' || field.type === 'string-list') {
+    if (field.type === 'string-list') {
+      const rows = stringListDraftRows(value);
+      const suggestions = field.suggestions ?? [];
+      const draftKey = options.draftKey ?? field.key;
+      const customDraft = customListItemDrafts[draftKey] ?? '';
+      const placeholder = field.placeholder ?? fieldListPlaceholder(field);
+
+      function addCustomItem() {
+        const item = customDraft.trim();
+        if (!item) return;
+        onChange(addStringListDraftValue(value, item));
+        setCustomListItemDrafts((current) => ({ ...current, [draftKey]: '' }));
+      }
+
+      return (
+        <div className="field list-field" key={field.key}>
+          <span>{field.label}</span>
+          {field.helpText ? <small>{field.helpText}</small> : null}
+
+          {suggestions.length > 0 ? (
+            <div className="suggestion-picker">
+              <span>Choose interests</span>
+              <div className="suggestion-chip-grid">
+                {suggestions.map((suggestion) => {
+                  const selected = stringListDraftIncludes(value, suggestion);
+                  return (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      className={`suggestion-chip${selected ? ' selected' : ''}`}
+                      aria-pressed={selected}
+                      onClick={() => onChange(toggleStringListDraftValue(value, suggestion))}
+                    >
+                      {suggestion}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="list-editor">
+            {suggestions.length > 0 ? <span className="list-editor-label">Selected interests</span> : null}
+            {rows.map((item, index) => (
+              <div className="list-editor-row" key={`${field.key}-${index}`}>
+                <input
+                  type="text"
+                  value={item}
+                  placeholder={placeholder}
+                  onChange={(event) => {
+                    const nextRows = rows.slice();
+                    nextRows[index] = event.target.value;
+                    onChange(nextRows.join('\n'));
+                  }}
+                />
+                <button
+                  type="button"
+                  aria-label={`Remove ${field.label.toLowerCase()} item ${index + 1}`}
+                  title="Remove item"
+                  onClick={() => {
+                    const nextRows = rows.slice();
+                    nextRows.splice(index, 1);
+                    onChange(nextRows.join('\n'));
+                  }}
+                  disabled={rows.length <= 1 && item.trim().length === 0}
+                >
+                  -
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {suggestions.length > 0 ? (
+            <div className="list-custom-entry">
+              <input
+                type="text"
+                value={customDraft}
+                placeholder={placeholder}
+                onChange={(event) =>
+                  setCustomListItemDrafts((current) => ({ ...current, [draftKey]: event.target.value }))
+                }
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    addCustomItem();
+                  }
+                }}
+              />
+              <button type="button" onClick={addCustomItem} disabled={!customDraft.trim()}>
+                Add interest
+              </button>
+            </div>
+          ) : (
+            <div className="field-actions">
+              <button
+                type="button"
+                onClick={() => onChange([...rows, ''].join('\n'))}
+              >
+                Add item
+              </button>
+            </div>
+          )}
+
+          {suggestions.length === 0 ? null : (
+            <small>{stringListDraftItems(value).length} selected</small>
+          )}
+        </div>
+      );
+    }
+
+    if (field.type === 'textarea') {
       return (
         <label className="field prompt-field" key={field.key}>
           <span>{field.label}</span>
@@ -1901,7 +2016,12 @@ export default function App() {
 
   function renderJobParamField(job: SchedulerJobState, draft: JobDraft, field: JobDashboardField) {
     const value = draft.params[field.key] ?? fieldDefaultDraftValue(field);
-    return renderDashboardField(field, value, (nextValue) => updateJobDraftParam(job.name, draft, field.key, nextValue));
+    return renderDashboardField(
+      field,
+      value,
+      (nextValue) => updateJobDraftParam(job.name, draft, field.key, nextValue),
+      { draftKey: `${job.name}.${field.key}` },
+    );
   }
 
   return (
@@ -2936,6 +3056,7 @@ export default function App() {
       prompt: job.prompt,
       params: buildJobParamsDraft(job),
     };
+    const promptEditorOpen = openPromptEditors[job.name] ?? false;
 
     function applyPreset(preset: JobPreset) {
       setJobDrafts((current) => ({
@@ -2976,20 +3097,53 @@ export default function App() {
         ) : null}
 
         {job.promptEditable ? (
-          <label className="field prompt-field">
-            <span>LLM prompt</span>
-            <textarea
-              value={draft.prompt}
-              onChange={(event) =>
-                setJobDrafts((current) => ({
+          <section className="advanced-settings">
+            <button
+              type="button"
+              className="advanced-settings-toggle"
+              aria-expanded={promptEditorOpen}
+              onClick={() =>
+                setOpenPromptEditors((current) => ({
                   ...current,
-                  [job.name]: { ...draft, prompt: event.target.value },
+                  [job.name]: !promptEditorOpen,
                 }))
               }
-              rows={13}
-            />
-            {job.promptHelpText ? <small>{job.promptHelpText}</small> : null}
-          </label>
+            >
+              <span>
+                <strong>Advanced writing instructions</strong>
+                <small>Keep this closed to use the saved prompt.</small>
+              </span>
+              <span aria-hidden="true">{promptEditorOpen ? 'Hide' : 'Edit'}</span>
+            </button>
+            {promptEditorOpen ? (
+              <label className="field prompt-field advanced-prompt-field">
+                <span>Writing instructions</span>
+                <textarea
+                  value={draft.prompt}
+                  onChange={(event) =>
+                    setJobDrafts((current) => ({
+                      ...current,
+                      [job.name]: { ...draft, prompt: event.target.value },
+                    }))
+                  }
+                  rows={13}
+                />
+                {job.promptHelpText ? <small>{job.promptHelpText}</small> : null}
+                <button
+                  type="button"
+                  className="secondary-inline"
+                  onClick={() =>
+                    setJobDrafts((current) => ({
+                      ...current,
+                      [job.name]: { ...draft, prompt: job.prompt },
+                    }))
+                  }
+                >
+                  Restore saved instructions
+                </button>
+              </label>
+            ) : null}
+          </section>
         ) : null}
 
         <div className="panel-actions wrap">
@@ -3344,6 +3498,7 @@ export default function App() {
               field,
               draft[field.key] ?? fieldDefaultDraftValue(field, dashboard.workerData),
               (nextValue) => updateSurfaceDraftParam(key, field.key, nextValue),
+              { draftKey: `${key}.${field.key}` },
             ),
           )}
         </div>
@@ -3589,6 +3744,53 @@ function DetailBlock({
       <p>{value}</p>
     </div>
   );
+}
+
+function stringListDraftRows(value: JobParamDraftValue): string[] {
+  const rows = String(value).split('\n');
+  return rows.length > 0 ? rows : [''];
+}
+
+function stringListDraftItems(value: JobParamDraftValue): string[] {
+  return stringListDraftRows(value)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeStringListItem(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function stringListDraftIncludes(value: JobParamDraftValue, item: string): boolean {
+  const normalized = normalizeStringListItem(item);
+  return stringListDraftItems(value).some((current) => normalizeStringListItem(current) === normalized);
+}
+
+function addStringListDraftValue(value: JobParamDraftValue, item: string): string {
+  const trimmed = item.trim();
+  if (!trimmed) return String(value);
+  const items = stringListDraftItems(value);
+  if (items.some((current) => normalizeStringListItem(current) === normalizeStringListItem(trimmed))) {
+    return items.join('\n');
+  }
+  return [...items, trimmed].join('\n');
+}
+
+function toggleStringListDraftValue(value: JobParamDraftValue, item: string): string {
+  const normalized = normalizeStringListItem(item);
+  const items = stringListDraftItems(value);
+  if (items.some((current) => normalizeStringListItem(current) === normalized)) {
+    return items.filter((current) => normalizeStringListItem(current) !== normalized).join('\n');
+  }
+  return addStringListDraftValue(value, item);
+}
+
+function fieldListPlaceholder(field: JobStringListField): string {
+  if (field.placeholder) return field.placeholder;
+  const key = field.key.toLowerCase();
+  if (key.includes('host')) return 'example.com';
+  if (key.includes('quer')) return 'Add an interest';
+  return 'Add an item';
 }
 
 function buildJobParamsDraft(job: SchedulerJobState): Record<string, JobParamDraftValue> {

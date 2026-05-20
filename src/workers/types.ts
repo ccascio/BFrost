@@ -237,6 +237,12 @@ export interface WorkerJobStringListField extends WorkerJobBaseField {
   type: 'string-list';
   defaultValue: string[];
   rows?: number;
+  /**
+   * Optional suggested values the dashboard can render as one-click choices
+   * while still allowing the user to add custom entries.
+   */
+  suggestions?: string[];
+  placeholder?: string;
 }
 
 export interface WorkerJobSecretReferenceField extends WorkerJobBaseField {

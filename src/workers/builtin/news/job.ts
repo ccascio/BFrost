@@ -29,8 +29,10 @@ function newsProducerHeader(): Partial<QueueItem> {
 import { newsRunFileForRanAt, saveNewsRun, type NewsRunRecord } from './runs';
 import { loadKvJson, saveKvJson } from '../../../sqlite';
 
+export const DEFAULT_NEWS_INTERESTS = ['World news', 'Technology news', 'Business news'];
+
 export const NewsDigestParamsSchema = z.object({
-  queries: z.array(z.string().min(1)).min(1).catch(['AI news latest', 'LLM large language model news', 'technology news today']),
+  queries: z.array(z.string().min(1)).min(1).catch(DEFAULT_NEWS_INTERESTS),
   maxResultsPerQuery: z.number().int().min(1).max(20).catch(10),
   maxLlmCandidates: z.number().int().min(1).max(30).catch(5),
   maxTelegramItems: z.number().int().min(1).max(20).catch(5),
@@ -154,7 +156,7 @@ function safeShortDesc(text: string): string {
   return text.trim().slice(0, 400) || 'No snippet available from the search result.';
 }
 
-function buildFilterPrompt(results: ScoredSearchResult[]): string {
+function buildFilterPrompt(results: ScoredSearchResult[], interests: string[]): string {
   const list = results
     .map((r, i) => {
       const article = getArticleContext(r);
@@ -175,19 +177,23 @@ function buildFilterPrompt(results: ScoredSearchResult[]): string {
       );
     })
     .join('\n\n');
-  return `Review EVERY search result for an AI / LLM / tech news digest.
+  const interestList = interests
+    .map((interest) => interest.trim())
+    .filter(Boolean)
+    .map((interest) => `- ${interest}`)
+    .join('\n');
+
+  return `Review EVERY search result for a personal news digest.
+
+Selected interests:
+${interestList || '- Current events'}
 
 Queue ONLY items that are genuinely newsworthy:
-- Real news: announcements, product releases, research, funding, industry moves
-- NOT opinion pieces, listicles, vendor marketing, generic career advice, or old recaps
+- Timely, factual stories that match at least one selected interest
+- Clear updates, announcements, original reporting, research, analysis, launches, market moves, or public decisions
+- NOT opinion pieces, listicles, vendor marketing, generic career advice, old recaps, or items unrelated to the selected interests
 
-Reject items that are low-quality, off-topic, unsafe to post about, or weak as digest material.
-
-Always reject:
-- US/EU elections, partisan politics, culture-war topics
-- Religion or religious conflicts
-- Active geopolitical conflicts (e.g. Israel–Palestine, Russia–Ukraine)
-- Celebrity gossip unrelated to tech
+Reject items that are low-quality, off-topic, unsafe to summarize, repetitive, or weak as digest material.
 
 Output one JSON object for every input URL, using this schema:
 - Queue: {"url":"<copied verbatim>","action":"queue","reason":"<why this deserves the digest>","title":"<concise title <= 100 chars>","shortDesc":"<1-2 factual sentences <= 200 chars>"}
@@ -227,6 +233,7 @@ interface FilterResult {
 async function filterWithLLM(
   modelId: string,
   candidates: ScoredSearchResult[],
+  interests: string[],
 ): Promise<FilterResult> {
   const modelOption = findModel(modelId);
   if (!modelOption) {
@@ -239,7 +246,7 @@ async function filterWithLLM(
     // /no_think disables Qwen3's extended thinking mode so it outputs JSON directly
     // instead of reasoning through the task in a <think> block and leaving text empty.
     // Other models ignore this prefix.
-    prompt: '/no_think\n' + buildFilterPrompt(candidates),
+    prompt: '/no_think\n' + buildFilterPrompt(candidates, interests),
     timeout: FILTER_TIMEOUT_MS,
   });
 
@@ -518,7 +525,7 @@ export async function runNewsDigest(modelId: string, params: NewsDigestParams = 
     let droppedHallucinated = 0;
     let undecidedCount = 0;
     if (llmCandidates.length > 0) {
-      const result = await filterWithLLM(modelId, llmCandidates);
+      const result = await filterWithLLM(modelId, llmCandidates, params.queries);
       queuedItems = result.queued;
       rejectedItems = result.rejected;
       droppedHallucinated = result.droppedHallucinated;

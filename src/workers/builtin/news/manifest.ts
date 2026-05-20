@@ -1,9 +1,27 @@
 import {
+  DEFAULT_NEWS_INTERESTS,
   DEFAULT_NEWS_DIGEST_PARAMS,
   NewsDigestParamsSchema,
   runNewsDigest,
 } from './job';
 import type { WorkerManifest } from '../../types';
+
+const NEWS_INTEREST_SUGGESTIONS = [
+  'World news',
+  'Local news',
+  'Technology news',
+  'Business news',
+  'Markets and finance',
+  'Science',
+  'Climate and environment',
+  'Health',
+  'Education',
+  'Culture',
+  'Sports',
+  'Travel',
+  'AI and software',
+  'Startups',
+];
 
 // Built-in workers are the contributor reference path: keep behavior in
 // worker folders, then describe ownership, defaults, health, and dashboard
@@ -156,17 +174,62 @@ export const newsWorker: WorkerManifest = {
       dashboardFields: [
         {
           key: 'queries',
-          label: 'Search queries',
+          label: 'News interests',
           type: 'string-list',
-          defaultValue: DEFAULT_NEWS_DIGEST_PARAMS.queries,
+          defaultValue: DEFAULT_NEWS_INTERESTS,
           rows: 4,
-          helpText: 'One query per line.',
+          suggestions: NEWS_INTEREST_SUGGESTIONS,
+          placeholder: 'Add another interest',
+          helpText: 'Choose the topics this digest should follow. Add your own interest if it is not listed; each saved interest is searched when the digest runs.',
         },
-        { key: 'maxResultsPerQuery', label: 'Max results / query', type: 'number', defaultValue: DEFAULT_NEWS_DIGEST_PARAMS.maxResultsPerQuery, min: 1, max: 20 },
-        { key: 'maxLlmCandidates', label: 'Max LLM candidates', type: 'number', defaultValue: DEFAULT_NEWS_DIGEST_PARAMS.maxLlmCandidates, min: 1, max: 30 },
-        { key: 'maxTelegramItems', label: 'Max digest items', type: 'number', defaultValue: DEFAULT_NEWS_DIGEST_PARAMS.maxTelegramItems, min: 1, max: 20 },
-        { key: 'seenTtlHours', label: 'Seen URL TTL (hours)', type: 'number', defaultValue: DEFAULT_NEWS_DIGEST_PARAMS.seenTtlHours, min: 1, max: 168 },
-        { key: 'dateRestrict', label: 'Date restrict', type: 'text', defaultValue: DEFAULT_NEWS_DIGEST_PARAMS.dateRestrict },
+        {
+          key: 'maxResultsPerQuery',
+          label: 'Articles to check per interest',
+          type: 'number',
+          defaultValue: DEFAULT_NEWS_DIGEST_PARAMS.maxResultsPerQuery,
+          min: 1,
+          max: 20,
+          helpText: 'Higher numbers discover more articles but make each digest run slower.',
+        },
+        {
+          key: 'maxLlmCandidates',
+          label: 'Articles to review with AI',
+          type: 'number',
+          defaultValue: DEFAULT_NEWS_DIGEST_PARAMS.maxLlmCandidates,
+          min: 1,
+          max: 30,
+          helpText: 'The best candidates sent to the model for final selection.',
+        },
+        {
+          key: 'maxTelegramItems',
+          label: 'Digest length',
+          type: 'number',
+          defaultValue: DEFAULT_NEWS_DIGEST_PARAMS.maxTelegramItems,
+          min: 1,
+          max: 20,
+          helpText: 'Maximum number of stories kept from each run.',
+        },
+        {
+          key: 'seenTtlHours',
+          label: 'Avoid repeats for (hours)',
+          type: 'number',
+          defaultValue: DEFAULT_NEWS_DIGEST_PARAMS.seenTtlHours,
+          min: 1,
+          max: 168,
+          helpText: 'Hours to remember stories already seen, so the digest does not repeat them too soon.',
+        },
+        {
+          key: 'dateRestrict',
+          label: 'Search window',
+          type: 'select',
+          defaultValue: DEFAULT_NEWS_DIGEST_PARAMS.dateRestrict,
+          options: [
+            { label: 'Past day', value: 'd1' },
+            { label: 'Past week', value: 'w1' },
+            { label: 'Past month', value: 'm1' },
+          ],
+          helpText: 'How far back BFrost should look for stories.',
+        },
       ],
       presets: [
         {

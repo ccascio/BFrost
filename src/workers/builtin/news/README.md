@@ -1,6 +1,6 @@
 # `core.news`
 
-Scheduled harvesting of AI/tech news. Scores sources, deduplicates near-identical articles, and publishes items onto the Item Bus for downstream consumers (X Publisher, ConvertPrivately, and any community-authored publisher).
+Scheduled harvesting of news for the user's chosen interests. Scores sources, deduplicates near-identical articles, and publishes items onto the Item Bus for downstream consumers (X Publisher, ConvertPrivately, and any community-authored publisher).
 
 ## What it produces
 
@@ -12,7 +12,7 @@ Consumers should read these through the `newsPayloadFields(item)` helper in `new
 
 ## Settings
 
-- **News digest job** — cron, model, prompt, parameter settings.
+- **News digest job** — schedule, model, interests, digest size, and source discovery settings.
 - **Source quality rules** — schema-driven dashboard form. Min source score, must-have categories, banned hosts. Edited in the Config tab; values seeded from live state via `seedPath`.
 
 ## Credentials

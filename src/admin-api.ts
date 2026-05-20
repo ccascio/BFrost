@@ -146,6 +146,8 @@ export const JobDashboardFieldSchema = z.discriminatedUnion('type', [
     type: z.literal('string-list'),
     defaultValue: z.array(z.string()),
     rows: z.number().optional(),
+    suggestions: z.array(z.string()).optional(),
+    placeholder: z.string().optional(),
     helpText: z.string().optional(),
     seedPath: z.string().optional(),
   }).strict(),
