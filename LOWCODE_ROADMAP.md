@@ -47,13 +47,13 @@ The worker contract stays exactly as it is. What changes is the **surface** that
 **Goal:** connecting a channel is a guided form with screenshots, not a `.env` instruction list.
 
 - [ ] **Generalised "connect a channel" UX.** Each channel worker declares a `connectFlow` in its manifest: an ordered list of steps with text, screenshot refs, fields, and a `verify()` hook. The dashboard renders these uniformly so all channels feel the same.
-- [ ] **Telegram revamp.** Replace the current "paste a bot token" field with a flow that walks the user through BotFather (with embedded screenshots), asks for the resulting token, calls `getMe` to confirm, and shows "Connected as @your_bot ✓" before saving. Include a "Send test message" button.
+- [x] **Telegram revamp.** Four-step `TelegramConnectPanel`: BotFather walkthrough, paste-and-verify-via-`getMe`, allowed-user-ID setup (with link to `@userinfobot`), Send test message. Backed by `GET /api/workers/telegram/status` + `POST /api/workers/telegram/verify-token` + `POST /api/workers/telegram/test-message`. Replaces the schema-driven form for `core.channels.telegram` only.
 - [ ] **WhatsApp worker (`core.channels.whatsapp`).** Decide between two paths and ship one:
   - **WhatsApp Cloud API** (Meta's official Business API). Pros: durable, allowed for automation. Cons: requires a Meta developer account, phone-number registration, and Business verification for production. Connect flow walks through the developer console; we store the token and phone-number-id.
   - **WhatsApp Web bridge** (e.g. `whatsapp-web.js` / `Baileys`). Pros: works with a personal number, QR-code login. Cons: against ToS for some use cases, can be rate-limited or banned. Worker ships with a clear warning.
   - Recommend shipping Cloud API as the documented default, and Web bridge behind an "advanced / personal use" toggle.
 - [ ] **Email worker (`core.channels.email`).** SMTP-out + IMAP-in. Connect flow auto-detects common providers (Gmail, Fastmail, iCloud) and pre-fills server settings; falls back to a manual form. Includes "Send test email" and "Fetch latest inbox message" verifiers.
-- [ ] **Discord worker (`core.channels.discord`).** Bot-token flow with the same shape as Telegram.
+- [x] **Discord worker (`core.channels.discord`).** Send-only operator notifications: `notifyOperator(text)` posts to a channel via the Discord HTTP API; chunked at 2k chars. Five-step `DiscordConnectPanel` (Developer Portal → paste-and-verify token via `users/@me` → OAuth invite URL generated from the verified bot's client id → paste channel ID → send test message), with friendly 403/404 hints when the bot lacks permission or the channel can't be found. Two-way receive (gateway WebSocket via discord.js) is not implemented; Telegram remains the two-way channel.
 - [ ] **Signal worker (stretch).** Via `signal-cli`; only viable on Linux/macOS, gated behind an "advanced" badge.
 - [ ] **Channel-agnostic UX in the dashboard.** Once connected, all channels appear in a unified "Channels" tab with the same Connected / Disconnected / Send Test affordances regardless of provider.
 
@@ -63,16 +63,13 @@ The worker contract stays exactly as it is. What changes is the **surface** that
 
 **Goal:** every bundled worker has a dashboard surface a non-developer can use to get value, without ever needing to read the manifest, edit JSON, or write a prompt.
 
-- [ ] **Plain-language naming.** Every worker gets a user-facing display name and a one-sentence description that does not contain the words "worker", "manifest", "job", or "consumer". Examples:
-  - `core.news` → **"Daily News Digest"** — *"Pulls articles from sources you choose and sends you a summary every morning."*
-  - `core.publisher.x` → **"Auto-post to X"** — *"Turns approved digest items into tweets, with a preview before anything goes out."*
-  - `core.research` → **"Research Notes"** — *"Generates Markdown research notes on topics you care about, on a schedule."*
+- [x] **Plain-language naming.** Every built-in worker carries a `displayName` / `tagline` on its manifest (`core.news` → "Daily News Digest", `core.publisher.x` → "Post to X", `core.research` → "Research Notes", …); the dashboard reads those for user-facing surfaces and falls back to the technical `name`/`description`.
 - [ ] **Guided settings forms.** Replace bare textareas (prompt fields, source rule editors) with structured, labelled inputs and inline examples. The "expert" view that shows raw prompts/JSON stays one toggle away for power users.
-- [ ] **Recipe-style presets.** Each worker ships a small library of presets ("Tech news every weekday at 8am", "Conservative tone for X posts", "Three sources, English only") that fill the form in one click. Power users can save their own.
+- [x] **Recipe-style presets.** `WorkerJobManifest.presets` ships in the manifest type; the News worker offers three one-click recipes (Tech weekday mornings, Daily world news, Weekend long-reads). Applying a preset fills cron + params in the draft; nothing saves until the user clicks Save. Any other job can declare its own.
 - [ ] **Preview before save.** Source-rule edits, prompt edits, and schedule changes all show "Here's what this would have produced on the last run" before the user clicks Save.
 - [ ] **First-class undo.** Settings changes are versioned. The settings panel always shows "Revert to last known good" alongside Save.
 - [ ] **Reduce App.tsx complexity.** The Overview, Queue, and Workers tabs read entirely from worker-declared surfaces (continuing Workstream 1/3 work in `ROADMAP.md`). No worker-specific HTML/JSX in `web/src/App.tsx`. This is a hard prerequisite for the catalog (Workstream D) and the recipe presets above.
-- [ ] **Friendlier empty states.** Every tab that can be empty shows what to do next, not a blank panel. "No items yet — enable Daily News Digest to start collecting articles. [Enable]".
+- [x] **Friendlier empty states.** Overview's "Recent events", Events tab, Job runs timeline, Backups, and Workers tab all show actionable empty states with "Open X" buttons; the chat welcome lists four concrete example prompts including the bus-query ones now powered by `core.items.query`.
 
 **Exit criteria:** A non-developer can change the news digest schedule, add a source, preview the next run, and revert a mistake without ever opening a code editor or reading the worker's README.
 

@@ -37,6 +37,8 @@ What's new since `v0.1.0`:
 - **Recipe presets for jobs.** News ships three one-click recipes (Tech weekday mornings, Daily world news, Weekend long-reads); other workers can declare their own.
 - **Cross-platform memory cleanup.** macOS `purge`, Linux `drop_caches`, Windows no-op — with an in-dashboard panel that detects passwordless-sudo and surfaces the exact `sudoers.d` line to add.
 - **Low-code accessibility track.** Plain-language `displayName` / `tagline` on built-in workers, friendlier empty states across the dashboard, cascading provider → model picker. See [`LOWCODE_ROADMAP.md`](./LOWCODE_ROADMAP.md) for what's coming.
+- **Discord channel worker.** New `core.channels.discord` posts operator notifications (job summaries, queue alerts) to a Discord channel via a five-step guided setup (Developer Portal → paste-and-verify token → OAuth invite URL → channel ID → send test message). Send-only for now — Telegram remains the recommended two-way channel.
+- **Built-ins auto-discover.** `src/workers/builtin/index.ts` walks the filesystem at boot instead of importing each worker by name, so the same "drop a folder, no central registration" pattern that has always worked for local workers now also works for the bundled ones.
 
 What still gates a `v1.0.0` tag:
 
@@ -63,7 +65,8 @@ These workers ship with BFrost and double as worked examples. They use the same 
 - **`core.publisher.x`** — consumes `news.article` items and posts to X with approval gating.
 - **`core.research`** — scheduled Markdown research notes synthesised with a local model.
 - **`core.memory`**, **`core.search.google`**, **`core.article-fetch`**, **`core.items.query`** — assistant-tool workers (memory, web search, article reader, bus/run-history inspector).
-- **`core.channels.telegram`** — Telegram channel worker, with a guided BotFather setup flow.
+- **`core.channels.telegram`** — Telegram channel worker, two-way, with a guided BotFather setup flow.
+- **`core.channels.discord`** — Discord channel worker for operator notifications (send-only in this version), with a guided Developer Portal walkthrough.
 - **`core.providers.lmstudio`**, **`core.providers.openai`**, **`core.providers.anthropic`** — model provider workers. Local via LM Studio, or cloud via OpenAI / Anthropic API key.
 
 Each has a one-page README in `src/workers/builtin/<id>/README.md` covering what it produces/consumes, which credentials it reads, and operational caveats.
