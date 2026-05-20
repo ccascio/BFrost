@@ -159,7 +159,22 @@ export interface WorkerJobManifest {
   paramsSchema: z.ZodTypeAny;
   defaultParams?: Record<string, unknown>;
   dashboardFields: WorkerJobDashboardField[];
+  /**
+   * Optional library of one-click recipes the dashboard surfaces above the job edit form.
+   * Each preset is a friendly snapshot of cron + params for a common use case ("Tech news
+   * weekday mornings", "Quiet weekly digest", …). Applying a preset updates the draft
+   * before the user clicks Save — nothing persists until they confirm.
+   */
+  presets?: WorkerJobPreset[];
   run: (modelId: string, params?: Record<string, unknown>) => Promise<WorkerJobRunResult>;
+}
+
+export interface WorkerJobPreset {
+  id: string;
+  label: string;
+  description: string;
+  cron?: string;
+  params?: Record<string, unknown>;
 }
 
 export interface WorkerJobPromptManifest {

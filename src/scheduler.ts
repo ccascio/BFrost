@@ -4,7 +4,7 @@ import { getDefaultModelAlias } from './config';
 import { loadAdminSettings, saveAdminSettings, schedulerStatePath, updateAdminJob, type AdminSettings, type CronJobUpdate, type CronJobSettings, jobLabels } from './admin-config';
 import { type JobName, knownJobs, runNamedJob } from './job-runner';
 import { getRegisteredWorkerJob, notifyOperatorChannels } from './workers/registry';
-import type { WorkerJobDashboardField } from './workers/types';
+import type { WorkerJobDashboardField, WorkerJobPreset } from './workers/types';
 import { recordEventSafe } from './event-log';
 import { loadKvJson, saveKvJson } from './sqlite';
 import { finishSchedulerRun, startSchedulerRun } from './scheduler-runs';
@@ -32,6 +32,7 @@ export interface SchedulerJobState {
   prompt: string;
   params?: Record<string, unknown>;
   dashboardFields: SchedulerJobDashboardField[];
+  presets: WorkerJobPreset[];
   effectiveModelAlias: string;
   running: boolean;
   lastStartedAt: string | null;
@@ -64,6 +65,7 @@ interface PersistedSchedulerState {
         | 'promptHelpText'
         | 'prompt'
         | 'dashboardFields'
+        | 'presets'
         | 'effectiveModelAlias'
       >
     >
@@ -506,6 +508,7 @@ function hydrateRuntimeFromState(parsed: PersistedSchedulerState): void {
       promptHelpText: getRegisteredWorkerJob(name).job.prompt.helpText,
       prompt: '',
       dashboardFields: getRegisteredWorkerJob(name).job.dashboardFields,
+      presets: getRegisteredWorkerJob(name).job.presets ?? [],
       effectiveModelAlias: getDefaultModelAlias(),
       running: false,
       lastStartedAt: saved.lastStartedAt ?? null,
@@ -546,6 +549,7 @@ function buildJobState(
     prompt: settings.prompt,
     params: settings.params,
     dashboardFields: registered.job.dashboardFields,
+    presets: registered.job.presets ?? [],
     effectiveModelAlias,
     running: saved?.running ?? false,
     lastStartedAt: saved?.lastStartedAt ?? null,

@@ -4,7 +4,7 @@
 
 BFrost is local-first by design: model inference, scheduler state, queue state, and dashboard operations all run on your machine. There is no hosted service, no remote loading, no worker marketplace yet. Workers are loaded from local directories you control.
 
-## Status — public preview (`v0.1.0`)
+## Status — public preview (`v0.2.0`)
 
 BFrost is published as a **public preview**. The worker-first contract is in place end-to-end:
 
@@ -12,6 +12,15 @@ BFrost is published as a **public preview**. The worker-first contract is in pla
 - Tools, channels, and providers are worker types (Workstream 2 ✅).
 - Shared Item Bus and per-worker storage (Workstream 3 ✅).
 - Local worker execution runtime with TypeScript compile-on-load, lifecycle hooks, dashboard bundles, and a typed `bfrost` SDK (Workstream 4 ✅, minus the sandbox/permission model below).
+
+What's new since `v0.1.0`:
+
+- **Bring-your-own cloud key.** `core.providers.openai` and `core.providers.anthropic` ship as provider workers, with `listAvailableModels()` populating the model picker from the live API. No need to install a local model just to try BFrost.
+- **Assistant can answer questions about its own state.** `core.items.query` exposes `queryItems` and `recentRuns` tools — asking "what's the latest news?" or "did research run today?" in chat now returns real data from the Item Bus and scheduler history.
+- **Guided Telegram setup.** Four-step BotFather walkthrough, verify-before-save, and a "Send test message" check replace the bare token field.
+- **Recipe presets for jobs.** News ships three one-click recipes (Tech weekday mornings, Daily world news, Weekend long-reads); other workers can declare their own.
+- **Cross-platform memory cleanup.** macOS `purge`, Linux `drop_caches`, Windows no-op — with an in-dashboard panel that detects passwordless-sudo and surfaces the exact `sudoers.d` line to add.
+- **Low-code accessibility track.** Plain-language `displayName` / `tagline` on built-in workers, friendlier empty states across the dashboard, cascading provider → model picker. See [`LOWCODE_ROADMAP.md`](./LOWCODE_ROADMAP.md) for what's coming.
 
 What still gates a `v1.0.0` tag:
 
@@ -37,9 +46,9 @@ These workers ship with BFrost and double as worked examples. They use the same 
 - **`core.news`** — scheduled harvesting with source-quality scoring and near-duplicate detection. Produces `news.article` items.
 - **`core.publisher.x`** — consumes `news.article` items and posts to X with approval gating.
 - **`core.research`** — scheduled Markdown research notes synthesised with a local model.
-- **`core.memory`**, **`core.search.google`**, **`core.article-fetch`** — assistant-tool workers.
-- **`core.channels.telegram`** — Telegram channel worker.
-- **`core.providers.lmstudio`** — LM Studio model provider worker.
+- **`core.memory`**, **`core.search.google`**, **`core.article-fetch`**, **`core.items.query`** — assistant-tool workers (memory, web search, article reader, bus/run-history inspector).
+- **`core.channels.telegram`** — Telegram channel worker, with a guided BotFather setup flow.
+- **`core.providers.lmstudio`**, **`core.providers.openai`**, **`core.providers.anthropic`** — model provider workers. Local via LM Studio, or cloud via OpenAI / Anthropic API key.
 
 Each has a one-page README in `src/workers/builtin/<id>/README.md` covering what it produces/consumes, which credentials it reads, and operational caveats.
 

@@ -12,7 +12,7 @@ import { bootstrapLocalWorkers } from './workers/bootstrap';
 import { applyPlatformSettingsToConfig, loadAdminSettings } from './admin-config';
 import { releaseStaleQueueLockOnBoot } from './jobs/queue';
 import { registerBfrostRuntimeModule } from './sdk-runtime';
-import { refreshActiveLocalProviderModels } from './model-discovery';
+import { refreshActiveLocalProviderModels, refreshCloudProviderModels } from './model-discovery';
 import type { ChannelAdapter, ProviderAdapter } from './workers/module';
 
 async function main(): Promise<void> {
@@ -28,6 +28,9 @@ async function main(): Promise<void> {
 
   const localWorkers = await bootstrapLocalWorkers();
   await refreshActiveLocalProviderModels();
+  // Best-effort: cloud providers self-skip when their key is missing, so it's safe to run
+  // unconditionally. Network failures here just leave the discovered list empty.
+  await refreshCloudProviderModels();
 
   // Apply persisted platform settings (active local provider, primary channel) so the
   // selection survives restarts. Done after bootstrapLocalWorkers so any worker the user

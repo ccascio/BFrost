@@ -7,7 +7,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { z } from 'zod';
 import { config, availableModels, getDefaultModel, setCloudApiKeys, setDefaultModel, setEmbeddingSettings } from './config';
-import { refreshActiveLocalProviderModels } from './model-discovery';
+import { refreshActiveLocalProviderModels, refreshCloudProviderModels } from './model-discovery';
 import { upsertEnvValue } from './env-file';
 import {
   getActiveLocalProvider,
@@ -304,6 +304,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       }
 
       setCloudApiKeys(updates);
+      await refreshCloudProviderModels();
       await recordEventSafe({
         category: 'admin',
         action: 'cloud_api_keys_updated',

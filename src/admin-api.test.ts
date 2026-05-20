@@ -133,6 +133,7 @@ test('dashboard response schema accepts the control-room payload shape', () => {
               max: 280,
             },
           ],
+          presets: [],
           effectiveModelAlias: 'local-model',
           running: false,
           lastStartedAt: null,

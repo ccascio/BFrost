@@ -178,6 +178,15 @@ export const SchedulerJobStateSchema = z.object({
   prompt: z.string(),
   params: z.record(z.unknown()).optional(),
   dashboardFields: z.array(JobDashboardFieldSchema),
+  presets: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      description: z.string(),
+      cron: z.string().optional(),
+      params: z.record(z.unknown()).optional(),
+    }).strict(),
+  ),
   effectiveModelAlias: z.string(),
   running: z.boolean(),
   lastStartedAt: z.string().nullable(),
