@@ -1,8 +1,20 @@
 # BFrost
 
-**A worker-first local AI operations platform.** BFrost is a control room you run on your own machine. Every capability — assistants, channels, scheduled jobs, model providers, publishing destinations — is a **worker**. The core knows how to install, configure, schedule, run, observe, and uninstall workers; it knows nothing about any specific workflow. Add a worker to add a feature. Remove it to remove the feature.
+**A local-first personal AI operations platform built on a worker-first contract.**
 
-BFrost is local-first by design: model inference, scheduler state, queue state, and dashboard operations all run on your machine. There is no hosted service, no remote loading, no worker marketplace yet. Workers are loaded from local directories you control.
+BFrost is a control room you run on your own machine. You talk to it through Telegram (more channels coming), it answers using a model you choose — a local one via LM Studio or Ollama, or a cloud one via your own OpenAI or Anthropic key — and it schedules background work for you: news harvesting, research notes, publishing to X or WordPress, anything else you add. Every capability — assistants, channels, scheduled jobs, model providers, publishing destinations — is a **worker**. The core knows how to install, configure, schedule, run, observe, and uninstall workers; it knows nothing about any specific workflow. Add a worker to add a feature. Remove it to remove the feature.
+
+BFrost is local-first by design: model inference, scheduler state, queue state, and dashboard operations all run on your machine. There is no hosted service, no remote loading, no worker marketplace. Workers load from local directories you control, and your data stays in a SQLite file you own.
+
+## How BFrost compares
+
+BFrost lives in the same neighborhood as projects like [OpenClaw](https://github.com/openclaw/openclaw), [OpenHands](https://github.com/All-Hands-AI/OpenHands), and other personal-AI / self-hosted-assistant efforts. The differences worth knowing before you pick:
+
+- **Worker bus as the contract.** Workers communicate through a typed pub/sub Item Bus and namespaced storage — not through direct calls or shared globals. Adding a new publisher (X, WordPress, Mastodon, BlueSky) requires zero changes to existing workers; it just consumes the items it cares about and writes its outcome into its own metadata slice. The `news → X` pipeline already runs on this bus, and `workers/examples/wordpress-publisher/` is a full consumer example in under 300 lines.
+- **Tighter scope, smaller surface.** Single-user, SQLite-backed, no companion apps, no multi-agent routing, no Canvas. If you want a hackable scheduler + worker substrate you can read end-to-end in a weekend, this is built for that. If you want a multi-platform assistant with native apps, look at OpenClaw instead.
+- **Editorial workflow built-in.** News ingestion → research notes → publishing ships in the box as reference workers. The same shape works for any "fetch → think → publish" pipeline you want to build.
+
+Not a fit if: you need multi-user, you want a polished consumer UI, or you're not willing to run Node 20+ and a model endpoint on your own box.
 
 ## Status — public preview (`v0.2.0`)
 
