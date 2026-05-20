@@ -38,7 +38,7 @@ export function Sidebar<T extends string>({
   return (
     <aside className="sidebar" aria-label="Dashboard navigation" data-collapsed={collapsed}>
       <div className="sidebar-brand">
-        <div className="sidebar-logo" aria-hidden="true">T</div>
+        <img className="sidebar-logo" src="/bfrost-logo.jpeg" alt="BFrost" />
         <div className="sidebar-title">
           <strong>BFrost</strong>
           <span>Admin</span>

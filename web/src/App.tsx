@@ -1382,10 +1382,17 @@ export default function App() {
     return (
       <main className="shell">
         <section className="hero">
-          <div>
-            <p className="eyebrow">BFrost</p>
-            <h1>Control Room</h1>
-            <p className="hero-copy">Enter the admin password to unlock operator controls.</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <img
+              src="/bfrost-logo.jpeg"
+              alt="BFrost"
+              style={{ width: 72, height: 72, borderRadius: 16, objectFit: 'cover', flexShrink: 0 }}
+            />
+            <div>
+              <p className="eyebrow">BFrost</p>
+              <h1>Control Room</h1>
+              <p className="hero-copy">Enter the admin password to unlock operator controls.</p>
+            </div>
           </div>
         </section>
 
@@ -1422,14 +1429,13 @@ export default function App() {
 
   if (!dashboard) {
     return (
-      <main className="shell">
-        <section className="hero">
-          <p className="eyebrow">BFrost</p>
-          <h1>Control Room</h1>
-          <p className="hero-copy">Preparing your management dashboard.</p>
-          {error ? <p className="error-text">{error}</p> : null}
-        </section>
-      </main>
+      <div className="bfrost-splash">
+        <img src="/bfrost-logo.jpeg" alt="BFrost" />
+        <span>Loading BFrost…</span>
+        {error ? (
+          <p className="error-text" style={{ marginTop: '0.5rem' }}>{error}</p>
+        ) : null}
+      </div>
     );
   }
 

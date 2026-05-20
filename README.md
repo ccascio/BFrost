@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/bfrost-banner.jpeg" alt="BFrost — worker-first local AI operations platform" />
+</p>
+
 # BFrost
 
 **A local-first personal AI operations platform built on a worker-first contract.**
