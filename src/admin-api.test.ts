@@ -133,6 +133,9 @@ test('dashboard response schema accepts the control-room payload shape', () => {
           approvalRequired: true,
           promptEditable: true,
           promptHelpText: 'Available placeholders: {items}, {maxContentLength}, {signature}.',
+          promptExamples: [
+            { label: 'Terse', description: 'One-line summary per item', value: 'Post {items} concisely.' },
+          ],
           prompt: 'Use {items}.',
           params: {
             signature: '',

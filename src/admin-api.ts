@@ -177,6 +177,9 @@ export const SchedulerJobStateSchema = z.object({
   approvalRequired: z.boolean(),
   promptEditable: z.boolean(),
   promptHelpText: z.string().optional(),
+  promptExamples: z.array(
+    z.object({ label: z.string(), description: z.string(), value: z.string() }).strict(),
+  ).optional(),
   prompt: z.string(),
   params: z.record(z.unknown()).optional(),
   dashboardFields: z.array(JobDashboardFieldSchema),

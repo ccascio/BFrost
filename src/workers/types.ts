@@ -177,9 +177,17 @@ export interface WorkerJobPreset {
   params?: Record<string, unknown>;
 }
 
+export interface WorkerJobPromptExample {
+  label: string;
+  description: string;
+  value: string;
+}
+
 export interface WorkerJobPromptManifest {
   editable: boolean;
   helpText?: string;
+  /** One-click example prompts rendered as chips in the advanced-prompt editor. */
+  examples?: WorkerJobPromptExample[];
 }
 
 export type WorkerJobDashboardField =

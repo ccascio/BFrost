@@ -205,6 +205,7 @@ interface SchedulerJobState {
   approvalRequired: boolean;
   promptEditable: boolean;
   promptHelpText?: string;
+  promptExamples?: Array<{ label: string; description: string; value: string }>;
   prompt: string;
   params?: Record<string, unknown>;
   dashboardFields: JobDashboardField[];
@@ -1320,13 +1321,13 @@ export default function App() {
       }
 
       return (
-        <div className="field list-field" key={field.key}>
+        <div className={`field list-field${suggestions.length > 0 ? ' has-suggestions' : ''}`} key={field.key}>
           <span>{field.label}</span>
           {field.helpText ? <small>{field.helpText}</small> : null}
 
           {suggestions.length > 0 ? (
             <div className="suggestion-picker">
-              <span>Choose interests</span>
+              <span>Suggestions</span>
               <div className="suggestion-chip-grid">
                 {suggestions.map((suggestion) => {
                   const selected = stringListDraftIncludes(value, suggestion);
@@ -1346,36 +1347,42 @@ export default function App() {
             </div>
           ) : null}
 
-          <div className="list-editor">
-            {suggestions.length > 0 ? <span className="list-editor-label">Selected interests</span> : null}
-            {rows.map((item, index) => (
-              <div className="list-editor-row" key={`${field.key}-${index}`}>
-                <input
-                  type="text"
-                  value={item}
-                  placeholder={placeholder}
-                  onChange={(event) => {
-                    const nextRows = rows.slice();
-                    nextRows[index] = event.target.value;
-                    onChange(nextRows.join('\n'));
-                  }}
-                />
-                <button
-                  type="button"
-                  aria-label={`Remove ${field.label.toLowerCase()} item ${index + 1}`}
-                  title="Remove item"
-                  onClick={() => {
-                    const nextRows = rows.slice();
-                    nextRows.splice(index, 1);
-                    onChange(nextRows.join('\n'));
-                  }}
-                  disabled={rows.length <= 1 && item.trim().length === 0}
-                >
-                  -
-                </button>
-              </div>
-            ))}
-          </div>
+          {/* For suggestion-based fields, hide the editor until at least one item is selected.
+              Items arrive via chip clicks or the custom-entry below, not by typing in an empty row. */}
+          {(suggestions.length === 0 || stringListDraftItems(value).length > 0) ? (
+            <div className="list-editor">
+              {suggestions.length > 0 ? (
+                <span className="list-editor-label">Selected</span>
+              ) : null}
+              {rows.map((item, index) => (
+                <div className="list-editor-row" key={`${field.key}-${index}`}>
+                  <input
+                    type="text"
+                    value={item}
+                    placeholder={placeholder}
+                    onChange={(event) => {
+                      const nextRows = rows.slice();
+                      nextRows[index] = event.target.value;
+                      onChange(nextRows.join('\n'));
+                    }}
+                  />
+                  <button
+                    type="button"
+                    aria-label={`Remove ${field.label.toLowerCase()} item ${index + 1}`}
+                    title="Remove item"
+                    onClick={() => {
+                      const nextRows = rows.slice();
+                      nextRows.splice(index, 1);
+                      onChange(nextRows.join('\n'));
+                    }}
+                    disabled={rows.length <= 1 && item.trim().length === 0}
+                  >
+                    -
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
 
           {suggestions.length > 0 ? (
             <div className="list-custom-entry">
@@ -1394,7 +1401,7 @@ export default function App() {
                 }}
               />
               <button type="button" onClick={addCustomItem} disabled={!customDraft.trim()}>
-                Add interest
+                Add item
               </button>
             </div>
           ) : (
@@ -1406,10 +1413,6 @@ export default function App() {
                 Add item
               </button>
             </div>
-          )}
-
-          {suggestions.length === 0 ? null : (
-            <small>{stringListDraftItems(value).length} selected</small>
           )}
         </div>
       );
@@ -2581,6 +2584,29 @@ export default function App() {
                   rows={13}
                 />
                 {job.promptHelpText ? <small>{job.promptHelpText}</small> : null}
+                {job.promptExamples && job.promptExamples.length > 0 ? (
+                  <div className="prompt-examples">
+                    <small>Start from an example:</small>
+                    <div className="prompt-example-chips">
+                      {job.promptExamples.map((ex) => (
+                        <button
+                          key={ex.label}
+                          type="button"
+                          className="chip"
+                          title={ex.description}
+                          onClick={() =>
+                            setJobDrafts((current) => ({
+                              ...current,
+                              [job.name]: { ...draft, prompt: ex.value },
+                            }))
+                          }
+                        >
+                          {ex.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 <button
                   type="button"
                   className="secondary-inline"

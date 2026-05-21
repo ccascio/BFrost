@@ -30,6 +30,7 @@ export interface SchedulerJobState {
   approvalRequired: boolean;
   promptEditable: boolean;
   promptHelpText?: string;
+  promptExamples?: Array<{ label: string; description: string; value: string }>;
   prompt: string;
   params?: Record<string, unknown>;
   dashboardFields: SchedulerJobDashboardField[];
@@ -64,6 +65,7 @@ interface PersistedSchedulerState {
         | 'approvalRequired'
         | 'promptEditable'
         | 'promptHelpText'
+        | 'promptExamples'
         | 'prompt'
         | 'dashboardFields'
         | 'presets'
@@ -530,6 +532,7 @@ function hydrateRuntimeFromState(parsed: PersistedSchedulerState): void {
       approvalRequired: false,
       promptEditable: getRegisteredWorkerJob(name).job.prompt.editable,
       promptHelpText: getRegisteredWorkerJob(name).job.prompt.helpText,
+      promptExamples: getRegisteredWorkerJob(name).job.prompt.examples,
       prompt: '',
       dashboardFields: getRegisteredWorkerJob(name).job.dashboardFields,
       presets: getRegisteredWorkerJob(name).job.presets ?? [],
@@ -570,6 +573,7 @@ function buildJobState(
     approvalRequired: settings.approvalRequired,
     promptEditable: registered.job.prompt.editable,
     promptHelpText: registered.job.prompt.helpText,
+    promptExamples: registered.job.prompt.examples,
     prompt: settings.prompt,
     params: settings.params,
     dashboardFields: registered.job.dashboardFields,

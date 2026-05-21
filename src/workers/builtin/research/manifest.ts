@@ -112,7 +112,42 @@ export const researchWorker: WorkerManifest = {
       approvalRequiredDefault: false,
       approvalRequiredEditable: false,
       defaultPrompt: DEFAULT_RESEARCH_PROMPT,
-      prompt: { editable: true },
+      prompt: {
+        editable: true,
+        helpText: 'These instructions tell the AI how to turn raw search results into a research note. You can change the tone, focus, or output format — or start from one of the examples below.',
+        examples: [
+          {
+            label: 'Default analyst',
+            description: 'Balanced summary with sources — the default style.',
+            value: DEFAULT_RESEARCH_PROMPT,
+          },
+          {
+            label: 'Executive brief',
+            description: 'One short paragraph per topic — suitable for busy readers.',
+            value: `You are a research assistant writing for a busy executive.
+
+For each topic, write exactly one paragraph (3–5 sentences): what happened, why it matters, and one concrete action to consider.
+
+Be direct. No bullet points. No hype. End with a "Sources" section.
+
+Return Markdown only.`,
+          },
+          {
+            label: 'Deep dive',
+            description: 'Longer analysis with open questions and implications — good for technical topics.',
+            value: `You are a domain expert synthesising web findings into a detailed research note.
+
+For each topic cover:
+1. What changed or was discovered
+2. Technical or domain-specific implications
+3. Second-order effects to watch
+4. Open questions and gaps in current understanding
+5. Recommended follow-up searches
+
+Cite sources inline. Return Markdown only.`,
+          },
+        ],
+      },
       paramsSchema: PersonalResearchParamsSchema,
       defaultParams: DEFAULT_PERSONAL_RESEARCH_PARAMS,
       dashboardFields: [
