@@ -6,7 +6,7 @@ import { loadRuntimeWorkerBundle, workerQueueItemDetails, useWorkerDashboardView
 import type { WorkerDashboardViewDefinition } from './workers/types';
 
 type RunStatus = 'idle' | 'success' | 'error' | 'skipped';
-type CoreDashboardTab = 'overview' | 'workers' | 'jobs' | 'config' | 'chat' | 'system';
+type CoreDashboardTab = 'overview' | 'channels' | 'workers' | 'jobs' | 'config' | 'chat' | 'system';
 type DashboardTab = CoreDashboardTab | `worker:${string}`;
 type QueueFilter = 'all' | QueueItem['state'] | 'retrying';
 type CoreConfigKey = 'cloud-api-keys' | 'platform-routing' | 'embedding-model';
@@ -176,6 +176,7 @@ const CHAT_WELCOME = (
 
 const CORE_MENU_ENTRIES: Array<Omit<SidebarEntry<DashboardTab>, 'count'>> = [
   { id: 'overview', label: 'Overview', icon: 'overview', group: 'Workspace', order: 10 },
+  { id: 'channels', label: 'Channels', icon: 'channels', group: 'Workspace', order: 15 },
   { id: 'jobs', label: 'Jobs', icon: 'jobs', group: 'Workspace', order: 20 },
   { id: 'workers', label: 'Workers', icon: 'workers', group: 'Workspace', order: 30 },
   { id: 'config', label: 'Config', icon: 'config', group: 'Workspace', order: 40 },
@@ -545,6 +546,7 @@ export default function App() {
   const [selectedConfigSurfaceKey, setSelectedConfigSurfaceKey] = useState<string | null>(null);
   const [surfaceDrafts, setSurfaceDrafts] = useState<Record<string, Record<string, JobParamDraftValue>>>({});
   const [openPromptEditors, setOpenPromptEditors] = useState<Record<string, boolean>>({});
+  const [expandedChannelId, setExpandedChannelId] = useState<string | null>(null);
   const [customListItemDrafts, setCustomListItemDrafts] = useState<Record<string, string>>({});
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('all');
   const [selectedQueueItemId, setSelectedQueueItemId] = useState<string | null>(null);
@@ -1198,6 +1200,7 @@ export default function App() {
     }))
     .filter((group) => group.jobs.length > 0);
   const configGroupsByWorker = dashboard.workers
+    .filter((worker) => worker.kind !== 'channel') // channel workers have their own Channels tab
     .map((worker) => ({
       worker,
       surfaces: worker.dashboard.settings.filter((surface) => surface.tab === 'config'),
@@ -1247,6 +1250,7 @@ export default function App() {
       ...entry,
       count: coreMenuCount(entry.id, {
         workers: dashboard.workers.length,
+        channels: dashboard.workers.filter((w) => w.kind === 'channel').length,
         jobs: dashboard.cron.jobs.length,
         config: configJobCount + configSurfaceCount + configCoreCount,
         chat: chatTurns.length,
@@ -1691,6 +1695,8 @@ export default function App() {
           </form>
         </section>
       ) : null}
+
+      {activeTab === 'channels' ? renderChannelsTab() : null}
 
       {activeTab === 'jobs' ? (
         <section className="panel tab-page">
@@ -2650,6 +2656,84 @@ export default function App() {
     );
   }
 
+  function renderChannelsTab() {
+    const channelWorkers = dashboard!.workers.filter((w) => w.kind === 'channel');
+
+    if (channelWorkers.length === 0) {
+      return (
+        <section className="panel tab-page">
+          <div className="panel-head">
+            <div>
+              <p className="panel-kicker">Communication channels</p>
+              <h2>Channels</h2>
+            </div>
+          </div>
+          <p className="empty-state">
+            No channel workers are installed. Enable a channel worker (Telegram, Discord, …) from the Workers tab to connect it here.
+          </p>
+        </section>
+      );
+    }
+
+    return (
+      <section className="panel tab-page">
+        <div className="panel-head">
+          <div>
+            <p className="panel-kicker">Communication channels</p>
+            <h2>Channels</h2>
+          </div>
+          <StatusPill tone="muted">
+            {`${channelWorkers.filter((w) => w.healthState === 'healthy').length}/${channelWorkers.length} connected`}
+          </StatusPill>
+        </div>
+
+        <div className="stack-list channel-list">
+          {channelWorkers.map((worker) => {
+            const isConnected = worker.healthState === 'healthy';
+            const isOpen = expandedChannelId === worker.id;
+            const connectView = dashboardViews.find(
+              (v) => v.workerId === worker.id && v.kind === 'channel-connect',
+            );
+
+            return (
+              <div key={worker.id} className={`channel-card${isOpen ? ' open' : ''}`}>
+                <button
+                  type="button"
+                  className="channel-card-head run-button"
+                  aria-expanded={isOpen}
+                  onClick={() => setExpandedChannelId(isOpen ? null : worker.id)}
+                >
+                  <div className="channel-card-meta">
+                    <strong>{worker.displayName ?? worker.name}</strong>
+                    <span>{worker.tagline ?? worker.description}</span>
+                  </div>
+                  <div className="channel-card-actions">
+                    <StatusPill tone={isConnected ? 'good' : 'warning'}>
+                      {isConnected ? 'Connected' : 'Setup needed'}
+                    </StatusPill>
+                    <span className="channel-card-caret" aria-hidden="true">{isOpen ? '▲' : '▼'}</span>
+                  </div>
+                </button>
+
+                {isOpen ? (
+                  <div className="channel-card-body">
+                    {connectView ? (
+                      connectView.render({ onSaved: () => void fetchDashboard(true) })
+                    ) : (
+                      <p className="empty-state">
+                        This channel worker has no guided setup panel. Configure it from the Config tab.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    );
+  }
+
   function renderWorkerGroups(workers: WorkerSummary[]) {
     const groups: Array<{ kind: WorkerKind; label: string; description: string }> = [
       { kind: 'provider', label: 'LLM Platforms', description: 'Model runtimes. One local platform is active at a time; cloud platforms coexist.' },
@@ -3098,6 +3182,7 @@ function mergeSection(
 // table conservative is safer than under-fetching and showing empty UI.
 function sectionsForTab(tab: DashboardTab): DashboardSectionName[] {
   if (tab === 'overview') return ['queue', 'events', 'lmStudioModels'];
+  if (tab === 'channels') return ['workerData'];
   if (tab === 'jobs') return ['cronRuns', 'queue'];
   if (tab === 'system') return ['events', 'backups'];
   if (tab === 'chat') return [];
@@ -3113,6 +3198,10 @@ function buildWorkerTabDefinitions(
 ): WorkerTabDefinition[] {
   return workers.flatMap((worker) => {
     if (!worker.enabled || worker.missing) {
+      return [];
+    }
+    // Channel workers have their own Channels tab — no additional sidebar entry needed.
+    if (worker.kind === 'channel') {
       return [];
     }
 
@@ -3142,11 +3231,13 @@ function configSurfaceKey(workerId: string, surfaceId: string): string {
 
 function coreMenuCount(
   id: DashboardTab,
-  counts: { workers: number; jobs: number; config: number; chat: number; system: number },
+  counts: { workers: number; channels: number; jobs: number; config: number; chat: number; system: number },
 ): number | undefined {
   switch (id) {
     case 'workers':
       return counts.workers;
+    case 'channels':
+      return counts.channels;
     case 'jobs':
       return counts.jobs;
     case 'config':

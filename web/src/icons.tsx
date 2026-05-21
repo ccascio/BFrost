@@ -3,6 +3,7 @@ import type { SVGProps } from 'react';
 export type IconKey =
   | 'activity'
   | 'article'
+  | 'channels'
   | 'chat'
   | 'chevron-left'
   | 'chevron-right'
@@ -32,6 +33,14 @@ const icons: Record<IconKey, IconComponent> = {
   activity: (props) => (
     <svg {...baseProps} {...props}>
       <path d="M4 13h4l2-7 4 12 2-5h4" />
+    </svg>
+  ),
+  channels: (props) => (
+    <svg {...baseProps} {...props}>
+      <path d="M4.93 4.93a10 10 0 0 1 14.14 0" />
+      <path d="M7.76 7.76a6 6 0 0 1 8.49 0" />
+      <path d="M10.59 10.59a2 2 0 0 1 2.83 0" />
+      <circle cx="12" cy="14" r="1" fill="currentColor" stroke="none" />
     </svg>
   ),
   article: (props) => (
