@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 
 const npmCli = process.env.npm_execpath;
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -58,6 +58,56 @@ function stopProcess(child, signal = 'SIGTERM') {
   }
 }
 
+/**
+ * Kill any process already listening on `port` so a re-run of `npm run dev`
+ * doesn't collide with a leftover backend from a previous session.
+ * Uses `lsof` on macOS/Linux; falls back to `netstat`+`taskkill` on Windows;
+ * silently skips if neither tool is available or the port is already free.
+ */
+function freePort(port) {
+  try {
+    if (process.platform === 'win32') {
+      // netstat -ano | findstr :3030  → last column is PID
+      const out = execFileSync('netstat', ['-ano'], { encoding: 'utf8' });
+      const pids = new Set(
+        out.split('\n')
+          .filter((l) => l.includes(`:${port} `) && l.includes('LISTENING'))
+          .map((l) => l.trim().split(/\s+/).at(-1))
+          .filter(Boolean),
+      );
+      for (const pid of pids) {
+        try { execFileSync('taskkill', ['/PID', pid, '/F'], { stdio: 'ignore' }); } catch { /* already gone */ }
+      }
+    } else {
+      // lsof -ti:3030 returns one PID per line
+      let pids;
+      try {
+        pids = execFileSync('lsof', ['-ti', `:${port}`], { encoding: 'utf8' })
+          .trim().split('\n').filter(Boolean);
+      } catch {
+        return; // port is already free; lsof exits non-zero when no process found
+      }
+      if (pids.length === 0) return;
+      console.log(`[dev] Freeing port ${port} (PID${pids.length > 1 ? 's' : ''}: ${pids.join(', ')})...`);
+      try { execFileSync('kill', pids, { stdio: 'ignore' }); } catch { /* already gone */ }
+      // Give the process up to 1 s to release the socket before we bind it
+      const deadline = Date.now() + 1000;
+      while (Date.now() < deadline) {
+        try {
+          execFileSync('lsof', ['-ti', `:${port}`], { stdio: 'ignore' });
+          // Still alive — busy-wait a tick (synchronous sleep via Date)
+          const until = Date.now() + 50;
+          while (Date.now() < until) { /* spin */ }
+        } catch {
+          break; // port is free
+        }
+      }
+    }
+  } catch {
+    // Best-effort; don't fail the whole dev startup over a port-freeing hiccup.
+  }
+}
+
 console.log('[dev] Running unit tests before starting BFrost...');
 
 try {
@@ -68,6 +118,9 @@ try {
 }
 
 console.log('[dev] Tests passed. Starting Telegram agents and GUI...');
+
+// Release port 3030 if a previous dev session is still holding it.
+freePort(3030);
 
 const children = [
   { label: 'app', child: startLongRunning('Telegram agents/backend', process.execPath, ['dist/index.js']) },
