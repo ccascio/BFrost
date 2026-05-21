@@ -766,7 +766,13 @@ function workerCatalog(localWorkers: DiscoveredLocalWorker[]): Map<string, Catal
     catalog.set(worker.id, worker);
   }
   for (const worker of localWorkers) {
-    catalog.set(worker.manifest.id, { ...worker.manifest, sourcePath: worker.sourcePath });
+    const loaded = catalog.get(worker.manifest.id);
+    catalog.set(
+      worker.manifest.id,
+      loaded
+        ? { ...loaded, sourcePath: worker.sourcePath }
+        : { ...worker.manifest, sourcePath: worker.sourcePath },
+    );
   }
   return catalog;
 }
@@ -990,6 +996,10 @@ function listWorkerSummaries(
     const workerJobs = jobs.filter((job) => job.workerId === worker.id);
     const enabled = isWorkerEnabled(worker.id, workerState);
     const missing = !worker.builtIn && !localWorkers.some((local) => local.manifest.id === worker.id);
+    const dependencyStatuses: Record<string, HealthStatus> = {
+      ...health.dependencies,
+      ...health.integrations,
+    };
     const healthRows = [
       ...(worker.requiredCredentials ?? []).map((requirement) =>
         workerHealthRequirementStatus('credential', true, requirement, health.integrations),
@@ -998,10 +1008,10 @@ function listWorkerSummaries(
         workerHealthRequirementStatus('credential', false, requirement, health.integrations),
       ),
       ...(worker.requiredDependencies ?? []).map((requirement) =>
-        workerHealthRequirementStatus('dependency', true, requirement, health.dependencies),
+        workerHealthRequirementStatus('dependency', true, requirement, dependencyStatuses),
       ),
       ...(worker.optionalDependencies ?? []).map((requirement) =>
-        workerHealthRequirementStatus('dependency', false, requirement, health.dependencies),
+        workerHealthRequirementStatus('dependency', false, requirement, dependencyStatuses),
       ),
     ];
     const healthState = workerHealthState(workerJobs, healthRows);

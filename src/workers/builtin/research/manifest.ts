@@ -16,8 +16,8 @@ export const researchWorker: WorkerManifest = {
   description: 'Creates durable Markdown research notes from configured topics.',
   tagline: 'Writes a Markdown research note on each topic you care about, on a schedule. Notes are saved locally so you can read, edit, and keep them.',
   builtIn: true,
-  requiredCredentials: [
-    { key: 'googleSearchConfigured', label: 'Google Search credentials', settingsTarget: 'health-google' },
+  requiredDependencies: [
+    { key: 'googleSearchConfigured', label: 'Google Web Search', settingsTarget: 'config' },
   ],
   optionalDependencies: [
     { key: 'sqliteCli', label: 'SQLite CLI', settingsTarget: 'health-dependencies' },
@@ -30,14 +30,6 @@ export const researchWorker: WorkerManifest = {
       scope: 'job',
       storageKey: 'admin.settings.jobs.personal-research',
       dashboardTarget: 'jobs',
-    },
-    {
-      key: 'google-search-credentials',
-      label: 'Google Search credentials',
-      description: 'Local environment values used by the Research worker for Google Custom Search.',
-      scope: 'worker',
-      storageKey: '.env.GOOGLE_*',
-      dashboardTarget: 'config',
     },
     {
       key: 'research-topics',
@@ -58,30 +50,6 @@ export const researchWorker: WorkerManifest = {
   ],
   dashboard: {
     settings: [
-      {
-        id: 'google-credentials',
-        label: 'Google Search credentials',
-        description: 'API key and search engine ID used by the Research worker.',
-        tab: 'config',
-        path: '/api/google-credentials',
-        fields: [
-          {
-            key: 'googleApiKey',
-            label: 'Google API key',
-            type: 'secret-reference',
-            defaultValue: '',
-            placeholder: 'Configured in local .env',
-            helpText: 'Stored as GOOGLE_API_KEY. Leave blank to keep the current value.',
-          },
-          {
-            key: 'googleSearchEngineId',
-            label: 'Search engine ID',
-            type: 'text',
-            defaultValue: '',
-            helpText: 'Stored as GOOGLE_SEARCH_ENGINE_ID. Leave blank to keep the current value.',
-          },
-        ],
-      },
       {
         id: 'research-topics',
         label: 'Research topics',

@@ -1488,6 +1488,12 @@ h3 {
   line-height: 1.5;
 }
 
+.chat-empty-prompts {
+  margin: 0.25rem auto 0;
+  padding-left: 1.2rem;
+  text-align: left;
+}
+
 .chat-empty-kicker {
   color: var(--brand-deep);
   font-size: 0.78rem;

@@ -15,9 +15,9 @@ Does **not** publish onto the Item Bus today — research notes are end-user art
 - **Personal research job** — cron, model, prompt, parameter settings.
 - **Research topics** — schema-driven dashboard form. Each topic gets its own cadence.
 
-## Credentials
+## Dependencies
 
-- `requiredCredentials`: Google Custom Search (shared with `core.news`).
+- **Google Web Search** — required for source discovery. Configure Google Custom Search credentials in the Google Web Search worker.
 
 ## Operational notes
 

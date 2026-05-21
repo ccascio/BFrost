@@ -34,8 +34,8 @@ export const newsWorker: WorkerManifest = {
   description: 'Collects, evaluates, deduplicates, and queues news digest items.',
   tagline: 'Pulls articles from sources you choose, scores them for quality, and queues a short digest you can review before anything else uses it.',
   builtIn: true,
-  requiredCredentials: [
-    { key: 'googleSearchConfigured', label: 'Google Search credentials', settingsTarget: 'health-google' },
+  requiredDependencies: [
+    { key: 'googleSearchConfigured', label: 'Google Web Search', settingsTarget: 'config' },
   ],
   optionalDependencies: [
     { key: 'sqliteCli', label: 'SQLite CLI', settingsTarget: 'health-dependencies' },
@@ -50,14 +50,6 @@ export const newsWorker: WorkerManifest = {
       dashboardTarget: 'jobs',
     },
     {
-      key: 'google-search-credentials',
-      label: 'Google Search credentials',
-      description: 'Local environment values used by the News worker for Google Custom Search.',
-      scope: 'worker',
-      storageKey: '.env.GOOGLE_*',
-      dashboardTarget: 'config',
-    },
-    {
       key: 'source-quality-rules',
       label: 'Source quality rules',
       description: 'Host allow/block/preference rules used before queueing digest items.',
@@ -68,30 +60,6 @@ export const newsWorker: WorkerManifest = {
   ],
   dashboard: {
     settings: [
-      {
-        id: 'google-credentials',
-        label: 'Google Search credentials',
-        description: 'API key and search engine ID used by the News worker.',
-        tab: 'config',
-        path: '/api/google-credentials',
-        fields: [
-          {
-            key: 'googleApiKey',
-            label: 'Google API key',
-            type: 'secret-reference',
-            defaultValue: '',
-            placeholder: 'Configured in local .env',
-            helpText: 'Stored as GOOGLE_API_KEY. Leave blank to keep the current value.',
-          },
-          {
-            key: 'googleSearchEngineId',
-            label: 'Search engine ID',
-            type: 'text',
-            defaultValue: '',
-            helpText: 'Stored as GOOGLE_SEARCH_ENGINE_ID. Leave blank to keep the current value.',
-          },
-        ],
-      },
       {
         id: 'source-quality-rules',
         label: 'Source quality rules',

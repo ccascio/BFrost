@@ -16,7 +16,7 @@ import {
   findNearDuplicateMatch,
   type DuplicateReference,
 } from './near-duplicates';
-import { config, findModel } from '../../../config';
+import { config, findModel, type ModelOption } from '../../../config';
 import { createQueueItem, loadQueue, saveQueue, pruneQueue, withQueueLock, QueueItem } from '../../../jobs/queue';
 
 function newsProducerHeader(): Partial<QueueItem> {
@@ -49,6 +49,9 @@ export function resolveNewsDigestParams(raw: unknown): NewsDigestParams {
 const FILTER_TIMEOUT_MS = config.jobLlmTimeoutMs;
 const ARTICLE_FETCH_CONCURRENCY = 4;
 const NEWS_STATE_STORE_KEY = 'news.state';
+const LOCAL_FILTER_CONTENT_CHARS = 2_000;
+const LOCAL_ARTICLE_FETCH_CHARS = 4_000;
+const CLOUD_ARTICLE_FETCH_CHARS = 10_000;
 
 const FilterActionSchema = z.enum(['queue', 'reject']);
 const FilterDecisionSchema = z.object({
@@ -156,11 +159,49 @@ function safeShortDesc(text: string): string {
   return text.trim().slice(0, 400) || 'No snippet available from the search result.';
 }
 
-function buildFilterPrompt(results: ScoredSearchResult[], interests: string[]): string {
+interface NewsModelInputProfile {
+  model: ModelOption;
+  filterContentChars?: number;
+  articleFetchChars: number;
+}
+
+function resolveNewsModelInputProfile(modelId: string): NewsModelInputProfile {
+  const model = findModel(modelId);
+  if (!model) {
+    throw new Error(`Unknown model: ${modelId}`);
+  }
+
+  if (model.provider === config.activeLocalProviderId) {
+    return {
+      model,
+      filterContentChars: LOCAL_FILTER_CONTENT_CHARS,
+      articleFetchChars: LOCAL_ARTICLE_FETCH_CHARS,
+    };
+  }
+
+  return {
+    model,
+    articleFetchChars: CLOUD_ARTICLE_FETCH_CHARS,
+  };
+}
+
+function limitArticleContentForModel(content: string, maxChars: number | undefined): string {
+  if (!maxChars || content.length <= maxChars) return content;
+  return content.slice(0, maxChars);
+}
+
+function buildFilterPrompt(
+  results: ScoredSearchResult[],
+  interests: string[],
+  maxArticleContentChars?: number,
+): string {
   const list = results
     .map((r, i) => {
       const article = getArticleContext(r);
       const source = r.sourceAssessment;
+      const contentExcerpt = article.content
+        ? limitArticleContentForModel(article.content, maxArticleContentChars)
+        : '(none)';
       return (
         `[${i + 1}] source: ${article.sourceHost || 'unknown'}\n` +
         `    sourceScore: ${source.score}\n` +
@@ -172,7 +213,7 @@ function buildFilterPrompt(results: ScoredSearchResult[], interests: string[]): 
         `    pageFetched: ${article.fetched ? 'yes' : 'no'}\n` +
         `    pageTitle: ${article.title || '(none)'}\n` +
         `    pageDescription: ${article.description || '(none)'}\n` +
-        `    pageContentExcerpt: ${article.content ? article.content.slice(0, 1000) : '(none)'}\n` +
+        `    pageContentExcerpt: ${contentExcerpt}\n` +
         `    pageFetchError: ${article.error || '(none)'}`
       );
     })
@@ -231,22 +272,18 @@ interface FilterResult {
 }
 
 async function filterWithLLM(
-  modelId: string,
+  modelOption: ModelOption,
   candidates: ScoredSearchResult[],
   interests: string[],
+  maxArticleContentChars?: number,
 ): Promise<FilterResult> {
-  const modelOption = findModel(modelId);
-  if (!modelOption) {
-    throw new Error(`Unknown model: ${modelId}`);
-  }
-
   const { text } = await generateText({
     model: getChatModel(modelOption),
     system: FILTER_SYSTEM,
     // /no_think disables Qwen3's extended thinking mode so it outputs JSON directly
     // instead of reasoning through the task in a <think> block and leaving text empty.
     // Other models ignore this prefix.
-    prompt: '/no_think\n' + buildFilterPrompt(candidates, interests),
+    prompt: '/no_think\n' + buildFilterPrompt(candidates, interests, maxArticleContentChars),
     timeout: FILTER_TIMEOUT_MS,
   });
 
@@ -324,6 +361,7 @@ export async function runNewsDigest(modelId: string, params: NewsDigestParams = 
   // can't get clobbered.
   const storeDir = config.newsStoreDir;
   const statePath = path.join(storeDir, 'state.json');
+    const modelInputProfile = resolveNewsModelInputProfile(modelId);
     const nowIso = new Date().toISOString();
     const nowMs = Date.parse(nowIso);
     const digestRunId = newsRunFileForRanAt(nowIso);
@@ -396,7 +434,7 @@ export async function runNewsDigest(modelId: string, params: NewsDigestParams = 
     }
     console.log(`[NewsDigest] ${candidates.length} candidates after seen-URL and queue dedup.`);
 
-    const candidatesWithArticles = await enrichCandidates(candidates);
+    const candidatesWithArticles = await enrichCandidates(candidates, modelInputProfile.articleFetchChars);
     const articleFetchSuccessCount = candidatesWithArticles.filter((item) => item.article.fetched).length;
     const articleFetchFailureCount = candidatesWithArticles.length - articleFetchSuccessCount;
     console.log(
@@ -525,7 +563,12 @@ export async function runNewsDigest(modelId: string, params: NewsDigestParams = 
     let droppedHallucinated = 0;
     let undecidedCount = 0;
     if (llmCandidates.length > 0) {
-      const result = await filterWithLLM(modelId, llmCandidates, params.queries);
+      const result = await filterWithLLM(
+        modelInputProfile.model,
+        llmCandidates,
+        params.queries,
+        modelInputProfile.filterContentChars,
+      );
       queuedItems = result.queued;
       rejectedItems = result.rejected;
       droppedHallucinated = result.droppedHallucinated;
@@ -699,7 +742,7 @@ function queueProvenance(candidate: ScoredSearchResult, digestRunId: string): Pa
   };
 }
 
-async function enrichCandidates(candidates: SearchResult[]): Promise<EnrichedSearchResult[]> {
+async function enrichCandidates(candidates: SearchResult[], maxExtractedTextChars: number): Promise<EnrichedSearchResult[]> {
   const results: EnrichedSearchResult[] = [];
 
   for (let start = 0; start < candidates.length; start += ARTICLE_FETCH_CONCURRENCY) {
@@ -707,7 +750,7 @@ async function enrichCandidates(candidates: SearchResult[]): Promise<EnrichedSea
     const enrichedBatch = await Promise.all(
       batch.map(async (candidate) => ({
         ...candidate,
-        article: await fetchArticle(candidate.link),
+        article: await fetchArticle(candidate.link, { maxExtractedTextChars }),
       })),
     );
     results.push(...enrichedBatch);

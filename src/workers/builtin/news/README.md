@@ -15,12 +15,12 @@ Consumers should read these through the `newsPayloadFields(item)` helper in `new
 - **News digest job** — schedule, model, interests, digest size, and source discovery settings.
 - **Source quality rules** — schema-driven dashboard form. Min source score, must-have categories, banned hosts. Edited in the Config tab; values seeded from live state via `seedPath`.
 
-## Credentials
+## Dependencies
 
-- `requiredCredentials`: Google Custom Search (`GOOGLE_API_KEY`, `GOOGLE_SEARCH_ENGINE_ID`). Used for source discovery.
+- **Google Web Search** — required for source discovery. Configure `GOOGLE_API_KEY` and `GOOGLE_SEARCH_ENGINE_ID` in the Google Web Search worker, not in this consumer.
 
 ## Operational notes
 
 - Near-duplicate detection lives in `near-duplicates.ts` (canonical URL + title-token Jaccard). It runs per digest, not globally — re-runs can re-surface earlier items if the queue has been pruned.
 - `runs.ts` persists digest runs in worker-owned state for the dashboard's run history view.
-- Owns `/api/google-credentials` (the credentials form on the dashboard). The `core.search.google` worker imports the same credentials at runtime.
+- Google Custom Search credentials are owned by `core.search.google`.

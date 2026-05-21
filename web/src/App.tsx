@@ -211,7 +211,7 @@ const CHAT_WELCOME = (
     <p className="footnote" style={{ marginTop: '0.75rem' }}>
       Try one of these:
     </p>
-    <ul className="footnote" style={{ marginTop: '0.25rem', paddingLeft: '1.2rem' }}>
+    <ul className="chat-empty-prompts footnote">
       <li>"Run a news digest now."</li>
       <li>"What are the latest news items I have queued?"</li>
       <li>"Did the research job run today?"</li>
@@ -1250,9 +1250,7 @@ export default function App() {
     .map((worker) => ({
       worker,
       surfaces: worker.dashboard.settings.filter((surface) => surface.tab === 'config'),
-      jobs: dashboard.cron.jobs.filter((job) =>
-        job.workerId === worker.id && (job.dashboardFields.length > 0 || job.promptEditable),
-      ),
+      jobs: dashboard.cron.jobs.filter((job) => job.workerId === worker.id),
     }))
     .filter((group) => group.surfaces.length > 0 || group.jobs.length > 0);
   const configJobCount = configGroupsByWorker.reduce((count, group) => count + group.jobs.length, 0);
@@ -1956,9 +1954,7 @@ export default function App() {
                         <div>
                           <strong>{job.label}</strong>
                           <span>{job.description}</span>
-                          <span>
-                            {job.dashboardFields.length} fields{job.promptEditable ? ' · prompt' : ''}
-                          </span>
+                          <span>{jobConfigSummary(job)}</span>
                         </div>
                         <StatusPill tone="muted">Job</StatusPill>
                       </button>
@@ -2597,11 +2593,29 @@ export default function App() {
           </div>
         ) : null}
 
-        {job.dashboardFields.length > 0 ? (
-          <div className="job-grid config-field-grid">
-            {job.dashboardFields.map((field) => renderJobParamField(job, draft, field))}
-          </div>
-        ) : null}
+        <div className="job-grid config-field-grid">
+          <label className="field">
+            <span>Model override</span>
+            <select
+              value={draft.modelAlias}
+              onChange={(event) =>
+                setJobDrafts((current) => ({
+                  ...current,
+                  [job.name]: { ...draft, modelAlias: event.target.value },
+                }))
+              }
+            >
+              <option value="">Use default model</option>
+              {dashboard.models.map((model) => (
+                <option key={model.alias} value={model.alias}>
+                  {model.label}
+                </option>
+              ))}
+            </select>
+            <small>Pick a model just for this job. Leave blank to follow the platform default.</small>
+          </label>
+          {job.dashboardFields.map((field) => renderJobParamField(job, draft, field))}
+        </div>
 
         {job.promptEditable ? (
           <section className="advanced-settings">
@@ -2687,6 +2701,7 @@ export default function App() {
                 {
                   method: 'POST',
                   body: JSON.stringify({
+                    modelAlias: draft.modelAlias,
                     prompt: draft.prompt,
                     params: serializeJobParams(job, draft),
                   }),
@@ -3271,6 +3286,17 @@ function workerTabId(workerId: string): `worker:${string}` {
 
 function configSurfaceKey(workerId: string, surfaceId: string): string {
   return `${workerId}:${surfaceId}`;
+}
+
+function jobConfigSummary(job: SchedulerJobState): string {
+  const parts = ['model'];
+  if (job.dashboardFields.length > 0) {
+    parts.push(`${job.dashboardFields.length} field${job.dashboardFields.length === 1 ? '' : 's'}`);
+  }
+  if (job.promptEditable) {
+    parts.push('prompt');
+  }
+  return parts.join(' · ');
 }
 
 function coreMenuCount(
