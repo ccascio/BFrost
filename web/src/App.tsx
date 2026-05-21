@@ -7,6 +7,52 @@ import type { WorkerDashboardViewDefinition } from './workers/types';
 
 type RunStatus = 'idle' | 'success' | 'error' | 'skipped';
 type CoreDashboardTab = 'overview' | 'channels' | 'workers' | 'jobs' | 'config' | 'chat' | 'system';
+
+interface AppError {
+  friendly: string;
+  /** Raw technical message — shown under 'Details' toggle and included in the diagnostic bundle. */
+  detail?: string;
+}
+
+/** Map a raw caught error to a user-facing AppError. */
+function toAppError(raw: unknown): AppError {
+  const msg = raw instanceof Error ? raw.message : String(raw);
+  const lower = msg.toLowerCase();
+  if (lower.includes('failed to fetch') || lower.includes('networkerror') || msg === 'Load failed') {
+    return { friendly: 'Could not reach BFrost. Check that the server is still running.', detail: msg };
+  }
+  if (lower.includes('econnrefused')) {
+    return { friendly: 'Connection refused — BFrost may not be running.', detail: msg };
+  }
+  if (lower.includes('unauthorized') || msg.includes('401')) {
+    return { friendly: 'Your session has expired. Please log in again.', detail: msg };
+  }
+  if (lower.includes('forbidden') || msg.includes('403')) {
+    return { friendly: "You don't have permission to do that.", detail: msg };
+  }
+  if (lower.includes('not found') || msg.includes('404')) {
+    return { friendly: "That resource wasn't found. Try refreshing.", detail: msg };
+  }
+  if (msg.includes('500') || lower.includes('internal server error')) {
+    return { friendly: 'BFrost encountered an unexpected server error. Try again in a moment.', detail: msg };
+  }
+  if (msg.includes('502') || msg.includes('503')) {
+    return { friendly: 'BFrost is temporarily unavailable. Try again shortly.', detail: msg };
+  }
+  if (lower.includes('timeout') || lower.includes('timed out')) {
+    return { friendly: 'The request timed out. Try again.', detail: msg };
+  }
+  if (msg === 'Request failed') {
+    return { friendly: "The action didn't complete. Try again, or check the server logs.", detail: msg };
+  }
+  // Looks like a stack trace / long technical string
+  const looksLikeTechnical = msg.includes('\n') || /^error:/i.test(msg) || msg.length > 150
+    || (msg.includes(' at ') && msg.includes('.js:'));
+  if (looksLikeTechnical) {
+    return { friendly: 'Something went wrong.', detail: msg };
+  }
+  return { friendly: msg };
+}
 type DashboardTab = CoreDashboardTab | `worker:${string}`;
 type QueueFilter = 'all' | QueueItem['state'] | 'retrying';
 type CoreConfigKey = 'cloud-api-keys' | 'platform-routing' | 'embedding-model';
@@ -536,7 +582,7 @@ export default function App() {
   const [selectedModelAlias, setSelectedModelAlias] = useState('');
   const [jobDrafts, setJobDrafts] = useState<Record<string, JobDraft>>({});
   const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AppError | null>(null);
   const [notice, setNotice] = useState<string>('Loading dashboard...');
   const [password, setPassword] = useState('');
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
@@ -662,7 +708,7 @@ export default function App() {
       return payload;
     } catch (err) {
       if (showErrors) {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(toAppError(err));
         setNotice('Authentication check failed.');
       }
       return null;
@@ -735,7 +781,7 @@ export default function App() {
       // and keeps the poll cycle from hitting every endpoint every 15s.
       await refreshActiveTabSections();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toAppError(err));
       setNotice('Dashboard refresh failed.');
     }
   }
@@ -762,7 +808,7 @@ export default function App() {
         loadedSectionsRef.current.add(name);
         setDashboard((prev) => (prev ? mergeSection(prev, name, payload) : prev));
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(toAppError(err));
       } finally {
         inflightSectionsRef.current.delete(name);
       }
@@ -824,7 +870,7 @@ export default function App() {
       setNotice(successMessage);
       await fetchDashboard(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toAppError(err));
     } finally {
       setBusyKey(null);
     }
@@ -848,7 +894,7 @@ export default function App() {
       setNotice(successMessage);
       await fetchDashboard(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toAppError(err));
     } finally {
       setBusyKey(null);
     }
@@ -856,7 +902,7 @@ export default function App() {
 
   async function uploadWorkerZip() {
     if (!workerUploadFile) {
-      setError('Choose a worker zip before uploading.');
+      setError({ friendly: 'Choose a worker zip before uploading.' });
       return;
     }
 
@@ -881,7 +927,7 @@ export default function App() {
       setNotice('Worker uploaded.');
       await fetchDashboard(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toAppError(err));
     } finally {
       setBusyKey(null);
     }
@@ -906,7 +952,7 @@ export default function App() {
       setNotice(`${worker.name} worker deleted.`);
       await fetchDashboard(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toAppError(err));
     } finally {
       setBusyKey(null);
     }
@@ -1051,7 +1097,7 @@ export default function App() {
       await fetchDashboard(true);
       setNotice('Dashboard chat answered.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toAppError(err));
     } finally {
       setBusyKey(null);
     }
@@ -1078,7 +1124,7 @@ export default function App() {
       setNotice('Authenticated.');
       await fetchDashboard(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toAppError(err));
     } finally {
       setBusyKey(null);
     }
@@ -1160,7 +1206,7 @@ export default function App() {
             </button>
           </div>
 
-          {error ? <p className="error-box">{error}</p> : null}
+          {error ? <p className="error-box">{error.friendly}</p> : null}
         </section>
       </main>
     );
@@ -1172,7 +1218,7 @@ export default function App() {
         <img src="/bfrost-logo.jpeg" alt="BFrost" />
         <span>Loading BFrost…</span>
         {error ? (
-          <p className="error-text" style={{ marginTop: '0.5rem' }}>{error}</p>
+          <p className="error-text" style={{ marginTop: '0.5rem' }}>{error?.friendly}</p>
         ) : null}
       </div>
     );
@@ -3108,9 +3154,7 @@ export default function App() {
                 <strong>{run.summary ?? runStatusSummary(run)}</strong>
                 <span>{run.status} · {formatDate(run.startedAt)}</span>
                 <span>{run.trigger} · {run.modelAlias}{typeof run.itemCount === 'number' ? ` · ${run.itemCount} items` : ''}{runDuration(run) ? ` · ${runDuration(run)}` : ''}</span>
-                {run.error ? (
-                  <p className="error-text">{run.error}</p>
-                ) : null}
+                {run.error ? <RunError message={run.error} /> : null}
               </div>
               <StatusPill tone={runStatusTone(run.status)}>{run.status}</StatusPill>
             </div>
@@ -3486,6 +3530,28 @@ function StatusPill({
   tone: 'good' | 'warning' | 'info' | 'muted';
 }) {
   return <span className={`status-pill ${tone}`}>{children}</span>;
+}
+
+const RUN_ERROR_PREVIEW_CHARS = 180;
+
+function RunError({ message }: { message: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = message.length > RUN_ERROR_PREVIEW_CHARS;
+  const display = expanded || !isLong ? message : `${message.slice(0, RUN_ERROR_PREVIEW_CHARS)}…`;
+  return (
+    <div className="run-error">
+      <p className="error-text">{display}</p>
+      {isLong ? (
+        <button
+          type="button"
+          className="run-error-toggle"
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 function statusTone(status: RunStatus): 'good' | 'warning' | 'info' | 'muted' {

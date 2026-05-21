@@ -1,8 +1,14 @@
+import { useState } from 'react';
 import type { ChangeEventHandler } from 'react';
+
+interface AppError {
+  friendly: string;
+  detail?: string;
+}
 
 interface TopBarProps {
   notice: string;
-  error: string | null;
+  error: AppError | null;
   environment: string;
   adminUrl: string;
   pid: number;
@@ -41,6 +47,25 @@ export function TopBar({
   onDismissError,
   onLogout,
 }: TopBarProps) {
+  const [showDetail, setShowDetail] = useState(false);
+
+  // Reset detail panel when error changes
+  const errorKey = error?.friendly ?? '';
+
+  function copyDiagnostic() {
+    if (!error) return;
+    const bundle = JSON.stringify({
+      timestamp: new Date().toISOString(),
+      error: {
+        friendly: error.friendly,
+        technical: error.detail ?? error.friendly,
+      },
+      bfrost: { adminUrl, pid },
+      browser: navigator.userAgent,
+    }, null, 2);
+    void navigator.clipboard.writeText(bundle);
+  }
+
   return (
     <header className="topbar">
       <div className="topbar-title">
@@ -101,10 +126,35 @@ export function TopBar({
       </div>
 
       {error ? (
-        <div className="toast error-toast" role="alert">
-          <span>{error}</span>
-          <button type="button" aria-label="Dismiss error" onClick={onDismissError}>
-            Dismiss
+        <div className="toast error-toast" role="alert" key={errorKey}>
+          <div className="error-toast-body">
+            <span className="error-toast-message">{error.friendly}</span>
+            {error.detail ? (
+              <div className="error-toast-meta">
+                <button
+                  type="button"
+                  className="error-toast-toggle"
+                  aria-expanded={showDetail}
+                  onClick={() => setShowDetail((v) => !v)}
+                >
+                  {showDetail ? 'Hide details' : 'Show details'}
+                </button>
+                <button
+                  type="button"
+                  className="error-toast-toggle"
+                  title="Copy diagnostic bundle to clipboard"
+                  onClick={copyDiagnostic}
+                >
+                  Copy
+                </button>
+              </div>
+            ) : null}
+            {showDetail && error.detail ? (
+              <pre className="error-toast-detail">{error.detail}</pre>
+            ) : null}
+          </div>
+          <button type="button" className="error-toast-dismiss" aria-label="Dismiss error" onClick={onDismissError}>
+            ✕
           </button>
         </div>
       ) : null}
