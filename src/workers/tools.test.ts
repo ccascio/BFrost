@@ -6,7 +6,22 @@ test('built-in workers expose the assistant tool catalog', () => {
   const tools = listRegisteredTools();
   const names = tools.map((entry) => entry.manifest.name).sort();
 
-  assert.deepEqual(names, ['fetchArticle', 'queryItems', 'recallMemory', 'recentRuns', 'saveMemory', 'webSearch']);
+  assert.deepEqual(names, [
+    'disableJob',
+    'disableWorker',
+    'enableJob',
+    'enableWorker',
+    'fetchArticle',
+    'listJobs',
+    'listWorkers',
+    'queryItems',
+    'recallMemory',
+    'recentRuns',
+    'saveMemory',
+    'setJobSchedule',
+    'triggerJob',
+    'webSearch',
+  ]);
 });
 
 test('tool ownership and metadata are consistent with the manifest', () => {
