@@ -81,6 +81,27 @@ let runtimeCache: Partial<Record<JobName, SchedulerJobState>> = {};
 let started = false;
 const tasks = new Map<JobName, ScheduledTask>();
 
+// Coalesce concurrent reloadSchedules() calls: at most one in-flight + one queued.
+// All callers read the same fresh settings, so there is no value in running more
+// than two reloads back-to-back.
+let reloadInFlight: Promise<void> | null = null;
+let reloadQueued = false;
+
+// FIFO job execution queue: serialises all runJobWork() calls so jobs never run
+// concurrently.  A hung job blocks the queue; add a per-job timeout if that
+// becomes a problem (TODO: job timeout).
+let jobChain: Promise<void> = Promise.resolve();
+
+function enqueueJobExecution(work: () => Promise<void>): Promise<void> {
+  const next = jobChain.then(() =>
+    work().catch((err) => {
+      console.error('[Scheduler] Queued job error:', err);
+    }),
+  );
+  jobChain = next;
+  return next;
+}
+
 export async function startScheduler(): Promise<void> {
   if (started) {
     return;
@@ -155,10 +176,12 @@ export async function triggerJobNow(name: JobName, options: TriggerJobOptions = 
     },
   });
 
-  void runJobWork(name, jobSettings, 'manual', startedAt, runRecord, current.effectiveModelAlias, {
-    paramsOverride: options.paramsOverride,
-    notifyOnCompletion: options.notifyOnCompletion ?? false,
-  });
+  void enqueueJobExecution(() =>
+    runJobWork(name, jobSettings, 'manual', startedAt, runRecord, current.effectiveModelAlias, {
+      paramsOverride: options.paramsOverride,
+      notifyOnCompletion: options.notifyOnCompletion ?? false,
+    }),
+  );
   return buildJobState(name, jobSettings, workerState);
 }
 
@@ -170,6 +193,28 @@ export async function reloadSchedulerSchedules(): Promise<void> {
 }
 
 async function reloadSchedules(): Promise<void> {
+  if (reloadInFlight) {
+    // A reload is already running — mark that another one should follow and wait.
+    reloadQueued = true;
+    await reloadInFlight;
+    return;
+  }
+
+  reloadInFlight = (async () => {
+    try {
+      do {
+        reloadQueued = false;
+        await doReloadSchedules();
+      } while (reloadQueued);
+    } finally {
+      reloadInFlight = null;
+    }
+  })();
+
+  await reloadInFlight;
+}
+
+async function doReloadSchedules(): Promise<void> {
   const settings = await ensureSettings();
   const workerState = await loadWorkerState();
 
@@ -391,7 +436,9 @@ async function runJob(
       modelAlias: current.effectiveModelAlias,
     },
   });
-  await runJobWork(name, jobSettings, trigger, startedAt, runRecord, current.effectiveModelAlias);
+  await enqueueJobExecution(() =>
+    runJobWork(name, jobSettings, trigger, startedAt, runRecord, current.effectiveModelAlias),
+  );
 }
 
 function schedulerCommandKey(name: JobName): string {
