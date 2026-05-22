@@ -12,6 +12,7 @@ import { acquireSchedulerExecutionLock } from './scheduler-locks';
 import { isWorkerEnabled, loadWorkerState, type WorkerStateStore } from './workers/state';
 
 const SCHEDULER_STATE_STORE_KEY = 'scheduler.state';
+const MISSED_CATCHUP_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 
 type SchedulerJobDashboardField = WorkerJobDashboardField;
 
@@ -212,18 +213,61 @@ async function recordSkippedScheduleExecution(
   reason: 'missed' | 'overlap',
   ctx: TaskContext,
 ): Promise<void> {
-  const scheduledAt = ctx.date.toISOString();
-  const finishedAt = new Date().toISOString();
+  // ctx.date is the NEXT scheduled slot after the missed one (node-cron advances
+  // expectedNextExecution before calling onMissedExecution).
+  const nextScheduledAt = ctx.date.toISOString();
+  const now = new Date();
+  const finishedAt = now.toISOString();
   const registered = getRegisteredWorkerJob(name);
   const reasonText = reason === 'missed'
     ? 'missed its scheduled execution because the Node event loop was unavailable'
     : 'was skipped because a previous execution was still running';
   const message = `${jobLabels()[name]} ${reasonText}.`;
 
+  // Always record the event first for full observability.
+  await recordEventSafe({
+    category: 'job',
+    action: reason === 'missed' ? 'missed' : 'overlap_skipped',
+    severity: 'warning',
+    summary: message,
+    metadata: {
+      job: name,
+      workerId: registered.worker.id,
+      workerName: registered.worker.name,
+      trigger: 'schedule',
+      scheduledAt: nextScheduledAt,
+      recordedAt: finishedAt,
+      reason,
+    },
+  });
+
+  // For missed executions, attempt a catch-up run if the missed slot is recent enough.
+  // Misses are typically caused by macOS sleep freezing setTimeout timers; on wake-up
+  // the heartbeat fires late and node-cron emits execution:missed for each skipped slot.
+  if (reason === 'missed') {
+    const missedSlotTime = getMissedSlotTime(name, ctx.date);
+    const ageMs = missedSlotTime ? now.getTime() - missedSlotTime.getTime() : Infinity;
+
+    if (missedSlotTime && ageMs <= MISSED_CATCHUP_WINDOW_MS) {
+      console.log(
+        `[Scheduler] Missed ${name} execution (age: ${Math.round(ageMs / 1000)}s) — catching up now.`,
+      );
+      // Pass the original missed slot as scheduledAt so the execution lock deduplicates
+      // correctly against any concurrent real fires for the same slot.
+      void runJob(name, jobSettings, 'schedule', { scheduledAt: schedulerSlotIso(missedSlotTime) });
+      return; // Catch-up job records its own started/succeeded/failed events.
+    }
+
+    console.warn(
+      `[Scheduler] Missed ${name} execution is ${Math.round(ageMs / 60000)}min old — skipping catch-up (window: ${MISSED_CATCHUP_WINDOW_MS / 60000}min).`,
+    );
+  }
+
+  // Record as skipped: overlaps and stale misses that are outside the catch-up window.
   runtimeCache[name] = {
     ...buildJobState(name, jobSettings),
     running: false,
-    lastStartedAt: scheduledAt,
+    lastStartedAt: nextScheduledAt,
     lastFinishedAt: finishedAt,
     lastStatus: 'skipped',
     lastSummary: null,
@@ -236,7 +280,7 @@ async function recordSkippedScheduleExecution(
     label: jobLabels()[name],
     trigger: 'schedule',
     modelAlias: jobSettings.modelAlias || getDefaultModelAlias(),
-    startedAt: scheduledAt,
+    startedAt: nextScheduledAt,
   });
   if (runRecord) {
     await finishSchedulerRunSafe(runRecord.id, {
@@ -247,23 +291,48 @@ async function recordSkippedScheduleExecution(
       itemCount: null,
     });
   }
-
-  await recordEventSafe({
-    category: 'job',
-    action: reason === 'missed' ? 'missed' : 'overlap_skipped',
-    severity: 'warning',
-    summary: message,
-    metadata: {
-      job: name,
-      workerId: registered.worker.id,
-      workerName: registered.worker.name,
-      trigger: 'schedule',
-      scheduledAt,
-      recordedAt: finishedAt,
-      reason,
-    },
-  });
   await persistRuntime();
+}
+
+/**
+ * Compute the actual missed slot time given the node-cron TaskContext date, which
+ * is the NEXT scheduled slot after the missed one (node-cron advances
+ * expectedNextExecution before calling onMissedExecution).
+ *
+ * Strategy: use the task's internal TimeMatcher (a public property on
+ * InlineScheduledTask) to iterate through scheduled slots within 48h before
+ * ctxDate and return the last one — that's the slot that was missed.
+ *
+ * Wrapped in try-catch so that if the internal API ever changes, catch-up silently
+ * degrades rather than crashing the scheduler.
+ */
+function getMissedSlotTime(name: JobName, ctxDate: Date): Date | null {
+  try {
+    const task = tasks.get(name);
+    if (!task) return null;
+
+    // timeMatcher is a public property on InlineScheduledTask but not on the
+    // ScheduledTask interface — access via unknown cast, guarded by try-catch.
+    const timeMatcher = (task as unknown as { timeMatcher: { getNextMatch(d: Date): Date } })
+      .timeMatcher;
+    if (typeof timeMatcher?.getNextMatch !== 'function') return null;
+
+    const ctxMs = ctxDate.getTime();
+    let t = new Date(ctxMs - 48 * 60 * 60 * 1000); // start 48h before ctx.date
+    let lastMatchBeforeCtx: Date | null = null;
+
+    // Walk forward through scheduled slots, stopping just before ctxDate.
+    for (let i = 0; i < 300; i++) {
+      const nextT = timeMatcher.getNextMatch(t);
+      if (nextT.getTime() >= ctxMs) break;
+      lastMatchBeforeCtx = nextT;
+      t = nextT;
+    }
+
+    return lastMatchBeforeCtx;
+  } catch {
+    return null;
+  }
 }
 
 async function runJob(
