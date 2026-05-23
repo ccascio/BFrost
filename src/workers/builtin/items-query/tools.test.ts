@@ -111,7 +111,10 @@ test('queryItems includes producer attribution and short description in output',
   await withTempStore(async () => {
     await seedNewsItem('a', '2026-05-01T10:00:00.000Z');
     const result = await queryItems({});
-    assert.ok(result.includes('from core.news'), 'producer attribution present');
+    // core.news uses summarizeForAssistant which produces:
+    //   • "News a" (from core.news · news.article · queued) — Short a
+    //     https://example.com/news/a
+    assert.ok(result.includes('core.news'), 'producer attribution present');
     assert.ok(result.includes('news.article'), 'item type present');
     assert.ok(result.includes('Short a'), 'short description present');
     assert.ok(result.includes('https://example.com/news/a'), 'url present');

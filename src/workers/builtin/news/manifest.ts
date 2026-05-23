@@ -277,10 +277,13 @@ export const newsWorker: WorkerManifest = {
       : state === 'seen' ? 'seen'
       : state || 'unknown';
 
+    // Build a meta tag: always include producer ID and item type for attribution.
+    const meta: string[] = ['from core.news', 'news.article', stateLabel];
+    if (host) meta.splice(1, 0, host); // insert host after "from core.news" when available
+
     const parts: string[] = [];
-    parts.push(`News: "${title}"`);
-    if (host) parts.push(`from ${host}`);
-    parts.push(`[${stateLabel}]`);
+    parts.push(`"${title}"`);
+    parts.push(`(${meta.join(' · ')})`);
     if (shortDesc) parts.push(`— ${shortDesc.slice(0, 120)}${shortDesc.length > 120 ? '…' : ''}`);
     return parts.join(' ');
   },

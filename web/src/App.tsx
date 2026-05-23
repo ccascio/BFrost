@@ -3096,6 +3096,20 @@ export default function App() {
           >
             {job.running ? 'Running...' : 'Run now'}
           </button>
+          {jobDrafts[job.name] !== undefined ? (
+            <button
+              type="button"
+              onClick={() =>
+                setJobDrafts((current) => {
+                  const next = { ...current };
+                  delete next[job.name];
+                  return next;
+                })
+              }
+            >
+              Discard changes
+            </button>
+          ) : null}
         </div>
 
         {renderJobDetail(job, runs)}
@@ -3265,6 +3279,20 @@ export default function App() {
           >
             Save configuration
           </button>
+          {jobDrafts[job.name] !== undefined ? (
+            <button
+              type="button"
+              onClick={() =>
+                setJobDrafts((current) => {
+                  const next = { ...current };
+                  delete next[job.name];
+                  return next;
+                })
+              }
+            >
+              Discard changes
+            </button>
+          ) : null}
         </div>
       </div>
     );
@@ -3711,6 +3739,20 @@ export default function App() {
           >
             {busyKey === `config-surface-${key}` ? 'Saving...' : 'Save configuration'}
           </button>
+          {surfaceDrafts[key] !== undefined ? (
+            <button
+              type="button"
+              onClick={() =>
+                setSurfaceDrafts((current) => {
+                  const next = { ...current };
+                  delete next[key];
+                  return next;
+                })
+              }
+            >
+              Discard changes
+            </button>
+          ) : null}
           {!canPersist ? <span className="footnote">This manifest declares defaults, but no save endpoint.</span> : null}
         </div>
       </div>
