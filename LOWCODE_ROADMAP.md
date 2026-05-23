@@ -73,17 +73,25 @@ The worker contract stays exactly as it is. What changes is the **surface** that
 
 **Exit criteria:** A non-developer can change the news digest schedule, add a source, preview the next run, and revert a mistake without ever opening a code editor or reading the worker's README.
 
-### Workstream D — Worker Catalog And One-Click Install
+### Workstream D — Store Integration (bfrost.net) And One-Click Install
 
-**Goal:** workers feel like apps — browsable, install-on-click, configure-with-a-form.
+**Goal:** the in-dashboard "Store" tab is a native client of `api.bfrost.net` — exactly like WordPress's plugin browser. Workers feel like apps: browsable from inside BFrost, install-on-click, no terminal required. The public catalog at [bfrost.net/store](https://bfrost.net/store) and the in-app tab share the same backend (`api.bfrost.net/v1`). No separate catalog is built inside the app.
 
-- [ ] **In-dashboard catalog tab.** Lists bundled workers, local workers, and (later) curated community workers. Each card shows display name, one-sentence description, icon, required credentials, and an Install / Enable / Configure button.
-- [ ] **Search and filter.** By category (Channels, Publishing, Research, Tools, Providers) and by capability tag (`sends-messages`, `posts-publicly`, `reads-files`).
-- [ ] **Worker proposals from inside the app.** "Don't see what you need?" links to a short form (or a GitHub Discussion) for proposing new workers, with the requestor's use case pre-templated.
-- [ ] **Local installation without a terminal.** A "Add from folder" or "Add from .zip" button next to Rescan, so a non-developer can install a worker someone shared with them. (Honors the worker-first contract — drop into `workers/local/`, run the existing compile-on-load pipeline.)
-- [ ] **Per-worker review surface.** When a worker first asks to do something risky (post publicly, send messages, write a file), the user sees a clear dialog explaining what it wants and a single Approve / Decline. This is the user-facing half of Workstream 5 from `ROADMAP.md`.
+> **Architecture decision (2026-05-23):** The store at `bfrost.net` is live and the Cloudflare Workers API at `api.bfrost.net/v1` is deployed. The app's catalog tab will be a **native API client** — not an iframe, not an embedded browser. The app calls the same API endpoints the website uses (`GET /v1/workers`, `GET /v1/workers/:id`, `GET /v1/updates`).
 
-**Exit criteria:** A non-developer can browse the catalog, install a community worker someone sent them as a `.zip`, fill in its credentials, and run it — all from the dashboard.
+- [ ] **Store tab in the dashboard.** A new "Store" entry in the sidebar (between Workers and Channels). Calls `GET https://api.bfrost.net/v1/workers` to populate a card grid. Each card shows: display name, tagline, author, trust badge, capability tags, and an **Install** button. Typing in the search box calls the API with `?q=`. Category and trust-level filters mirror the website's filter bar.
+- [ ] **Worker detail panel.** Clicking a card opens a side-panel (or overlay) showing the full detail: README (rendered as Markdown, fetched from `GET /v1/workers/:id`), permission breakdown (plain-language descriptions from the BFrost manifest's `permissions` field), version history, and related workers. Matches the detail page on the website — same data, same shape, native look.
+- [ ] **Install from store.** The **Install** button triggers a two-step flow:
+  1. **Permission consent dialog.** Lists the worker's declared `permissions` with plain-language descriptions and a single Approve / Cancel. This is the user-facing half of Workstream 5 from `ROADMAP.md` and the app-side of the website's Phase 4 deep-link. _(Requires: `permissions` field enforced at install — see cross-repo deps below.)_
+  2. **Download + extract.** On approve, the app calls `GET https://api.bfrost.net/v1/packages/:id/latest` (or the pinned version), streams the tarball, verifies the declared `bundleSha256`, extracts to `workers/local/<id>/`, and triggers a rescan. No `npm install`. No terminal.
+- [ ] **`bfrost://install?id=&version=` deep-link handler.** Registers a custom URL scheme so the website's **Install** button can launch the app directly. The handler shows the same permission consent dialog before downloading. _(macOS-only initially — see `ROADMAP.md` Non-goals for Windows/Linux status.)_
+- [ ] **Update notifications.** On startup (and every 24 h), the app calls `GET https://api.bfrost.net/v1/updates?ids=...&versions=...` with the installed worker list. If any worker has a newer version, a badge appears on the Store tab and an update card in the Workers tab.
+- [ ] **Sideload without a terminal ("Add from .zip").** A "Sideload" button in the Store tab opens a file picker. The user selects a `.tar.gz` or `.zip` archive (e.g. shared by a friend). The app extracts it to `workers/local/<id>/` and rescans — same pipeline as the store install path, but without the API call. The permission consent dialog still shows (populated from the extracted manifest).
+- [ ] **"Don't see it? Propose it."** A link at the bottom of the Store tab opens `https://bfrost.net/publish` in the system browser with a pre-templated GitHub Discussion or form. _(No in-app form needed — the website handles this.)_
+
+**Blocked on (cross-repo):** `bfrostEngine` field in the manifest schema; `permissions` field enforced at install; `@bfrost/manifest-schema` npm package extraction — see the **Cross-Repo Dependencies** section below.
+
+**Exit criteria:** A non-developer can open the Store tab, search for a community worker, read its README and permissions inside the app, click Install, approve the permissions, and have the worker running — without touching the terminal or the filesystem.
 
 ### Workstream E0 — Assistant Can Answer Questions About BFrost's Own State
 
@@ -134,22 +142,44 @@ The worker contract stays exactly as it is. What changes is the **surface** that
 
 ---
 
+## Cross-Repo Dependencies
+
+These items live in the BFrost application repo but block phases of the website / store roadmap. Each one is a gate; none is optional.
+
+| Item | Blocks | Status |
+|------|--------|--------|
+| `@bfrost/manifest-schema` npm package (extract `WorkerManifest` + Zod schema from `src/workers/types.ts` + `src/admin-api.ts`) | Website Phase 1 CI gate; store's server-side validation | ❌ Not started |
+| `bfrostEngine` semver-range field on `WorkerManifest` | Store compatibility badges; `@bfrost/manifest-schema` publish | ❌ Not started |
+| `permissions` field enforced at install (permission runtime — `ROADMAP.md` Workstream 5) | Trust tiers meaningful; install consent dialog in Workstream D | ❌ Open in `ROADMAP.md` |
+| `bfrost pack` CLI command | Store Phase 3 self-serve publishing; author toolchain | ❌ Not started |
+| `bfrost worker install <spec>` CLI command | Store Phase 3 one-line install; first-run wizard Step 6 | ❌ Not started |
+| `bfrost://install?id=&version=` deep-link handler (macOS) | Store Phase 4 one-click from website | ❌ Not started |
+| Admin API: rescan + uninstall as complete operations | Store Phase 3 | ⚠️ Partial |
+| In-host catalog tab — Workstream D | Store Phase 4 | ❌ Not started |
+| Update notification polling (`GET /v1/updates`) | Store Phase 4 | ❌ Not started |
+
+> **Start here:** `@bfrost/manifest-schema` extraction is the highest-leverage item. It unblocks website Phase 1 CI and gives the store and the app a single shared validation contract. The extraction is a mechanical refactor — move `WorkerManifest` and its Zod schema into a new `packages/manifest-schema/` directory, publish to npm as `@bfrost/manifest-schema`, and update imports.
+
+---
+
 ## Suggested Sequencing
 
 This roadmap depends on the technical platform reaching the state described in `ROADMAP.md` Workstreams 1, 3, and 4. Beyond that, a realistic order:
 
-1. **Workstream C** first. Improving the built-in worker dashboards benefits every existing user immediately and proves the patterns the catalog (D) will reuse.
-2. **Workstream B** alongside C. WhatsApp + a polished Telegram flow are the headline feature for a low-code audience.
-3. **Workstream D** once C's patterns are stable.
-4. **Workstream A** when B + D are good enough that an installer is a worthwhile thing to ship. Building a Tauri/Electron installer earlier wraps an unfinished UX.
-5. **Workstreams E, F, G** in parallel with the above; F (backups + safe mode) blocks any broader public release.
+1. **Cross-repo: `@bfrost/manifest-schema`** first. Unblocks the website CI gate and is the shared contract everything else depends on. Mechanical, low-risk.
+2. **Workstream C** alongside the schema work. Improving the built-in worker dashboards benefits every existing user immediately.
+3. **Workstream B** (WhatsApp + Email). The headline feature for a low-code audience.
+4. **Workstream D (Store tab MVP)** — fetch and display the store catalog, sideload from .zip. The permission consent and deep-link flow follow once the permission runtime (ROADMAP.md W5) lands.
+5. **Workstream F** (backups + safe mode) — blocks any broader public release.
+6. **Workstream A** (installer) when B + D are solid enough that packaging them is worthwhile.
+7. **Workstreams E, G** in parallel; most items here are polish on top of working features.
 
 ---
 
 ## Out Of Scope For This Track
 
 - Hosted/cloud BFrost. Everything here stays local-first.
-- A worker marketplace with anonymous publishers (still out of scope per `ROADMAP.md`).
+- A worker marketplace with anonymous publishers (still out of scope per `ROADMAP.md`). The store at `bfrost.net` is a community registry, not a marketplace — no hosting, no paid tiers.
 - Multi-user accounts inside a single BFrost install.
 - Mobile clients. The dashboard should be responsive; native mobile is a separate effort.
 
@@ -160,5 +190,5 @@ This roadmap depends on the technical platform reaching the state described in `
 - **WhatsApp path.** Cloud API (durable, more setup) vs. Web bridge (frictionless, ToS-risky) — ship one as the documented default? Recommend Cloud API.
 - **Installer shell.** Tauri (smaller, Rust-based) vs. Electron (more familiar, larger). Recommend Tauri unless a blocker appears.
 - **Telemetry.** Zero telemetry is the current stance and matches the local-first promise. Reconsider only if support load makes blind debugging untenable, and only as opt-in.
-- **Conversational control surface.** Implemented as a built-in worker that exposes intents, or as a core capability? Leaning worker, to stay honest about the worker-first contract.
-- **Catalog source of truth.** A curated registry repo (like `awesome-bfrost`) vs. a JSON file shipped in-app vs. both. Probably both, with the shipped file as a fallback when offline.
+- **Conversational control surface.** ~~Implemented as a built-in worker that exposes intents, or as a core capability?~~ **Resolved:** shipped as `core.control` worker. ✅
+- **Catalog source of truth.** ~~A curated registry repo vs. a JSON file shipped in-app vs. both.~~ **Resolved (2026-05-23):** `bfrost-workers/registry` on GitHub is the source of truth; `api.bfrost.net/v1` is the live read API; the app's Store tab is a native client of that API. Offline fallback is the bundled `src/data/registry.json` from the website, served via CDN. ✅
