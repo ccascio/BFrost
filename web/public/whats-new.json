@@ -1,0 +1,31 @@
+[
+  {
+    "version": "0.2.0",
+    "date": "2026-05-23",
+    "headline": "Community Store, auto-backups, and conversational control",
+    "items": [
+      "🛍️ **Store tab** — browse and install community workers directly from bfrost.net without touching the terminal.",
+      "🔔 **Update notifications** — the app checks for newer versions of your installed workers daily and shows a badge in the sidebar.",
+      "💾 **Automatic backups** — daily snapshots at 03:00, configurable retention, and one-click restore on next startup.",
+      "🗣️ **Conversational control** — tell the chat "enable the news digest at 8am" or "show yesterday's queue" and it just works.",
+      "🚨 **Stuck job detector** — if a job fails 3 times in a row, a warning banner appears in the Overview with a direct link to fix it.",
+      "🧹 **Factory reset** — new Danger Zone panel in System lets you wipe worker state, credentials, or backups with a confirmation step.",
+      "🔐 **Sideload from .zip** — drag-drop a worker bundle directly from the Store tab without a terminal.",
+      "📡 **Discord notifications** — a new Discord worker sends operator alerts to any Discord channel.",
+      "🔍 **Bus & History Inspector** — ask the assistant "what's the latest news?" and it reads the Item Bus live."
+    ]
+  },
+  {
+    "version": "0.1.0",
+    "date": "2026-04-01",
+    "headline": "First public preview",
+    "items": [
+      "🚀 **Worker-first platform** — install, configure, schedule, and run workers from the dashboard.",
+      "📰 **News Digest worker** — daily AI-curated news summaries delivered to Telegram or the dashboard.",
+      "🐦 **Post to X worker** — publish AI-generated posts on a schedule.",
+      "📚 **Research Notes worker** — AI-written Markdown notes on any topic, saved locally.",
+      "🤖 **Telegram channel** — two-way chat with your BFrost assistant from Telegram.",
+      "⚙️ **LM Studio integration** — run local AI models with no API keys or monthly bill."
+    ]
+  }
+]

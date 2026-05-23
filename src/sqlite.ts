@@ -82,3 +82,12 @@ export async function createBackup(destPath: string): Promise<void> {
   await fs.mkdir(path.dirname(destPath), { recursive: true });
   await getDb().backup(destPath);
 }
+
+/** Close and release the current database handle. */
+export function closeDb(): void {
+  if (db) {
+    db.close();
+    db = null;
+    dbPath = null;
+  }
+}

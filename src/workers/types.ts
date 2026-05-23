@@ -15,6 +15,12 @@ export type WorkerKind = 'feature' | 'channel' | 'provider';
 export interface WorkerManifest {
   manifestVersion?: number;
   bfrostApiVersion?: string;
+  /**
+   * Semver range expressing the minimum BFrost engine version this worker
+   * requires. Used by the store's compatibility badge and the host's install
+   * guard. Example: `">=0.2.0"`. When absent, any version is assumed compatible.
+   */
+  bfrostEngineRange?: string;
   id: string;
   name: string;
   /**

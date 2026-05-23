@@ -279,6 +279,7 @@ export const WorkerSummarySchema = z.object({
   version: z.string(),
   description: z.string(),
   tagline: z.string().optional(),
+  bfrostEngineRange: z.string().optional(),
   builtIn: z.boolean(),
   kind: z.enum(['feature', 'channel', 'provider']),
   enabled: z.boolean(),
@@ -374,6 +375,16 @@ export const StoreInstallBodySchema = z.object({
 
 export type AutoBackupSettings = z.infer<typeof AutoBackupSettingsSchema>;
 export type StoreInstallBody = z.infer<typeof StoreInstallBodySchema>;
+
+export const FactoryResetBodySchema = z.object({
+  /** Wipe all worker state (Item Bus, scheduler runs, events, KV, worker-owned tables). */
+  wipeWorkerState: z.boolean(),
+  /** Clear stored API credentials (wipes the .env file). */
+  wipeCredentials: z.boolean(),
+  /** Delete all local backup files. */
+  wipeBackups: z.boolean(),
+});
+export type FactoryResetBody = z.infer<typeof FactoryResetBodySchema>;
 
 // Heavy sections (queue, cron runs, events, backups, worker data, loaded LM Studio
 // models, research slice, source rules) are fetched lazily by per-tab endpoints. The

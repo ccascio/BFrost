@@ -83,7 +83,7 @@ The worker contract stays exactly as it is. What changes is the **surface** that
 - [x] **Worker detail panel.** Clicking a card opens a detail panel showing: tagline, author/version/license/trust meta, permission list, capability summary, Install button (or 'Installed' badge), and a 'View on bfrost.net' link. _(Done 2026-05-23 — `fetchStoreDetail()` hitting `GET /v1/workers/:id`)_
 - [x] **Install from store.** The **Install** button downloads the tarball from `bundleUrl`, verifies the `bundleSha256` hash, extracts with `tar -xzf`, moves to `workers/local/<id>/`, and rescans. No `npm install`. No terminal. _(Done 2026-05-23 — `POST /api/store/install` in `admin-server.ts` + `installWorkerFromStore()`)_ **Note:** The permission consent dialog is deferred until the `permissions` runtime (ROADMAP.md Workstream 5) lands — the store detail panel shows declared permissions as a read-only list today.
 - [ ] **`bfrost://install?id=&version=` deep-link handler.** Registers a custom URL scheme so the website's **Install** button can launch the app directly. The handler shows the same permission consent dialog before downloading. _(macOS-only initially — see `ROADMAP.md` Non-goals for Windows/Linux status.)_
-- [ ] **Update notifications.** On startup (and every 24 h), the app calls `GET https://api.bfrost.net/v1/updates?ids=...&versions=...` with the installed worker list. If any worker has a newer version, a badge appears on the Store tab and an update card in the Workers tab.
+- [x] **Update notifications.** On startup (and every 24 h), the app calls `GET https://api.bfrost.net/v1/updates?ids=...&versions=...` with the installed worker list. If any worker has a newer version, a badge appears on the Store tab sidebar entry and an update pill in the Workers tab row. _(Done 2026-05-23 — `fetchStoreUpdates()` + `storeUpdates` Map + `coreMenuCount` store case + `renderWorkerRow` update pill)_
 - [x] **Sideload without a terminal ("Add from .zip").** A collapsible "Sideload" section in the Store tab opens a file picker. Accepts `.zip`, `.tar.gz`, `.tgz`. Uses the existing `/api/workers/upload` endpoint. _(Done 2026-05-23)_
 - [x] **"Don't see it? Propose it."** A footer link at the bottom of the Store tab opens `https://bfrost.net/publish` in the system browser. _(Done 2026-05-23)_
 
@@ -122,7 +122,7 @@ The worker contract stays exactly as it is. What changes is the **surface** that
 - [ ] **Optional encrypted cloud backup.** User-supplied destination (S3-compatible, Google Drive, Dropbox); BFrost itself does not host. Off by default.
 - [ ] **Credential safety.** Credentials in the dashboard are masked, copy-revealed, and exportable as an encrypted bundle (never plaintext) so the user can move between machines.
 - [ ] **Safe-mode boot.** A keyboard shortcut at startup launches the dashboard with all workers disabled, so a misbehaving worker can never lock the user out.
-- [ ] **One-click "factory reset".** Wipes worker state but preserves credentials (and vice versa); confirmation dialog spells out exactly what goes.
+- [x] **One-click "factory reset".** Wipes worker state but preserves credentials (and vice versa, or both); confirmation dialog spells out exactly what goes. _(Done 2026-05-23 — `POST /api/admin/factory-reset` + `FactoryResetBodySchema` + `closeDb()` in `sqlite.ts` + Danger Zone panel in System tab)_
 
 **Exit criteria:** A non-developer can restore from yesterday's backup, move their setup to a new laptop, and recover from a broken worker, without touching the filesystem.
 
@@ -133,8 +133,8 @@ The worker contract stays exactly as it is. What changes is the **surface** that
 - [ ] **Two-tier docs.** "For everyone" (visual, task-oriented, screenshot-heavy) vs. "For worker authors" (the existing `docs/worker-authoring.md`). The current docs site adds a clearly-labelled "For everyone" front section.
 - [ ] **Five short videos.** Install, connect a channel, enable a worker, edit a schedule, restore from backup. 60–90 seconds each.
 - [ ] **Per-channel "How to connect" pages** with screenshots that match what the user sees in BotFather / Meta Developer Console / their email provider's settings page.
-- [ ] **In-product changelog.** A "What's new" panel that surfaces new workers and UI changes in plain language ("Added WhatsApp support" — not "Bumped channel-worker contract to v3").
-- [ ] **Sample data mode.** A toggle that seeds the dashboard with realistic-looking fake data so a first-time user has something to look at while their workers run for the first time.
+- [x] **In-product changelog.** A "What's new" panel in the System tab reads `web/public/whats-new.json` and displays plain-language release notes (version, date, headline, bullet items). _(Done 2026-05-23)_
+- [x] **Sample data mode.** "Load sample data" button in the Overview empty state seeds realistic news + research queue items via `POST /api/admin/seed-sample-data`, then refreshes the dashboard. _(Done 2026-05-23)_
 
 **Exit criteria:** A non-developer can answer their own first ten "how do I…?" questions without leaving the app or asking another human.
 
@@ -147,14 +147,14 @@ These items live in the BFrost application repo but block phases of the website 
 | Item | Blocks | Status |
 |------|--------|--------|
 | `@bfrost/manifest-schema` npm package (extract `WorkerManifest` + Zod schema from `src/workers/types.ts` + `src/admin-api.ts`) | Website Phase 1 CI gate; store's server-side validation | ❌ Not started |
-| `bfrostEngine` semver-range field on `WorkerManifest` | Store compatibility badges; `@bfrost/manifest-schema` publish | ❌ Not started |
+| `bfrostEngine` semver-range field on `WorkerManifest` | Store compatibility badges; `@bfrost/manifest-schema` publish | ✅ Done — `bfrostEngineRange?: string` on `WorkerManifest` + `WorkerSummarySchema` |
 | `permissions` field enforced at install (permission runtime — `ROADMAP.md` Workstream 5) | Trust tiers meaningful; install consent dialog in Workstream D | ❌ Open in `ROADMAP.md` |
 | `bfrost pack` CLI command | Store Phase 3 self-serve publishing; author toolchain | ❌ Not started |
 | `bfrost worker install <spec>` CLI command | Store Phase 3 one-line install; first-run wizard Step 6 | ❌ Not started |
 | `bfrost://install?id=&version=` deep-link handler (macOS) | Store Phase 4 one-click from website | ❌ Not started |
 | Admin API: rescan + uninstall as complete operations | Store Phase 3 | ⚠️ Partial |
-| In-host catalog tab — Workstream D | Store Phase 4 | ❌ Not started |
-| Update notification polling (`GET /v1/updates`) | Store Phase 4 | ❌ Not started |
+| In-host catalog tab — Workstream D | Store Phase 4 | ✅ Done 2026-05-23 |
+| Update notification polling (`GET /v1/updates`) | Store Phase 4 | ✅ Done 2026-05-23 |
 
 > **Start here:** `@bfrost/manifest-schema` extraction is the highest-leverage item. It unblocks website Phase 1 CI and gives the store and the app a single shared validation contract. The extraction is a mechanical refactor — move `WorkerManifest` and its Zod schema into a new `packages/manifest-schema/` directory, publish to npm as `@bfrost/manifest-schema`, and update imports.
 

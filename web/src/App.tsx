@@ -541,6 +541,13 @@ interface StoreWorkerDetail extends StoreWorkerListing {
   versions: StoreWorkerVersion[];
 }
 
+interface WhatsNewEntry {
+  version: string;
+  date: string;
+  headline: string;
+  items: string[];
+}
+
 interface SourceQualityRules {
   minScore: number;
   allowHosts: string[];
@@ -663,6 +670,13 @@ export default function App() {
   const [storeDetail, setStoreDetail] = useState<StoreWorkerDetail | null>(null);
   const [storeDetailLoading, setStoreDetailLoading] = useState(false);
   const [sideloadFile, setSideloadFile] = useState<File | null>(null);
+  // Map of workerId → latestVersion for workers with available updates
+  const [storeUpdates, setStoreUpdates] = useState<Map<string, string>>(new Map());
+  // Factory reset state
+  const [resetChecks, setResetChecks] = useState({ wipeWorkerState: false, wipeCredentials: false, wipeBackups: false });
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  // In-product changelog
+  const [whatsNew, setWhatsNew] = useState<WhatsNewEntry[] | null>(null);
 
   // Auto-backup settings state (system tab)
   const [autoBackupSettings, setAutoBackupSettings] = useState<AutoBackupSettings | null>(null);
@@ -752,6 +766,25 @@ export default function App() {
     void fetchStoreCatalog(storeQuery);
   }, [activeTab, storeQuery]);
 
+  // Poll for available updates once when the worker list first loads, then every 24 h.
+  useEffect(() => {
+    if (!dashboard) return;
+    void fetchStoreUpdates(dashboard.workers);
+    const timer = window.setInterval(() => {
+      void fetchStoreUpdates(dashboard.workers);
+    }, 24 * 60 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [dashboard !== null]);
+
+  // Load "What's new" changelog when the System tab is opened.
+  useEffect(() => {
+    if (activeTab !== 'system' || whatsNew !== null) return;
+    fetch('/whats-new.json')
+      .then((r) => r.json())
+      .then((data) => setWhatsNew(data as WhatsNewEntry[]))
+      .catch(() => setWhatsNew([]));
+  }, [activeTab, whatsNew]);
+
   // Load auto-backup settings when the System tab is opened.
   useEffect(() => {
     if (activeTab !== 'system' || autoBackupSettings !== null) return;
@@ -795,6 +828,26 @@ export default function App() {
       setStoreDetail(null);
     } finally {
       setStoreDetailLoading(false);
+    }
+  }
+
+  async function fetchStoreUpdates(workers: WorkerSummary[]): Promise<void> {
+    const localWorkers = workers.filter((w) => !w.builtIn);
+    if (localWorkers.length === 0) return;
+    try {
+      const params = new URLSearchParams();
+      localWorkers.forEach((w) => {
+        params.append('ids', w.id);
+        params.append('versions', w.version);
+      });
+      const res = await fetch(`${STORE_API}/updates?${params.toString()}`);
+      if (!res.ok) return; // silently ignore network errors for update checks
+      const data = await res.json() as { updates: Array<{ id: string; latestVersion: string }> };
+      if (Array.isArray(data.updates)) {
+        setStoreUpdates(new Map(data.updates.map((u) => [u.id, u.latestVersion])));
+      }
+    } catch {
+      // Update checks are best-effort; never surface errors to the user.
     }
   }
 
@@ -907,6 +960,29 @@ export default function App() {
   async function cancelRestore(): Promise<void> {
     await fetch('/api/backups/restore-cancel', { method: 'POST', credentials: 'include' });
     await fetchSection('backups', { force: true });
+  }
+
+  async function executeFactoryReset(): Promise<void> {
+    if (!resetChecks.wipeWorkerState && !resetChecks.wipeCredentials && !resetChecks.wipeBackups) return;
+    setBusyKey('factory-reset');
+    try {
+      const res = await fetch('/api/admin/factory-reset', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(resetChecks),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({})) as any;
+        throw new Error(e?.error ?? `Reset failed (${res.status})`);
+      }
+      setResetConfirmOpen(false);
+      setNotice('Factory reset complete. BFrost is shutting down — please restart it.');
+    } catch (err) {
+      setError(toAppError(err));
+    } finally {
+      setBusyKey(null);
+    }
   }
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -1524,6 +1600,7 @@ export default function App() {
         config: configJobCount + configSurfaceCount + configCoreCount,
         chat: chatTurns.length,
         system: dashboard.events.length,
+        store: storeUpdates.size,
       }),
     })),
     ...workerTabDefinitions.map((tab) => ({
@@ -1883,6 +1960,20 @@ export default function App() {
                       </button>
                       <button type="button" onClick={() => setActiveTab('chat')}>
                         Open Chat
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyKey === 'seed-sample-data'}
+                        onClick={() => void (async () => {
+                          setBusyKey('seed-sample-data');
+                          try {
+                            await fetch('/api/admin/seed-sample-data', { method: 'POST', credentials: 'include' });
+                            await fetchDashboard(true);
+                            setNotice('Sample data loaded — browse the Jobs tab to see queued items.');
+                          } finally { setBusyKey(null); }
+                        })()}
+                      >
+                        {busyKey === 'seed-sample-data' ? 'Loading…' : 'Load sample data'}
                       </button>
                     </div>
                   </div>
@@ -2295,6 +2386,33 @@ export default function App() {
 
       {activeTab === 'store' ? renderStoreTab() : null}
 
+      {activeTab === 'system' && whatsNew && whatsNew.length > 0 ? (
+        <section className="panel tab-page">
+          <div className="panel-head">
+            <div>
+              <p className="panel-kicker">Changelog</p>
+              <h2>What's new</h2>
+            </div>
+          </div>
+          <div className="detail-body">
+            {whatsNew.map((entry) => (
+              <div key={entry.version} className="whats-new-entry">
+                <div className="whats-new-header">
+                  <strong>v{entry.version}</strong>
+                  <span className="whats-new-headline">{entry.headline}</span>
+                  <span className="whats-new-date">{entry.date}</span>
+                </div>
+                <ul className="whats-new-list">
+                  {entry.items.map((item, i) => (
+                    <li key={i}>{item.replace(/\*\*(.*?)\*\*/g, '$1')}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {activeTab === 'system' ? (
         <section className="panel tab-page">
           <div className="panel-head">
@@ -2426,6 +2544,65 @@ export default function App() {
                 </p>
               </div>
             ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'system' ? (
+        <section className="panel tab-page">
+          <div className="panel-head">
+            <div>
+              <p className="panel-kicker">Danger zone</p>
+              <h2>Factory reset</h2>
+            </div>
+          </div>
+          <div className="detail-body">
+            <p className="footnote">
+              Choose what to erase. <strong>Worker state</strong> includes all jobs, queue items, run
+              history, and worker settings. <strong>Credentials</strong> removes all stored API keys.
+              <strong> Backups</strong> deletes all local backup files. This cannot be undone.
+            </p>
+            <div className="factory-reset-checks">
+              {(['wipeWorkerState', 'wipeCredentials', 'wipeBackups'] as const).map((key) => (
+                <label key={key} className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={resetChecks[key]}
+                    onChange={(e) => setResetChecks((c) => ({ ...c, [key]: e.target.checked }))}
+                  />
+                  {key === 'wipeWorkerState' ? 'Worker state (queue, runs, settings)' :
+                   key === 'wipeCredentials' ? 'Credentials (API keys)' :
+                   'Backups (all local backup files)'}
+                </label>
+              ))}
+            </div>
+            {!resetConfirmOpen ? (
+              <button
+                type="button"
+                className="btn-danger"
+                disabled={!resetChecks.wipeWorkerState && !resetChecks.wipeCredentials && !resetChecks.wipeBackups}
+                onClick={() => setResetConfirmOpen(true)}
+              >
+                Reset…
+              </button>
+            ) : (
+              <div className="factory-reset-confirm">
+                <p><strong>Are you sure?</strong> This will permanently delete the selected data and exit BFrost. You must restart it manually.</p>
+                <div className="panel-actions">
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    disabled={busyKey === 'factory-reset'}
+                    onClick={() => void executeFactoryReset()}
+                  >
+                    {busyKey === 'factory-reset' ? 'Resetting…' : 'Yes, reset and exit'}
+                  </button>
+                  <button type="button" onClick={() => setResetConfirmOpen(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </section>
       ) : null}
@@ -3127,6 +3304,9 @@ export default function App() {
           <StatusPill tone={workerHealthTone(worker.healthState)}>
             {worker.runningJobCount > 0 ? 'running' : workerHealthLabel(worker.healthState)}
           </StatusPill>
+          {storeUpdates.has(worker.id) ? (
+            <StatusPill tone="info">v{storeUpdates.get(worker.id)} available</StatusPill>
+          ) : null}
           <button
             type="button"
             disabled={busyKey === `worker-${worker.id}` || (worker.missing && !worker.enabled)}
@@ -3850,7 +4030,7 @@ function jobConfigSummary(job: SchedulerJobState): string {
 
 function coreMenuCount(
   id: DashboardTab,
-  counts: { workers: number; channels: number; jobs: number; config: number; chat: number; system: number },
+  counts: { workers: number; channels: number; jobs: number; config: number; chat: number; system: number; store: number },
 ): number | undefined {
   switch (id) {
     case 'workers':
@@ -3865,6 +4045,8 @@ function coreMenuCount(
       return counts.chat;
     case 'system':
       return counts.system;
+    case 'store':
+      return counts.store > 0 ? counts.store : undefined;
     default:
       return undefined;
   }
