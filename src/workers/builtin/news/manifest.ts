@@ -254,4 +254,38 @@ export const newsWorker: WorkerManifest = {
       run: (modelId, params) => runNewsDigest(modelId, NewsDigestParamsSchema.parse(params ?? {})),
     },
   ],
+  summarizeForAssistant(item) {
+    const title = safeStr(item['title']) || 'Untitled';
+    const state = safeStr(item['state']);
+    const shortDesc = safeStr(item['shortDesc']);
+    const payload = item['payload'];
+    const host =
+      payload !== null &&
+      typeof payload === 'object' &&
+      'source' in payload &&
+      payload.source !== null &&
+      typeof payload.source === 'object' &&
+      'host' in (payload.source as object)
+        ? safeStr((payload.source as Record<string, unknown>)['host'])
+        : '';
+
+    const stateLabel =
+      state === 'queued' ? 'queued'
+      : state === 'approved' ? 'approved'
+      : state === 'posted' ? 'posted'
+      : state === 'rejected' ? 'rejected'
+      : state === 'seen' ? 'seen'
+      : state || 'unknown';
+
+    const parts: string[] = [];
+    parts.push(`News: "${title}"`);
+    if (host) parts.push(`from ${host}`);
+    parts.push(`[${stateLabel}]`);
+    if (shortDesc) parts.push(`— ${shortDesc.slice(0, 120)}${shortDesc.length > 120 ? '…' : ''}`);
+    return parts.join(' ');
+  },
 };
+
+function safeStr(v: unknown): string {
+  return typeof v === 'string' ? v : '';
+}

@@ -1942,7 +1942,7 @@ export default function App() {
               <div className="panel-head">
                 <div>
                   <p className="panel-kicker">Activity</p>
-                  <h2>Recent events</h2>
+                  <h2>Recent events <HelpTip>A live log of everything BFrost has done — fetched news, ran a job, published a post, recorded an error. Events are stored locally; nothing is sent to any server.</HelpTip></h2>
                 </div>
                 <StatusPill tone="muted">{dashboard.events.length} stored</StatusPill>
               </div>
@@ -1999,7 +1999,7 @@ export default function App() {
           <div className="panel-head">
             <div>
               <p className="panel-kicker">Assistant</p>
-              <h2>Dashboard chat</h2>
+              <h2>Dashboard chat <HelpTip>Type naturally to ask about your queue, schedules, or workers — or give commands like "enable the news digest at 8am". The assistant uses the same AI model you have configured in Settings. All messages stay on your machine.</HelpTip></h2>
             </div>
             <StatusPill tone={dashboard.lmStudio.running ? 'good' : 'warning'}>
               {dashboard.defaultModel.alias}
@@ -2074,7 +2074,7 @@ export default function App() {
           <div className="panel-head">
             <div>
               <p className="panel-kicker">Cron jobs</p>
-              <h2>Schedules and run status</h2>
+              <h2>Schedules and run status <HelpTip>Each worker can run one or more scheduled jobs — cron-based tasks that fire automatically (e.g. "fetch news every morning at 7am"). Select a job on the left to change its schedule, adjust parameters, or trigger it manually. The last-run timestamp and any errors are shown inline.</HelpTip></h2>
             </div>
             <StatusPill tone="muted">{dashboard.cron.timezone}</StatusPill>
           </div>
@@ -2151,7 +2151,7 @@ export default function App() {
           <div className="panel-head">
             <div>
               <p className="panel-kicker">Worker configuration</p>
-              <h2>Manifest settings</h2>
+              <h2>Manifest settings <HelpTip>Configuration surfaces declared by each worker — news source rules, API keys, prompt templates, and more. Select a worker on the left; its settings panels appear on the right. Changes take effect the next time the worker runs.</HelpTip></h2>
             </div>
             <StatusPill tone="muted">{configJobCount + configSurfaceCount + configCoreCount} configurable</StatusPill>
           </div>
@@ -2162,7 +2162,7 @@ export default function App() {
                 <div className="job-worker-head">
                   <div>
                     <p className="panel-kicker">Platform</p>
-                    <h3>Model providers</h3>
+                    <h3>Model providers <HelpTip>A model provider is the AI service BFrost uses to think — OpenAI (GPT-4o), Anthropic (Claude), or a local model via LM Studio. Each provider is a worker you can install separately. Configure your API keys below; BFrost uses the cheapest model that can handle the task unless you specify otherwise.</HelpTip></h3>
                     <span>Local credential configuration</span>
                   </div>
                   <StatusPill tone={dashboard.integrations.openaiConfigured.ok || dashboard.integrations.anthropicConfigured.ok ? 'good' : 'warning'}>
@@ -2328,7 +2328,7 @@ export default function App() {
           <div className="panel-head">
             <div>
               <p className="panel-kicker">Workers</p>
-              <h2>Installed capabilities</h2>
+              <h2>Installed capabilities <HelpTip>Every feature in BFrost is a worker. This list shows every worker that is installed — built-in ones that ship with BFrost and any community workers you have added. Toggle the switch to enable or disable a worker; a disabled worker stops running its jobs and exposing its tools.</HelpTip></h2>
             </div>
             <div className="panel-actions">
               <label className="file-picker">
@@ -2479,7 +2479,7 @@ export default function App() {
           <div className="panel-head section-break">
             <div>
               <p className="panel-kicker">Dependencies</p>
-              <h2>Local runtime readiness</h2>
+              <h2>Local runtime readiness <HelpTip>Optional tools that some workers need. LM Studio lets you run AI models locally without sending data to the cloud. sqlite3 and ffmpeg are used by a few workers for data storage and audio processing. Missing items are only a problem if a worker that needs them is enabled.</HelpTip></h2>
             </div>
           </div>
 
@@ -2495,7 +2495,7 @@ export default function App() {
           <div className="panel-head section-break">
             <div>
               <p className="panel-kicker">Backups</p>
-              <h2>SQLite state</h2>
+              <h2>Backups &amp; database <HelpTip>BFrost stores everything — queue items, events, worker settings, run history — in a single SQLite file on your machine. Enable automatic daily backups here; use the Restore button next to any snapshot to roll back. This is the easiest way to recover from a mistake.</HelpTip></h2>
             </div>
             <StatusPill tone={dashboard.backups.length > 0 ? 'good' : 'warning'}>
               {dashboard.backups.length} backups
@@ -2607,7 +2607,7 @@ export default function App() {
           <div className="panel-head">
             <div>
               <p className="panel-kicker">Danger zone</p>
-              <h2>Factory reset</h2>
+              <h2>Factory reset <HelpTip>Use this when something is badly broken and you want a fresh start. You can choose what to wipe: worker state (job history, queue, notes), credentials (API keys), or both. The app restarts automatically afterward. This cannot be undone — take a backup first.</HelpTip></h2>
             </div>
           </div>
           <div className="detail-body">
@@ -2675,7 +2675,7 @@ export default function App() {
           <div className="panel-head">
             <div>
               <p className="panel-kicker">Event history</p>
-              <h2>Recent operations</h2>
+              <h2>Recent operations <HelpTip>The full event log for this session — every action BFrost has taken across all workers. Use the search box above to filter by category or keyword. The most recent events are shown first.</HelpTip></h2>
             </div>
             <StatusPill tone="muted">{dashboard.events.length} events</StatusPill>
           </div>
@@ -2832,7 +2832,7 @@ export default function App() {
         <div className="panel-head">
           <div>
             <p className="panel-kicker">Runtime services</p>
-            <h2>LM Studio</h2>
+            <h2>LM Studio <HelpTip>LM Studio lets you download and run open-source AI models entirely on your computer — no API key, no cloud. Install LM Studio from lmstudio.ai, download a model there, then enable the LM Studio provider here so BFrost can use it.</HelpTip></h2>
           </div>
           <StatusPill tone={dashboard.lmStudio.running ? 'good' : 'warning'}>
             {dashboard.lmStudio.running ? 'Running' : 'Stopped'}
@@ -3279,7 +3279,7 @@ export default function App() {
           <div className="panel-head">
             <div>
               <p className="panel-kicker">Communication channels</p>
-              <h2>Channels</h2>
+              <h2>Channels <HelpTip>Channels are how BFrost delivers your content and receives your commands. Telegram lets you get a daily news digest as a message; Discord does the same. The dashboard chat is always available as a built-in channel. Enable a channel worker from the Workers tab, then connect it here.</HelpTip></h2>
             </div>
           </div>
           <p className="empty-state">
@@ -3294,7 +3294,7 @@ export default function App() {
         <div className="panel-head">
           <div>
             <p className="panel-kicker">Communication channels</p>
-            <h2>Channels</h2>
+            <h2>Channels <HelpTip>Channels are how BFrost delivers your content and receives your commands. Telegram lets you get a daily news digest as a message; Discord does the same. The dashboard chat is always available as a built-in channel. Enable a channel worker from the Workers tab, then connect it here.</HelpTip></h2>
           </div>
           <StatusPill tone="muted">
             {`${channelWorkers.filter((w) => w.healthState === 'healthy').length}/${channelWorkers.length} connected`}
@@ -3812,7 +3812,7 @@ export default function App() {
         <div className="panel-head">
           <div>
             <p className="panel-kicker">Community</p>
-            <h2>Worker Store</h2>
+            <h2>Worker Store <HelpTip>Browse community-built workers from bfrost.net. Search by name or category, click a card to read the details and declared permissions, then click Install to add it — no terminal needed. Installed workers appear in the Workers tab immediately.</HelpTip></h2>
           </div>
           <a href={STORE_URL} target="_blank" rel="noopener noreferrer" className="store-external-link">
             bfrost.net/store ↗
