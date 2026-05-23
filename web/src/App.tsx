@@ -682,6 +682,8 @@ export default function App() {
   const [autoBackupSettings, setAutoBackupSettings] = useState<AutoBackupSettings | null>(null);
   const [openaiApiKeyDraft, setOpenaiApiKeyDraft] = useState('');
   const [anthropicApiKeyDraft, setAnthropicApiKeyDraft] = useState('');
+  const [showOpenaiKey, setShowOpenaiKey] = useState(false);
+  const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [activeLocalProviderDraft, setActiveLocalProviderDraft] = useState('');
   const [primaryChannelDraft, setPrimaryChannelDraft] = useState('');
   const [embeddingProviderDraft, setEmbeddingProviderDraft] = useState<'local' | 'openai' | ''>('');
@@ -990,6 +992,14 @@ export default function App() {
   async function initialize() {
     const nextSession = await refreshSession(true);
     if (nextSession?.authenticated || nextSession?.authEnabled === false) {
+      // Safe-mode boot: if ?safe=1 is in the URL, disable all workers before loading.
+      const urlParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+      if (urlParams.get('safe') === '1') {
+        await fetch('/api/admin/disable-all-workers', { method: 'POST', credentials: 'include' });
+        setNotice('Safe mode: all workers have been disabled. Re-enable them one at a time from the Workers tab.');
+        // Clean the URL so a refresh doesn't re-trigger safe mode.
+        window.history.replaceState({}, '', window.location.pathname);
+      }
       await fetchDashboard(false);
     }
   }
@@ -2557,7 +2567,16 @@ export default function App() {
             </div>
           </div>
           <div className="detail-body">
-            <p className="footnote">
+            <div className="danger-zone-row">
+              <div>
+                <strong>Safe mode</strong>
+                <span className="footnote">Opens the dashboard with all workers disabled. Re-enable them one at a time to diagnose a broken worker.</span>
+              </div>
+              <button type="button" onClick={() => { window.location.href = '/?safe=1'; }}>
+                Restart in Safe Mode
+              </button>
+            </div>
+            <p className="footnote" style={{ marginTop: '1rem' }}>
               Choose what to erase. <strong>Worker state</strong> includes all jobs, queue items, run
               history, and worker settings. <strong>Credentials</strong> removes all stored API keys.
               <strong> Backups</strong> deletes all local backup files. This cannot be undone.
@@ -3514,26 +3533,46 @@ export default function App() {
         </div>
 
         <div className="form-grid">
-          <label className="field">
+          <div className="field">
             <span>OpenAI API key</span>
-            <input
-              type="password"
-              value={openaiApiKeyDraft}
-              placeholder={dashboard.integrations.openaiConfigured.ok ? 'Configured' : 'Not configured'}
-              autoComplete="off"
-              onChange={(event) => setOpenaiApiKeyDraft(event.target.value)}
-            />
-          </label>
-          <label className="field">
+            <div className="secret-field-row">
+              <input
+                type={showOpenaiKey ? 'text' : 'password'}
+                value={openaiApiKeyDraft}
+                placeholder={dashboard.integrations.openaiConfigured.ok ? 'Configured (enter new key to update)' : 'Not configured'}
+                autoComplete="off"
+                onChange={(event) => setOpenaiApiKeyDraft(event.target.value)}
+              />
+              <button type="button" className="btn-icon" onClick={() => setShowOpenaiKey((v) => !v)} title={showOpenaiKey ? 'Hide' : 'Show'}>
+                {showOpenaiKey ? '🙈' : '👁'}
+              </button>
+              {openaiApiKeyDraft ? (
+                <button type="button" className="btn-icon" onClick={() => { void navigator.clipboard.writeText(openaiApiKeyDraft); setNotice('API key copied.'); }} title="Copy">
+                  📋
+                </button>
+              ) : null}
+            </div>
+          </div>
+          <div className="field">
             <span>Anthropic API key</span>
-            <input
-              type="password"
-              value={anthropicApiKeyDraft}
-              placeholder={dashboard.integrations.anthropicConfigured.ok ? 'Configured' : 'Not configured'}
-              autoComplete="off"
-              onChange={(event) => setAnthropicApiKeyDraft(event.target.value)}
-            />
-          </label>
+            <div className="secret-field-row">
+              <input
+                type={showAnthropicKey ? 'text' : 'password'}
+                value={anthropicApiKeyDraft}
+                placeholder={dashboard.integrations.anthropicConfigured.ok ? 'Configured (enter new key to update)' : 'Not configured'}
+                autoComplete="off"
+                onChange={(event) => setAnthropicApiKeyDraft(event.target.value)}
+              />
+              <button type="button" className="btn-icon" onClick={() => setShowAnthropicKey((v) => !v)} title={showAnthropicKey ? 'Hide' : 'Show'}>
+                {showAnthropicKey ? '🙈' : '👁'}
+              </button>
+              {anthropicApiKeyDraft ? (
+                <button type="button" className="btn-icon" onClick={() => { void navigator.clipboard.writeText(anthropicApiKeyDraft); setNotice('API key copied.'); }} title="Copy">
+                  📋
+                </button>
+              ) : null}
+            </div>
+          </div>
         </div>
 
         <div className="panel-actions">

@@ -2122,3 +2122,47 @@ code {
   line-height: 1.6;
   padding: 0.15rem 0;
 }
+
+/* Secret / credential field with show-hide toggle */
+.secret-field-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.secret-field-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.btn-icon {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.3rem 0.45rem;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text-muted, #888);
+  flex-shrink: 0;
+}
+
+.btn-icon:hover {
+  background: var(--bg-hover, rgba(0,0,0,0.04));
+}
+
+/* Danger zone rows */
+.danger-zone-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.danger-zone-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}

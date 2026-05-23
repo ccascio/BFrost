@@ -52,6 +52,16 @@ export interface WorkerManifest {
   channels?: WorkerChannelManifest[];
   tools?: WorkerToolManifest[];
   providers?: WorkerProviderManifest[];
+  /**
+   * Optional per-item summarizer for the assistant. When a worker produces Item Bus items
+   * it may implement this to give the assistant a richer, friendlier description than the
+   * generic `shortDesc + url` output. Receives a raw queue item and returns a one-line
+   * plain-English summary (e.g. "Tech article: 'AI benchmark released' — 3 min read").
+   *
+   * The `core.items.query` tool calls this when available so "what's in my queue?" gives
+   * titled, readable results instead of raw field dumps.
+   */
+  summarizeForAssistant?: (item: Record<string, unknown>) => string;
 }
 
 /**

@@ -606,6 +606,22 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return; // response already sent above
     }
 
+    // Disable all workers (safe-mode boot helper)
+    if (url.pathname === '/api/admin/disable-all-workers' && req.method === 'POST') {
+      const allWorkers = listWorkers();
+      const workerState = await loadWorkerState();
+      const disabledIds: string[] = [];
+      for (const worker of allWorkers) {
+        if (isWorkerEnabled(worker.id, workerState)) {
+          await setWorkerEnabled(worker.id, false, { builtIn: worker.builtIn });
+          await deactivateLocalWorker(worker.id);
+          disabledIds.push(worker.id);
+        }
+      }
+      await recordEventSafe({ category: 'admin', action: 'safe_mode_activated', summary: `Safe mode: ${disabledIds.length} worker(s) disabled.`, metadata: { disabledIds } });
+      return sendJson(res, 200, { ok: true, disabledCount: disabledIds.length });
+    }
+
     // Seed the dashboard with sample data for first-time users
     if (url.pathname === '/api/admin/seed-sample-data' && req.method === 'POST') {
       const SAMPLE_NEWS = [

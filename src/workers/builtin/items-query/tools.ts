@@ -1,6 +1,7 @@
 import { filterItemsForConsumer, loadQueue } from '../../../jobs/item-bus';
 import type { QueueItem, QueueItemState } from '../../../jobs/queue';
 import { listSchedulerRuns, type SchedulerRunRecord } from '../../../scheduler-runs';
+import { listWorkers } from '../../../workers/registry';
 
 const CONSUMER_ID = 'core.items.query';
 const DEFAULT_LIMIT = 10;
@@ -102,6 +103,18 @@ function sanitizeStates(states: string[] | undefined): QueueItemState[] | undefi
 }
 
 function formatItem(item: QueueItem): string {
+  // Use the producer's custom summarizer when available — it provides friendlier output
+  // than the generic field dump below (e.g. "Tech article: 'AI study' — 3 min read").
+  const producerWorker = item.producerWorkerId
+    ? listWorkers().find((w) => w.id === item.producerWorkerId)
+    : undefined;
+  if (producerWorker?.summarizeForAssistant) {
+    try {
+      const summary = producerWorker.summarizeForAssistant(item as unknown as Record<string, unknown>);
+      return `• ${summary}`;
+    } catch { /* fall through to default */ }
+  }
+
   const lines: string[] = [];
   lines.push(`• ${item.title}`);
   const meta: string[] = [];
