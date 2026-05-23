@@ -49,6 +49,7 @@ import { loadQueueSnapshot, updateDashboardQueueItem } from './jobs/queue-servic
 import { loadBuiltInWorkerDashboardData } from './workers/builtin/dashboard-data';
 import {
   AdminLoginBodySchema,
+  AutoBackupSettingsSchema,
   BackupsSectionSchema,
   ChatMessageBodySchema,
   CloudApiKeysBodySchema,
@@ -63,6 +64,7 @@ import {
   LmStudioModelsSectionSchema,
   LocalEmbeddingModelsSectionSchema,
   type LocalEmbeddingModelsSection,
+  StoreInstallBodySchema,
   WorkerDataSectionSchema,
   WorkerUpdateBodySchema,
   QueueItemActionBodySchema,
@@ -78,8 +80,17 @@ import {
 import { BadRequestError } from './admin-route';
 import { builtInWorkerApiRoutes } from './workers/builtin/api-routes';
 import { listSchedulerRuns } from './scheduler-runs';
-import { createAppBackup, listAppBackups } from './app-backup';
+import {
+  createAppBackup,
+  getAutoBackupSettings,
+  listAppBackups,
+  restartAutoBackup,
+  saveAutoBackupSettings,
+  scheduleRestoreOnNextBoot,
+  cancelPendingRestore,
+} from './app-backup';
 import { processChannelMessage } from './channel';
+import { createHash } from 'crypto';
 import { loadKvJson, saveKvJson } from './sqlite';
 
 let server: Server | null = null;
@@ -503,6 +514,61 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return sendJson(res, 200, { ok: true });
     }
 
+    // Auto-backup settings
+    if (url.pathname === '/api/backups/settings' && req.method === 'GET') {
+      const settings = await getAutoBackupSettings();
+      return sendJson(res, 200, settings);
+    }
+
+    if (url.pathname === '/api/backups/settings' && req.method === 'PATCH') {
+      const body = await readJsonBody(req, AutoBackupSettingsSchema.partial());
+      const updated = await saveAutoBackupSettings(body);
+      await restartAutoBackup();
+      await recordEventSafe({
+        category: 'admin',
+        action: 'auto_backup_settings_updated',
+        summary: `Auto-backup ${updated.enabled ? 'enabled' : 'disabled'} (retention: ${updated.retentionDays} days).`,
+        metadata: updated as unknown as Record<string, unknown>,
+      });
+      return sendJson(res, 200, updated);
+    }
+
+    // Restore from backup (marks pending; applied on next startup)
+    const restoreMatch = url.pathname.match(/^\/api\/backups\/([^/]+)\/restore$/);
+    if (restoreMatch && req.method === 'POST') {
+      const file = decodeURIComponent(restoreMatch[1]);
+      if (!file.endsWith('.sqlite') || file.includes('/') || file.includes('..')) {
+        throw new BadRequestError('Invalid backup filename.');
+      }
+      await scheduleRestoreOnNextBoot(file);
+      await recordEventSafe({
+        category: 'admin',
+        action: 'backup_restore_scheduled',
+        summary: `Restore from ${file} scheduled for next startup.`,
+        metadata: { file },
+      });
+      return sendJson(res, 200, { ok: true, message: 'Restart BFrost to apply this backup.' });
+    }
+
+    // Cancel a pending restore
+    if (url.pathname === '/api/backups/restore-cancel' && req.method === 'POST') {
+      await cancelPendingRestore();
+      return sendJson(res, 200, { ok: true });
+    }
+
+    // Install a worker from the community store
+    if (url.pathname === '/api/store/install' && req.method === 'POST') {
+      const body = await readJsonBody(req, StoreInstallBodySchema);
+      const result = await installWorkerFromStore(body.id, body.bundleUrl, body.bundleSha256);
+      await recordEventSafe({
+        category: 'admin',
+        action: 'worker_installed_from_store',
+        summary: `Worker "${result.manifest.name}" (${result.manifest.id}) installed from the store.`,
+        metadata: { workerId: result.manifest.id, sourcePath: result.sourcePath },
+      });
+      return sendJson(res, 200, { ok: true, workerId: result.manifest.id });
+    }
+
     if (url.pathname === '/api/lmstudio' && req.method === 'POST') {
       const body = await readJsonBody(req, LmStudioActionBodySchema);
       const action = body.action;
@@ -840,6 +906,110 @@ async function uploadLocalWorkerZip(req: IncomingMessage): Promise<DiscoveredLoc
       throw err;
     }
     throw new BadRequestError(`Worker upload failed: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Download a worker package from the community store, verify its SHA-256 hash,
+ * extract the tarball, and install it into `workers/local/<id>/`.
+ */
+async function installWorkerFromStore(
+  workerId: string,
+  bundleUrl: string,
+  expectedSha256: string,
+): Promise<DiscoveredLocalWorker> {
+  const MAX_BUNDLE_BYTES = 25 * 1024 * 1024;
+
+  // Validate the worker id before touching the filesystem.
+  const safeId = safeWorkerFolderName(workerId);
+  if (!safeId) throw new BadRequestError('Invalid worker id.');
+
+  const installRoot = path.resolve(config.workerPaths[0] || './workers/local');
+  const targetDir = path.join(installRoot, safeId);
+  if (!isPathInside(installRoot, targetDir) || targetDir === installRoot) {
+    throw new BadRequestError('Invalid worker install path.');
+  }
+
+  if (await pathExists(targetDir)) {
+    throw new BadRequestError(`Worker "${workerId}" is already installed.`);
+  }
+
+  // Download the bundle.
+  let response: Response;
+  try {
+    response = await fetch(bundleUrl, { signal: AbortSignal.timeout(60_000) });
+  } catch (err) {
+    throw new BadRequestError(`Could not download worker bundle: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (!response.ok) {
+    throw new BadRequestError(`Bundle download failed: HTTP ${response.status} ${response.statusText}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  const body = Buffer.from(arrayBuffer);
+  if (body.length === 0) throw new BadRequestError('Downloaded bundle is empty.');
+  if (body.length > MAX_BUNDLE_BYTES) throw new BadRequestError('Bundle exceeds 25 MB limit.');
+
+  // Verify SHA-256.
+  const actualHash = createHash('sha256').update(body).digest('hex');
+  if (actualHash.toLowerCase() !== expectedSha256.toLowerCase()) {
+    throw new BadRequestError(`Bundle SHA-256 mismatch. Expected ${expectedSha256}, got ${actualHash}.`);
+  }
+
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'bfrost-store-install-'));
+  try {
+    const archivePath = path.join(tempRoot, 'bundle.tar.gz');
+    const extractDir = path.join(tempRoot, 'extract');
+
+    await fs.writeFile(archivePath, body);
+    await fs.mkdir(extractDir, { recursive: true });
+
+    // Extract with system tar.
+    try {
+      await execFileAsync('tar', ['-xzf', archivePath, '-C', extractDir]);
+    } catch (err) {
+      throw new BadRequestError(`Failed to extract bundle: ${err instanceof Error ? (err as any).stderr || err.message : String(err)}`);
+    }
+
+    const result = await discoverLocalWorkerResult([extractDir]);
+    if (result.workers.length !== 1) {
+      const detail = result.issues[0]?.message ?? 'Bundle must contain exactly one worker manifest.';
+      throw new BadRequestError(detail);
+    }
+
+    const worker = result.workers[0];
+    if (worker.manifest.id !== workerId) {
+      throw new BadRequestError(
+        `Bundle contains worker id "${worker.manifest.id}" but expected "${workerId}".`,
+      );
+    }
+
+    const existing = workerCatalog(await discoverLocalWorkers()).get(worker.manifest.id);
+    if (existing) {
+      throw new BadRequestError(`Worker "${worker.manifest.id}" is already installed.`);
+    }
+
+    const workerDir = path.dirname(path.resolve(worker.sourcePath));
+    if (!isPathInside(extractDir, workerDir)) {
+      throw new BadRequestError('Worker manifest must stay inside the bundle contents.');
+    }
+
+    await fs.mkdir(installRoot, { recursive: true });
+    await moveDirectory(workerDir, targetDir);
+
+    const installed = await discoverLocalWorkers([targetDir]);
+    const found = installed.find((item) => item.manifest.id === workerId);
+    if (!found) {
+      throw new BadRequestError('Worker could not be discovered after installation.');
+    }
+    await rememberSeenWorkers([{ id: found.manifest.id, builtIn: false, sourcePath: found.sourcePath }]);
+    return found;
+  } catch (err) {
+    await fs.rm(targetDir, { recursive: true, force: true });
+    if (err instanceof BadRequestError) throw err;
+    throw new BadRequestError(`Store install failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
   }

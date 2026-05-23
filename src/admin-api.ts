@@ -200,6 +200,12 @@ export const SchedulerJobStateSchema = z.object({
   lastSummary: z.string().nullable(),
   lastError: z.string().nullable(),
   lastTrigger: z.enum(['schedule', 'manual']).nullable(),
+  /**
+   * How many of the most recent completed runs ended with `status: 'error'`
+   * consecutively. 0 means the last run was not an error. Used by the stuck
+   * detector to surface a banner when this reaches the threshold (≥3).
+   */
+  consecutiveErrors: z.number().int().min(0).optional(),
 }).strict();
 
 export const SchedulerRunRecordSchema = z.object({
@@ -348,7 +354,26 @@ export const AppBackupRecordSchema = z.object({
   path: z.string(),
   createdAt: z.string(),
   sizeBytes: z.number(),
+  /** Present and true when this backup is scheduled for restore on next startup. */
+  restorePending: z.boolean().optional(),
 }).strict();
+
+export const AutoBackupSettingsSchema = z.object({
+  enabled: z.boolean(),
+  retentionDays: z.number().int().min(1).max(365),
+}).strict();
+
+export const StoreInstallBodySchema = z.object({
+  /** Worker id as registered in the store. */
+  id: z.string().min(1),
+  /** Direct download URL for the tarball (.tar.gz). */
+  bundleUrl: z.string().url(),
+  /** Expected SHA-256 hex digest of the tarball. */
+  bundleSha256: z.string().min(64).max(64),
+}).strict();
+
+export type AutoBackupSettings = z.infer<typeof AutoBackupSettingsSchema>;
+export type StoreInstallBody = z.infer<typeof StoreInstallBodySchema>;
 
 // Heavy sections (queue, cron runs, events, backups, worker data, loaded LM Studio
 // models, research slice, source rules) are fetched lazily by per-tab endpoints. The

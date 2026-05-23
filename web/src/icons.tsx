@@ -12,6 +12,7 @@ export type IconKey =
   | 'megaphone'
   | 'newspaper'
   | 'overview'
+  | 'store'
   | 'workers'
   | 'search'
   | 'system';
@@ -119,6 +120,14 @@ const icons: Record<IconKey, IconComponent> = {
     <svg {...baseProps} {...props}>
       <circle cx="11" cy="11" r="6" />
       <path d="m16 16 4 4" />
+    </svg>
+  ),
+  store: (props) => (
+    <svg {...baseProps} {...props}>
+      <path d="M4 9V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3" />
+      <path d="M2 9h20v2a5 5 0 0 1-5 5H7A5 5 0 0 1 2 11Z" />
+      <path d="M12 16v5" />
+      <path d="M8 21h8" />
     </svg>
   ),
   system: (props) => (

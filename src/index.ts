@@ -1,5 +1,6 @@
 import { startScheduler } from './scheduler';
 import { startAdminServer, stopAdminServer } from './admin-server';
+import { applyPendingRestoreIfAny, startAutoBackup } from './app-backup';
 import { assertStartupReadiness, getAppHealthSnapshot, logStartupHealthSummary } from './health';
 import { hydrateConversations, flushConversations } from './conversation';
 import {
@@ -16,6 +17,9 @@ import { refreshActiveLocalProviderModels, refreshCloudProviderModels } from './
 import type { ChannelAdapter, ProviderAdapter } from './workers/module';
 
 async function main(): Promise<void> {
+  // Apply any pending restore before the DB is opened for the first time.
+  await applyPendingRestoreIfAny();
+
   const health = await getAppHealthSnapshot();
   assertStartupReadiness(health);
   logStartupHealthSummary(health);
@@ -64,6 +68,7 @@ async function main(): Promise<void> {
 
   await startScheduler();
   await startAdminServer();
+  await startAutoBackup();
 
   const channels: ChannelAdapter[] = [];
   for (const registered of listRegisteredChannels()) {

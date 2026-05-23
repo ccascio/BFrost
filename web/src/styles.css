@@ -1886,3 +1886,155 @@ code {
     text-align: left;
   }
 }
+
+/* ── Stuck detector banner ──────────────────────────────────────────────── */
+
+.stuck-detector-banner {
+  padding: 0.85rem 1.2rem;
+  margin-bottom: 1rem;
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  border-radius: var(--radius);
+  font-size: 0.92rem;
+}
+
+/* ── Community store ────────────────────────────────────────────────────── */
+
+.store-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.store-search-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.store-search-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.store-external-link {
+  font-size: 0.88rem;
+  color: var(--accent);
+  text-decoration: none;
+  align-self: center;
+}
+
+.store-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.store-card {
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.store-card:hover,
+.store-card:focus-within {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  outline: none;
+}
+
+.store-card:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.store-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.store-card-tagline {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--muted);
+  flex: 1;
+}
+
+.store-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.store-detail-panel {
+  border-top: 1px solid var(--border);
+  padding-top: 0.5rem;
+}
+
+.store-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  font-size: 0.9rem;
+  margin-bottom: 0.75rem;
+  color: var(--muted);
+}
+
+.store-permissions ul {
+  margin: 0.25rem 0 0.75rem 1rem;
+  font-size: 0.88rem;
+}
+
+.store-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+
+.store-footer {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.store-sideload-section {
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.store-sideload-section summary {
+  cursor: pointer;
+  color: var(--accent);
+  user-select: none;
+  padding: 0.3rem 0;
+}
+
+.store-sideload-row {
+  padding: 0.75rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Backup row with restore actions */
+.backup-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}

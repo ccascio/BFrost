@@ -7,7 +7,7 @@ import { getRegisteredWorkerJob, notifyOperatorChannels } from './workers/regist
 import type { WorkerJobDashboardField, WorkerJobPreset } from './workers/types';
 import { recordEventSafe } from './event-log';
 import { loadKvJson, saveKvJson } from './sqlite';
-import { finishSchedulerRun, startSchedulerRun } from './scheduler-runs';
+import { finishSchedulerRun, listSchedulerRuns, startSchedulerRun } from './scheduler-runs';
 import { acquireSchedulerExecutionLock } from './scheduler-locks';
 import { isWorkerEnabled, loadWorkerState, type WorkerStateStore } from './workers/state';
 
@@ -44,6 +44,12 @@ export interface SchedulerJobState {
   lastSummary: string | null;
   lastError: string | null;
   lastTrigger: 'schedule' | 'manual' | null;
+  /**
+   * Number of the most recent completed (non-running) runs that consecutively
+   * ended with status `'error'`. 0 means the last finished run was not an error.
+   * Used by the UI stuck-detector to surface a banner.
+   */
+  consecutiveErrors?: number;
 }
 
 interface PersistedSchedulerState {
@@ -115,10 +121,40 @@ export async function startScheduler(): Promise<void> {
 export async function getSchedulerSnapshot(): Promise<{ timezone: string; jobs: SchedulerJobState[] }> {
   const settings = await ensureSettings();
   const workerState = await loadWorkerState();
+
+  // Load recent runs to compute per-job consecutive error counts (stuck detector).
+  const recentRuns = await listSchedulerRuns(30).catch(() => []);
+  const consecutiveErrorsByJob = computeConsecutiveErrors(recentRuns);
+
   return {
     timezone: settings.timezone,
-    jobs: knownJobs().map((name) => buildJobState(name, settings.jobs[name], workerState)),
+    jobs: knownJobs().map((name) =>
+      buildJobState(name, settings.jobs[name], workerState, consecutiveErrorsByJob[name]),
+    ),
   };
+}
+
+/**
+ * Given an array of runs (newest-first), compute per-job consecutive error counts.
+ * Only finished (non-running) runs contribute. Stops counting once a non-error run
+ * is found for a given job.
+ */
+function computeConsecutiveErrors(runs: Array<{ job: string; status: string; finishedAt: string | null }>): Record<string, number> {
+  const counts: Record<string, number> = {};
+  const settled: Record<string, boolean> = {};
+
+  for (const run of runs) {
+    if (run.finishedAt === null) continue; // still running, skip
+    if (settled[run.job]) continue; // already found a non-error run for this job
+    if (run.status === 'error') {
+      counts[run.job] = (counts[run.job] ?? 0) + 1;
+    } else {
+      settled[run.job] = true;
+      if (!(run.job in counts)) counts[run.job] = 0;
+    }
+  }
+
+  return counts;
 }
 
 export async function updateSchedulerJob(name: JobName, patch: CronJobUpdate): Promise<SchedulerJobState> {
@@ -668,6 +704,7 @@ function buildJobState(
   name: JobName,
   settings: CronJobSettings,
   workerState?: WorkerStateStore,
+  consecutiveErrors?: number,
 ): SchedulerJobState {
   const saved = runtimeCache[name];
   const effectiveModelAlias = settings.modelAlias || getDefaultModelAlias();
@@ -702,5 +739,6 @@ function buildJobState(
     lastSummary: saved?.lastSummary ?? null,
     lastError: saved?.lastError ?? null,
     lastTrigger: saved?.lastTrigger ?? null,
+    consecutiveErrors: consecutiveErrors ?? 0,
   };
 }

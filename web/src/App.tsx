@@ -6,7 +6,7 @@ import { loadRuntimeWorkerBundle, workerQueueItemDetails, useWorkerDashboardView
 import type { WorkerDashboardViewDefinition } from './workers/types';
 
 type RunStatus = 'idle' | 'success' | 'error' | 'skipped';
-type CoreDashboardTab = 'overview' | 'channels' | 'workers' | 'jobs' | 'config' | 'chat' | 'system';
+type CoreDashboardTab = 'overview' | 'channels' | 'workers' | 'jobs' | 'config' | 'chat' | 'system' | 'store';
 
 interface AppError {
   friendly: string;
@@ -225,6 +225,7 @@ const CORE_MENU_ENTRIES: Array<Omit<SidebarEntry<DashboardTab>, 'count'>> = [
   { id: 'channels', label: 'Channels', icon: 'channels', group: 'Workspace', order: 15 },
   { id: 'jobs', label: 'Jobs', icon: 'jobs', group: 'Workspace', order: 20 },
   { id: 'workers', label: 'Workers', icon: 'workers', group: 'Workspace', order: 30 },
+  { id: 'store', label: 'Store', icon: 'store', group: 'Workspace', order: 35 },
   { id: 'config', label: 'Config', icon: 'config', group: 'Workspace', order: 40 },
   { id: 'chat', label: 'Chat', icon: 'chat', group: 'System', order: 10 },
   { id: 'system', label: 'System', icon: 'system', group: 'System', order: 20 },
@@ -265,6 +266,7 @@ interface SchedulerJobState {
   lastSummary: string | null;
   lastError: string | null;
   lastTrigger: 'schedule' | 'manual' | null;
+  consecutiveErrors?: number;
 }
 
 interface JobPreset {
@@ -488,6 +490,55 @@ interface AppBackupRecord {
   path: string;
   createdAt: string;
   sizeBytes: number;
+  restorePending?: boolean;
+}
+
+interface AutoBackupSettings {
+  enabled: boolean;
+  retentionDays: number;
+}
+
+// Community store types (mirrors api.bfrost.net schema)
+interface StoreWorkerListing {
+  id: string;
+  name: string;
+  tagline: string;
+  author: string;
+  category: string;
+  tags: string[];
+  trust: string;
+  latestVersion: string;
+  bfrostEngine: string;
+  permissions: string[];
+  capabilities: {
+    jobs: string[];
+    tools: string[];
+    channels: string[];
+    providers: string[];
+    itemProduces: string[];
+    itemConsumes: string[];
+  };
+  downloadCount: number;
+  updatedAt: string;
+}
+
+interface StoreWorkerVersion {
+  version: string;
+  bfrostEngine: string;
+  bundleUrl?: string;
+  bundleSha256?: string;
+  changelog?: string;
+  publishedAt: string;
+  yanked: boolean;
+  yankReason?: string;
+}
+
+interface StoreWorkerDetail extends StoreWorkerListing {
+  description: string;
+  repoUrl: string;
+  readmeUrl?: string;
+  license: string;
+  versions: StoreWorkerVersion[];
 }
 
 interface SourceQualityRules {
@@ -601,6 +652,20 @@ export default function App() {
   const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
   const chatLogRef = useRef<HTMLDivElement | null>(null);
   const [workerUploadFile, setWorkerUploadFile] = useState<File | null>(null);
+
+  // Store tab state
+  const [storeWorkers, setStoreWorkers] = useState<StoreWorkerListing[] | null>(null);
+  const [storeLoading, setStoreLoading] = useState(false);
+  const [storeError, setStoreError] = useState<string | null>(null);
+  const [storeQuery, setStoreQuery] = useState('');
+  const [storeQueryInput, setStoreQueryInput] = useState('');
+  const [storeSelectedId, setStoreSelectedId] = useState<string | null>(null);
+  const [storeDetail, setStoreDetail] = useState<StoreWorkerDetail | null>(null);
+  const [storeDetailLoading, setStoreDetailLoading] = useState(false);
+  const [sideloadFile, setSideloadFile] = useState<File | null>(null);
+
+  // Auto-backup settings state (system tab)
+  const [autoBackupSettings, setAutoBackupSettings] = useState<AutoBackupSettings | null>(null);
   const [openaiApiKeyDraft, setOpenaiApiKeyDraft] = useState('');
   const [anthropicApiKeyDraft, setAnthropicApiKeyDraft] = useState('');
   const [activeLocalProviderDraft, setActiveLocalProviderDraft] = useState('');
@@ -681,10 +746,170 @@ export default function App() {
     el.scrollTop = el.scrollHeight;
   }, [chatTurns.length, busyKey === 'dashboard-chat']);
 
+  // Load store catalog when the Store tab is opened. Re-fetches when the search query changes.
+  useEffect(() => {
+    if (activeTab !== 'store') return;
+    void fetchStoreCatalog(storeQuery);
+  }, [activeTab, storeQuery]);
+
+  // Load auto-backup settings when the System tab is opened.
+  useEffect(() => {
+    if (activeTab !== 'system' || autoBackupSettings !== null) return;
+    void fetchAutoBackupSettings();
+  }, [activeTab]);
+
   async function refreshActiveTabSections(): Promise<void> {
     const sections = sectionsForTab(activeTabRef.current);
     await Promise.all(sections.map((section) => fetchSection(section, { force: true })));
   }
+
+  // ── Store ──────────────────────────────────────────────────────────────────
+
+  const STORE_API = 'https://api.bfrost.net/v1';
+
+  async function fetchStoreCatalog(query: string): Promise<void> {
+    setStoreLoading(true);
+    setStoreError(null);
+    try {
+      const params = new URLSearchParams({ limit: '50' });
+      if (query.trim()) params.set('q', query.trim());
+      const res = await fetch(`${STORE_API}/workers?${params.toString()}`);
+      if (!res.ok) throw new Error(`Store API returned ${res.status}`);
+      const data = await res.json() as { workers: StoreWorkerListing[] };
+      setStoreWorkers(Array.isArray(data.workers) ? data.workers : []);
+    } catch (err) {
+      setStoreError(err instanceof Error ? err.message : 'Failed to load store catalog.');
+    } finally {
+      setStoreLoading(false);
+    }
+  }
+
+  async function fetchStoreDetail(id: string): Promise<void> {
+    setStoreDetailLoading(true);
+    setStoreDetail(null);
+    try {
+      const res = await fetch(`${STORE_API}/workers/${encodeURIComponent(id)}`);
+      if (!res.ok) throw new Error(`Store API returned ${res.status}`);
+      setStoreDetail(await res.json() as StoreWorkerDetail);
+    } catch {
+      setStoreDetail(null);
+    } finally {
+      setStoreDetailLoading(false);
+    }
+  }
+
+  async function installFromStore(worker: StoreWorkerListing): Promise<void> {
+    // Find the latest non-yanked version with bundle info from the detail panel.
+    const detail = storeDetail?.id === worker.id ? storeDetail : null;
+    const version = detail?.versions?.find((v) => !v.yanked && v.bundleUrl && v.bundleSha256);
+    if (!version || !version.bundleUrl || !version.bundleSha256) {
+      setError({ friendly: `No installable version found for "${worker.name}". Open the store listing to get more details.` });
+      return;
+    }
+    setBusyKey(`store-install-${worker.id}`);
+    try {
+      const res = await fetch('/api/store/install', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: worker.id, bundleUrl: version.bundleUrl, bundleSha256: version.bundleSha256 }),
+      });
+      const payload = await res.json() as { ok?: boolean; error?: string };
+      if (!res.ok || !payload.ok) {
+        throw new Error(payload.error ?? `Install failed (HTTP ${res.status})`);
+      }
+      setNotice(`"${worker.name}" installed! Enable it in the Workers tab.`);
+      // Refresh dashboard to show the new worker.
+      await fetchDashboard(true);
+    } catch (err) {
+      setError(toAppError(err));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function sideloadWorkerZip(): Promise<void> {
+    if (!sideloadFile) {
+      setError({ friendly: 'Choose a worker archive before uploading.' });
+      return;
+    }
+    setBusyKey('sideload-upload');
+    try {
+      const res = await fetch('/api/workers/upload', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'X-Worker-Filename': sideloadFile.name },
+        body: sideloadFile,
+      });
+      const payload = await res.json() as { ok?: boolean; error?: string; manifest?: { name: string } };
+      if (!res.ok) throw new Error(payload.error ?? `Upload failed (HTTP ${res.status})`);
+      setSideloadFile(null);
+      setNotice(`"${payload.manifest?.name ?? sideloadFile.name}" installed! Enable it in the Workers tab.`);
+      await fetchDashboard(true);
+    } catch (err) {
+      setError(toAppError(err));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  // ── Auto-backup ────────────────────────────────────────────────────────────
+
+  async function fetchAutoBackupSettings(): Promise<void> {
+    try {
+      const res = await fetch('/api/backups/settings', { credentials: 'include' });
+      if (!res.ok) return;
+      setAutoBackupSettings(await res.json() as AutoBackupSettings);
+    } catch {
+      // best-effort
+    }
+  }
+
+  async function saveAutoBackup(patch: Partial<AutoBackupSettings>): Promise<void> {
+    setBusyKey('auto-backup-settings');
+    try {
+      const res = await fetch('/api/backups/settings', {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      const updated = await res.json() as AutoBackupSettings;
+      if (!res.ok) throw new Error((updated as any).error ?? 'Failed to save auto-backup settings.');
+      setAutoBackupSettings(updated);
+    } catch (err) {
+      setError(toAppError(err));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function restoreBackup(file: string): Promise<void> {
+    if (!window.confirm(`Schedule restore from "${file}"?\n\nBFrost will apply this backup the next time it restarts. Your current data will be replaced.`)) return;
+    setBusyKey(`restore-${file}`);
+    try {
+      const res = await fetch(`/api/backups/${encodeURIComponent(file)}/restore`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const payload = await res.json() as { ok?: boolean; message?: string; error?: string };
+      if (!res.ok || !payload.ok) throw new Error(payload.error ?? 'Restore scheduling failed.');
+      setNotice(payload.message ?? 'Restore scheduled. Restart BFrost to apply.');
+      // Refresh backup list to show restore-pending badge.
+      await fetchSection('backups', { force: true });
+    } catch (err) {
+      setError(toAppError(err));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function cancelRestore(): Promise<void> {
+    await fetch('/api/backups/restore-cancel', { method: 'POST', credentials: 'include' });
+    await fetchSection('backups', { force: true });
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
 
   async function initialize() {
     const nextSession = await refreshSession(true);
@@ -1593,6 +1818,7 @@ export default function App() {
 
       {activeTab === 'overview' ? (
         <section className="tab-page">
+          {renderStuckDetectorBanner()}
           <section className="grid top-grid">
             {renderModelPanel()}
             {renderRuntimePanel()}
@@ -2067,6 +2293,8 @@ export default function App() {
         </section>
       ) : null}
 
+      {activeTab === 'store' ? renderStoreTab() : null}
+
       {activeTab === 'system' ? (
         <section className="panel tab-page">
           <div className="panel-head">
@@ -2102,6 +2330,45 @@ export default function App() {
             </StatusPill>
           </div>
 
+          {/* Auto-backup settings */}
+          {autoBackupSettings ? (
+            <div className="form-grid" style={{ marginBottom: '0.75rem' }}>
+              <label className="field">
+                <span>Automatic daily backup</span>
+                <select
+                  value={autoBackupSettings.enabled ? 'yes' : 'no'}
+                  onChange={(e) => void saveAutoBackup({ enabled: e.target.value === 'yes' })}
+                  disabled={busyKey === 'auto-backup-settings'}
+                >
+                  <option value="no">Off</option>
+                  <option value="yes">On — every day at 03:00</option>
+                </select>
+              </label>
+              {autoBackupSettings.enabled ? (
+                <label className="field">
+                  <span>Keep backups for (days)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={autoBackupSettings.retentionDays}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      if (v >= 1 && v <= 365) {
+                        setAutoBackupSettings((prev) => prev ? { ...prev, retentionDays: v } : prev);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      if (v >= 1 && v <= 365) void saveAutoBackup({ retentionDays: v });
+                    }}
+                    disabled={busyKey === 'auto-backup-settings'}
+                  />
+                </label>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="panel-actions wrap">
             <button
               className="primary"
@@ -2123,9 +2390,29 @@ export default function App() {
             {dashboard.backups.map((backup) => (
               <div className="backup-row" key={backup.file}>
                 <div>
-                  <strong>{backup.file}</strong>
+                  <strong>
+                    {backup.file}
+                    {backup.restorePending ? (
+                      <span className="status-pill warning" style={{ marginLeft: '0.5rem' }}>Restore pending</span>
+                    ) : null}
+                  </strong>
                   <span>{formatBytes(backup.sizeBytes)} · {formatDate(backup.createdAt)}</span>
                   <span>{backup.path}</span>
+                </div>
+                <div className="panel-actions" style={{ flexShrink: 0 }}>
+                  {backup.restorePending ? (
+                    <button type="button" onClick={() => void cancelRestore()}>
+                      Cancel restore
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={busyKey === `restore-${backup.file}`}
+                      onClick={() => void restoreBackup(backup.file)}
+                    >
+                      {busyKey === `restore-${backup.file}` ? 'Scheduling...' : 'Restore'}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -3185,6 +3472,268 @@ export default function App() {
           ) : null}
         </div>
       </div>
+    );
+  }
+
+  // ── Stuck detector banner ─────────────────────────────────────────────────
+
+  function renderStuckDetectorBanner() {
+    const STUCK_THRESHOLD = 3;
+    const stuckJobs = dashboard.cron.jobs.filter(
+      (j) => j.enabled && j.workerEnabled && (j.consecutiveErrors ?? 0) >= STUCK_THRESHOLD,
+    );
+    if (stuckJobs.length === 0) return null;
+
+    return (
+      <div className="stuck-detector-banner" role="alert">
+        <strong>
+          {stuckJobs.length === 1
+            ? `"${stuckJobs[0].label}" has failed ${stuckJobs[0].consecutiveErrors} times in a row.`
+            : `${stuckJobs.length} jobs are failing repeatedly.`}
+        </strong>
+        {' '}
+        <span>Check credentials and model settings, then re-enable.</span>
+        <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+          {stuckJobs.map((j) => (
+            <button
+              key={j.name}
+              type="button"
+              onClick={() => {
+                setSelectedJobName(j.name);
+                setActiveTab('jobs');
+              }}
+            >
+              Fix "{j.label}"
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Store tab ─────────────────────────────────────────────────────────────
+
+  function renderStoreTab() {
+    const STORE_URL = 'https://bfrost.net/store';
+    const installedIds = new Set(dashboard.workers.map((w) => w.id));
+
+    return (
+      <section className="panel tab-page store-tab">
+        {/* Header */}
+        <div className="panel-head">
+          <div>
+            <p className="panel-kicker">Community</p>
+            <h2>Worker Store</h2>
+          </div>
+          <a href={STORE_URL} target="_blank" rel="noopener noreferrer" className="store-external-link">
+            bfrost.net/store ↗
+          </a>
+        </div>
+
+        {/* Search */}
+        <div className="store-search-row">
+          <input
+            type="search"
+            className="store-search-input"
+            placeholder="Search workers…"
+            value={storeQueryInput}
+            onChange={(e) => setStoreQueryInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') setStoreQuery(storeQueryInput);
+            }}
+            autoComplete="off"
+          />
+          <button type="button" onClick={() => setStoreQuery(storeQueryInput)} disabled={storeLoading}>
+            {storeLoading ? 'Searching…' : 'Search'}
+          </button>
+          {storeQuery ? (
+            <button type="button" onClick={() => { setStoreQuery(''); setStoreQueryInput(''); }}>
+              Clear
+            </button>
+          ) : null}
+        </div>
+
+        {/* Sideload from .zip */}
+        <details className="store-sideload-section">
+          <summary>Sideload a worker archive (.zip / .tar.gz)</summary>
+          <div className="store-sideload-row">
+            <p className="footnote">
+              Install a worker someone shared with you as an archive file, without going through the
+              store. The archive must contain a valid <code>worker.json</code>.
+            </p>
+            <input
+              type="file"
+              accept=".zip,.tar.gz,.tgz"
+              onChange={(e) => setSideloadFile(e.target.files?.[0] ?? null)}
+            />
+            {sideloadFile ? (
+              <div className="panel-actions">
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={busyKey === 'sideload-upload'}
+                  onClick={() => void sideloadWorkerZip()}
+                >
+                  {busyKey === 'sideload-upload' ? 'Installing…' : `Install "${sideloadFile.name}"`}
+                </button>
+                <button type="button" onClick={() => setSideloadFile(null)}>Cancel</button>
+              </div>
+            ) : null}
+          </div>
+        </details>
+
+        {/* Detail panel */}
+        {storeSelectedId ? (
+          <div className="store-detail-panel">
+            <div className="panel-head section-break">
+              <div>
+                <p className="panel-kicker">Worker detail</p>
+                <h2>{storeDetail?.name ?? storeSelectedId}</h2>
+              </div>
+              <button type="button" onClick={() => { setStoreSelectedId(null); setStoreDetail(null); }}>
+                ← Back to catalog
+              </button>
+            </div>
+            {storeDetailLoading ? (
+              <p className="footnote">Loading…</p>
+            ) : storeDetail ? (
+              <>
+                <p>{storeDetail.tagline}</p>
+                <div className="store-detail-meta">
+                  <span>By <strong>{storeDetail.author}</strong></span>
+                  <span>v{storeDetail.latestVersion}</span>
+                  <span>{storeDetail.license ?? ''}</span>
+                  <StatusPill tone="info">{storeDetail.trust}</StatusPill>
+                  {storeDetail.downloadCount > 0 ? (
+                    <span>{storeDetail.downloadCount.toLocaleString()} installs</span>
+                  ) : null}
+                </div>
+                {storeDetail.permissions.length > 0 ? (
+                  <div className="store-permissions">
+                    <strong>Permissions this worker uses:</strong>
+                    <ul>
+                      {storeDetail.permissions.map((p) => <li key={p}><code>{p}</code></li>)}
+                    </ul>
+                  </div>
+                ) : null}
+                {storeDetail.capabilities && (
+                  <div className="store-capabilities">
+                    {storeDetail.capabilities.jobs.length > 0 && (
+                      <span>Jobs: {storeDetail.capabilities.jobs.join(', ')}</span>
+                    )}
+                    {storeDetail.capabilities.tools.length > 0 && (
+                      <span>Tools: {storeDetail.capabilities.tools.join(', ')}</span>
+                    )}
+                  </div>
+                )}
+                <div className="panel-actions" style={{ marginTop: '0.75rem' }}>
+                  {installedIds.has(storeDetail.id) ? (
+                    <StatusPill tone="good">Already installed</StatusPill>
+                  ) : (
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={busyKey === `store-install-${storeDetail.id}`}
+                      onClick={() => {
+                        // Check if we have bundle info to install
+                        const version = storeDetail.versions?.find((v) => !v.yanked && v.bundleUrl && v.bundleSha256);
+                        if (!version) {
+                          // Open in browser as fallback
+                          window.open(`https://bfrost.net/store/${storeDetail.id}`, '_blank');
+                          return;
+                        }
+                        void installFromStore(storeDetail);
+                      }}
+                    >
+                      {busyKey === `store-install-${storeDetail.id}` ? 'Installing…' : 'Install'}
+                    </button>
+                  )}
+                  <a
+                    href={`https://bfrost.net/store/${storeDetail.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    View on bfrost.net ↗
+                  </a>
+                </div>
+              </>
+            ) : (
+              <p className="footnote">Could not load worker details.</p>
+            )}
+          </div>
+        ) : null}
+
+        {/* Catalog */}
+        {!storeSelectedId ? (
+          <>
+            {storeError ? (
+              <div className="empty-state">
+                <p>Could not reach the store.</p>
+                <p className="footnote">{storeError}</p>
+                <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+                  <button type="button" onClick={() => void fetchStoreCatalog(storeQuery)}>Retry</button>
+                  <a href={`https://bfrost.net/store`} target="_blank" rel="noopener noreferrer">
+                    Open in browser ↗
+                  </a>
+                </div>
+              </div>
+            ) : storeLoading && !storeWorkers ? (
+              <p className="footnote">Loading catalog…</p>
+            ) : storeWorkers && storeWorkers.length === 0 ? (
+              <div className="empty-state">
+                <p>No workers found{storeQuery ? ` for "${storeQuery}"` : ''}.</p>
+                <p className="footnote">Try a different search, or browse the full catalog on bfrost.net.</p>
+              </div>
+            ) : storeWorkers ? (
+              <div className="store-catalog-grid">
+                {storeWorkers.map((worker) => (
+                  <div
+                    key={worker.id}
+                    className="store-card"
+                    onClick={() => {
+                      setStoreSelectedId(worker.id);
+                      void fetchStoreDetail(worker.id);
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        setStoreSelectedId(worker.id);
+                        void fetchStoreDetail(worker.id);
+                      }
+                    }}
+                  >
+                    <div className="store-card-head">
+                      <strong>{worker.name}</strong>
+                      <StatusPill tone="info">{worker.trust}</StatusPill>
+                    </div>
+                    <p className="store-card-tagline">{worker.tagline}</p>
+                    <div className="store-card-meta">
+                      <span>{worker.author}</span>
+                      <span>v{worker.latestVersion}</span>
+                      {worker.downloadCount > 0 ? (
+                        <span>{worker.downloadCount.toLocaleString()} installs</span>
+                      ) : null}
+                      {installedIds.has(worker.id) ? (
+                        <StatusPill tone="good">Installed</StatusPill>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="store-footer">
+              <p className="footnote">
+                Want to publish your own worker?{' '}
+                <a href="https://bfrost.net/publish" target="_blank" rel="noopener noreferrer">
+                  Submit to the store ↗
+                </a>
+              </p>
+            </div>
+          </>
+        ) : null}
+      </section>
     );
   }
 
