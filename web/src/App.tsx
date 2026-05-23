@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Sidebar, type SidebarEntry } from './Sidebar';
 import { TopBar } from './TopBar';
 import { Markdown } from './Markdown';
@@ -1916,7 +1916,7 @@ export default function App() {
               <div className="panel-head">
                 <div>
                   <p className="panel-kicker">Capabilities</p>
-                  <h2>Installed worker status</h2>
+                  <h2>Installed worker status <HelpTip>Workers are the building blocks of BFrost. Each one does a specific job — fetching news, posting to social media, running research — on a schedule you control. Enable or disable them from the Workers tab. A green "healthy" badge means everything it needs is configured.</HelpTip></h2>
                 </div>
                 <StatusPill tone={dashboard.workers.some((worker) => worker.healthState !== 'healthy' && worker.healthState !== 'disabled') ? 'warning' : 'good'}>
                   {dashboard.workers.length} installed
@@ -2423,12 +2423,56 @@ export default function App() {
         </section>
       ) : null}
 
+      {activeTab === 'system' ? (() => {
+        const hasModel = dashboard.integrations.openaiConfigured?.ok || dashboard.integrations.anthropicConfigured?.ok || dashboard.lmStudio?.running;
+        const hasChannel = dashboard.workers.some((w) => w.kind === 'channel' && w.healthState === 'healthy');
+        const hasEnabledWorker = dashboard.workers.some((w) => w.enabled && w.healthState === 'healthy');
+        const hasRun = dashboard.cron.jobs.some((j) => j.lastStartedAt !== null && j.lastStartedAt !== undefined);
+        const allDone = hasModel && hasChannel && hasEnabledWorker && hasRun;
+        const steps = [
+          { done: hasModel, label: 'Connect a model', detail: 'Add an OpenAI or Anthropic API key, or start LM Studio.', action: () => setActiveTab('config') },
+          { done: hasChannel, label: 'Connect a channel', detail: 'Set up Telegram or Discord so BFrost can reach you.', action: () => setActiveTab('channels') },
+          { done: hasEnabledWorker, label: 'Enable a worker', detail: 'Turn on a worker from the Workers tab — try the News Digest.', action: () => setActiveTab('workers') },
+          { done: hasRun, label: 'Let a job run', detail: 'Trigger a job manually from the Jobs tab, or wait for the scheduler.', action: () => setActiveTab('jobs') },
+        ];
+        return (
+          <section className="panel tab-page">
+            <div className="panel-head">
+              <div>
+                <p className="panel-kicker">Setup</p>
+                <h2>Getting started</h2>
+              </div>
+              {allDone ? <StatusPill tone="good">All done ✓</StatusPill> : <StatusPill tone="info">{steps.filter((s) => s.done).length}/{steps.length} complete</StatusPill>}
+            </div>
+            <div className="detail-body">
+              <ol className="getting-started-list">
+                {steps.map((step, i) => (
+                  <li key={i} className={`getting-started-step ${step.done ? 'done' : ''}`}>
+                    <span className="step-check">{step.done ? '✓' : (i + 1)}</span>
+                    <div>
+                      <strong>{step.label}</strong>
+                      <span className="footnote">{step.detail}</span>
+                    </div>
+                    {!step.done ? (
+                      <button type="button" onClick={step.action}>Go →</button>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+              <p className="footnote" style={{ marginTop: '0.75rem' }}>
+                You can return to this checklist any time from the System tab. Nothing is permanent — enable or disable workers freely.
+              </p>
+            </div>
+          </section>
+        );
+      })() : null}
+
       {activeTab === 'system' ? (
         <section className="panel tab-page">
           <div className="panel-head">
             <div>
               <p className="panel-kicker">System</p>
-              <h2>Runtime readiness</h2>
+              <h2>Runtime readiness <HelpTip>Shows whether BFrost's required services are running and configured — the AI model, any connected channels (Telegram, Discord), and the local database. A yellow "missing" pill means a credential or dependency is not yet set up; click the Config tab to fix it.</HelpTip></h2>
             </div>
           </div>
 
@@ -2665,6 +2709,32 @@ export default function App() {
                 </div>
               </div>
             ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'system' ? (
+        <section className="panel tab-page">
+          <div className="panel-head">
+            <div>
+              <p className="panel-kicker">Privacy</p>
+              <h2>Zero telemetry</h2>
+            </div>
+            <StatusPill tone="good">Local-only</StatusPill>
+          </div>
+          <div className="detail-body">
+            <p className="footnote">
+              BFrost collects <strong>no telemetry, no usage data, and no analytics</strong> — not even
+              crash reports. All data (workers, queue, events, conversations, credentials) stays on your
+              machine in <code>data/</code>. The only outbound connections BFrost makes are the ones you
+              explicitly configure: AI provider API calls, channel messages, and optional store catalog
+              lookups (which are opt-in when you open the Store tab).
+            </p>
+            <p className="footnote">
+              Cloud provider API keys are stored in the local <code>.env</code> file and sent only to
+              the respective provider (OpenAI, Anthropic). They are never sent to bfrost.net or any
+              third-party service.
+            </p>
           </div>
         </section>
       ) : null}
@@ -4304,6 +4374,26 @@ function surfaceDraftHasValue(fields: JobDashboardField[], draft: Record<string,
     }
     return String(value).trim().length > 0;
   });
+}
+
+/**
+ * Inline contextual help. Renders a small "?" button; clicking it toggles a plain-text
+ * explanation panel directly below the trigger. No external dependencies.
+ */
+function HelpTip({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="helptip">
+      <button
+        type="button"
+        className="helptip-trigger"
+        aria-label="Help"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >?</button>
+      {open ? <span className="helptip-body">{children}</span> : null}
+    </span>
+  );
 }
 
 function HealthRow({ label, status }: { label: string; status: HealthStatus }) {
