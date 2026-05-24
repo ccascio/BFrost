@@ -51,12 +51,31 @@ interface RegistryIndexes {
 let cachedIndexes: RegistryIndexes | null = null;
 const localModules = new Map<string, { module: BackendWorkerModule; workerDir?: string }>();
 
+/**
+ * Set of built-in worker ids that have been soft-deleted by the operator.
+ * Hidden built-ins are excluded from `allModules()` so the scheduler and tool
+ * catalog don't see them. Populated at startup from persisted worker state and
+ * updated synchronously whenever an operator deletes or restores a built-in.
+ */
+let hiddenBuiltInIds: Set<string> = new Set();
+
+/**
+ * Replace the current hidden-built-ins set and invalidate the index cache.
+ * Called at startup (from index.ts) and after each delete/restore operation.
+ */
+export function setHiddenBuiltInIds(ids: Set<string>): void {
+  hiddenBuiltInIds = new Set(ids);
+  cachedIndexes = null;
+}
+
 export function registerLoadedLocalModule(module: BackendWorkerModule, workerDir?: string): void {
   const id = module.manifest.id;
   if (localModules.has(id)) {
     throw new Error(`Local worker module ${id} is already registered.`);
   }
-  if (builtInWorkers.some((worker) => worker.id === id)) {
+  // Allow re-installing a formerly-built-in worker as a local module when the
+  // built-in has been soft-deleted (hidden). Otherwise conflict is an error.
+  if (builtInWorkers.some((worker) => worker.id === id) && !hiddenBuiltInIds.has(id)) {
     throw new Error(`Local worker id ${id} conflicts with a built-in worker.`);
   }
   validateBackendWorkerModules([...builtInWorkerModules, ...listLocalWorkerModules(), module]);
@@ -80,7 +99,10 @@ export function listWorkerModules(): BackendWorkerModule[] {
 }
 
 function allModules(): BackendWorkerModule[] {
-  return [...builtInWorkerModules, ...listLocalWorkerModules()];
+  const visibleBuiltIns = hiddenBuiltInIds.size > 0
+    ? builtInWorkerModules.filter((m) => !hiddenBuiltInIds.has(m.manifest.id))
+    : builtInWorkerModules;
+  return [...visibleBuiltIns, ...listLocalWorkerModules()];
 }
 
 function allManifests(): WorkerManifest[] {

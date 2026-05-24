@@ -9,6 +9,13 @@ export interface WorkerStateRecord {
   lastSeenAt?: string;
   /** Last manifest `version` we successfully booted for this worker id. Drives onMigrate. */
   installedVersion?: string;
+  /**
+   * When `true`, a deletable built-in worker has been "soft-deleted" by the operator.
+   * The worker is excluded from the registry until it is restored (reinstalled as a
+   * local worker from the community store). Cleared automatically when a local copy
+   * of the same id is installed and overrides the built-in slot.
+   */
+  hidden?: boolean;
 }
 
 export interface WorkerStateStore {
@@ -55,15 +62,42 @@ export async function rememberSeenWorkers(
   const state = await loadWorkerState();
   const now = new Date().toISOString();
   for (const worker of workers) {
+    const existing = state.workers[worker.id];
     state.workers[worker.id] = {
       // Built-in workers start enabled; freshly-installed community workers start disabled
       // so the user explicitly enables them after reviewing permissions.
-      enabled: state.workers[worker.id]?.enabled ?? worker.builtIn,
+      enabled: existing?.enabled ?? worker.builtIn,
       builtIn: worker.builtIn,
-      sourcePath: worker.sourcePath ?? state.workers[worker.id]?.sourcePath,
+      sourcePath: worker.sourcePath ?? existing?.sourcePath,
       lastSeenAt: now,
+      // Preserve hidden flag — only setWorkerHidden() should clear it.
+      ...(existing?.hidden === true ? { hidden: true } : {}),
+      ...(existing?.installedVersion !== undefined ? { installedVersion: existing.installedVersion } : {}),
     };
   }
+  await saveWorkerState(state);
+  return state;
+}
+
+/**
+ * Mark a deletable built-in worker as hidden (soft-deleted) or visible again.
+ * When hidden the worker is excluded from the registry and scheduler.
+ */
+export async function setWorkerHidden(
+  workerId: string,
+  hidden: boolean,
+  meta: { builtIn: boolean },
+): Promise<WorkerStateStore> {
+  const state = await loadWorkerState();
+  const existing = state.workers[workerId];
+  state.workers[workerId] = {
+    enabled: existing?.enabled ?? false,
+    builtIn: meta.builtIn,
+    ...(existing?.sourcePath !== undefined ? { sourcePath: existing.sourcePath } : {}),
+    ...(existing?.lastSeenAt !== undefined ? { lastSeenAt: existing.lastSeenAt } : {}),
+    ...(existing?.installedVersion !== undefined ? { installedVersion: existing.installedVersion } : {}),
+    ...(hidden ? { hidden: true } : {}),
+  };
   await saveWorkerState(state);
   return state;
 }

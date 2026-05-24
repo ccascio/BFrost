@@ -8,8 +8,11 @@ import {
   listRegisteredChannels,
   listRegisteredProviders,
   getProviderAdapter,
+  setHiddenBuiltInIds,
 } from './workers/registry';
 import { bootstrapLocalWorkers } from './workers/bootstrap';
+import { loadWorkerState } from './workers/state';
+import { builtInWorkers } from './workers/builtin';
 import { applyPlatformSettingsToConfig, loadAdminSettings } from './admin-config';
 import { releaseStaleQueueLockOnBoot } from './jobs/queue';
 import { registerBfrostRuntimeModule } from './sdk-runtime';
@@ -29,6 +32,20 @@ async function main(): Promise<void> {
   // Must happen before bootstrapLocalWorkers so the first require() inside a worker
   // entrypoint sees the synthetic module.
   registerBfrostRuntimeModule();
+
+  // Apply any persisted hidden-built-in flags before the registry is first used
+  // by bootstrapLocalWorkers. This ensures soft-deleted plugin workers are excluded
+  // from the scheduler and tool catalog from the very first request.
+  const bootState = await loadWorkerState();
+  const builtInIdSet = new Set(builtInWorkers.map((w) => w.id));
+  const bootHiddenIds = new Set(
+    Object.entries(bootState.workers)
+      .filter(([id, s]) => s.hidden === true && builtInIdSet.has(id))
+      .map(([id]) => id),
+  );
+  if (bootHiddenIds.size > 0) {
+    setHiddenBuiltInIds(bootHiddenIds);
+  }
 
   const localWorkers = await bootstrapLocalWorkers();
   await refreshActiveLocalProviderModels();

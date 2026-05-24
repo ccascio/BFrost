@@ -261,6 +261,8 @@ interface WorkerSummary {
   version: string;
   description: string;
   builtIn: boolean;
+  /** True when the built-in worker can be soft-deleted and later restored from the store. */
+  deletable?: boolean;
   kind: WorkerKind;
   enabled: boolean;
   missing: boolean;
@@ -383,6 +385,9 @@ interface StoreWorkerListing {
   };
   downloadCount: number;
   updatedAt: string;
+  /** True for workers that ship with BFrost. Infrastructure workers are always included;
+   *  plugin workers (news, publisher-x, research) can be deleted and restored. */
+  builtIn?: boolean;
 }
 
 interface StoreWorkerVersion {
@@ -3263,7 +3268,7 @@ export default function App() {
           </button>
           <button
             type="button"
-            disabled={busyKey === `worker-delete-${worker.id}` || worker.builtIn || worker.enabled}
+            disabled={busyKey === `worker-delete-${worker.id}` || (worker.builtIn && !worker.deletable) || worker.enabled}
             onClick={() => void deleteWorker(worker)}
           >
             Delete
@@ -3907,10 +3912,15 @@ export default function App() {
                   <div className="store-detail-actions">
                     {installedIds.has(storeDetail.id) ? (() => {
                       const installedWorker = dashboard.workers.find((w) => w.id === storeDetail.id);
+                      // Infrastructure built-ins (builtIn=true, not deletable) are always
+                      // present; just show a badge. Deletable plugin workers show Enable/Disable.
+                      if (storeDetail.builtIn && installedWorker && !installedWorker.deletable) {
+                        return <span className="store-installed-callout">✓ Always included</span>;
+                      }
                       const isEnabled = installedWorker?.enabled ?? false;
                       return (
                         <>
-                          <span className="store-installed-callout">✓ Installed</span>
+                          <span className="store-installed-callout">✓ Included</span>
                           <button
                             type="button"
                             className={isEnabled ? '' : 'primary'}
@@ -3930,7 +3940,11 @@ export default function App() {
                           </button>
                         </>
                       );
-                    })() : (
+                    })() : storeDetail.builtIn && !storeDetail.versions?.find((v) => !v.yanked && v.bundleUrl && v.bundleSha256) ? (
+                      // Infrastructure built-in with no installable bundle — should never be
+                      // missing but show a safe fallback.
+                      <span className="store-installed-callout">✓ Always included</span>
+                    ) : (
                       <button
                         type="button"
                         className="primary store-install-button"
@@ -3944,7 +3958,9 @@ export default function App() {
                           void installFromStore(storeDetail);
                         }}
                       >
-                        {busyKey === `store-install-${storeDetail.id}` ? 'Installing…' : 'Install worker'}
+                        {busyKey === `store-install-${storeDetail.id}`
+                          ? (storeDetail.builtIn ? 'Restoring…' : 'Installing…')
+                          : (storeDetail.builtIn ? 'Restore worker' : 'Install worker')}
                       </button>
                     )}
                   </div>
@@ -4489,10 +4505,11 @@ function storeCategoryLabel(category: string): string {
   return label || 'General';
 }
 
-function storeTrustTone(trust: string): 'community' | 'verified' | 'trusted' {
+function storeTrustTone(trust: string): 'community' | 'verified' | 'trusted' | 'core' {
   const normalized = trust.trim().toLowerCase();
   if (normalized === 'verified') return 'verified';
   if (normalized === 'trusted') return 'trusted';
+  if (normalized === 'core') return 'core';
   return 'community';
 }
 

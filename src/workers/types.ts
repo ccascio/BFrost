@@ -40,6 +40,12 @@ export interface WorkerManifest {
   tagline?: string;
   owner?: string;
   builtIn: boolean;
+  /**
+   * When `true`, this built-in worker can be "soft-deleted" by the operator and later
+   * restored from the community store. Infrastructure workers (channels, providers, core
+   * tools) leave this unset (falsy) and cannot be deleted.
+   */
+  deletable?: boolean;
   kind?: WorkerKind;
   backendEntrypoint?: string;
   requiredCredentials?: WorkerHealthRequirement[];

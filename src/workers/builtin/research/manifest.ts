@@ -16,6 +16,7 @@ export const researchWorker: WorkerManifest = {
   description: 'Creates durable Markdown research notes from configured topics.',
   tagline: 'Writes a Markdown research note on each topic you care about, on a schedule. Notes are saved locally so you can read, edit, and keep them.',
   builtIn: true,
+  deletable: true,
   requiredDependencies: [
     { key: 'googleSearchConfigured', label: 'Google Web Search', settingsTarget: 'config' },
   ],

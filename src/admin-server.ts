@@ -29,7 +29,8 @@ async function withLocalProvider<T>(action: (provider: ProviderAdapter) => Promi
 import { getSchedulerSnapshot, reloadSchedulerSchedules, triggerJobNow, updateSchedulerJob } from './scheduler';
 import { isJobName, pinAndLoadModel, unpinAndUnloadModel } from './job-runner';
 import { getPinnedModelId } from './local-model-pin';
-import { listWorkers } from './workers/registry';
+import { listWorkers, setHiddenBuiltInIds } from './workers/registry';
+import { builtInWorkers } from './workers/builtin';
 import { discoverLocalWorkerResult, discoverLocalWorkers, type DiscoveredLocalWorker } from './workers/local';
 import { compileLocalWorkerDashboard } from './workers/build';
 import {
@@ -38,6 +39,7 @@ import {
   loadWorkerState,
   rememberSeenWorkers,
   setWorkerEnabled,
+  setWorkerHidden,
   type WorkerStateStore,
 } from './workers/state';
 import { activateLocalWorker, deactivateLocalWorker } from './workers/bootstrap';
@@ -97,6 +99,28 @@ import { publishItem } from './jobs/item-bus';
 
 let server: Server | null = null;
 const sessions = new Map<string, number>();
+
+// Set of ids that exist as built-in worker modules (checked without loading state).
+const builtInWorkerIds: ReadonlySet<string> = new Set(builtInWorkers.map((w) => w.id));
+
+/**
+ * Read the current worker state and push any hidden built-in ids into the
+ * registry so `allModules()` / `listWorkers()` stays in sync with persistent
+ * operator decisions across the full request cycle.
+ *
+ * We match against the static built-in catalog rather than the `builtIn` flag
+ * in state, because the flag is set to `false` when a reinstalled local copy
+ * overwrites the state entry while the original built-in is still hidden.
+ */
+async function syncHiddenBuiltIns(state?: WorkerStateStore): Promise<void> {
+  const s = state ?? await loadWorkerState();
+  const ids = new Set(
+    Object.entries(s.workers)
+      .filter(([id, r]) => r.hidden === true && builtInWorkerIds.has(id))
+      .map(([id]) => id),
+  );
+  setHiddenBuiltInIds(ids);
+}
 const SESSION_COOKIE = 'bfrost_admin_session';
 const WORKER_HEALTH_STATE_STORE_KEY = 'worker.health.state';
 const MAX_WORKER_UPLOAD_BYTES = 25 * 1024 * 1024;
@@ -480,7 +504,22 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         return sendJson(res, 404, { error: 'Unknown worker' });
       }
       if (worker?.builtIn || storedWorker?.builtIn) {
-        throw new BadRequestError('Built-in workers cannot be deleted.');
+        // Deletable built-ins (plugin workers) can be soft-deleted. All other
+        // built-ins (channels, providers, infrastructure) cannot be removed.
+        if (!worker?.deletable) {
+          throw new BadRequestError('Built-in workers cannot be deleted.');
+        }
+        // Soft-delete: mark hidden so the registry and scheduler stop seeing it.
+        const updatedState = await setWorkerHidden(workerId, true, { builtIn: true });
+        await syncHiddenBuiltIns(updatedState);
+        await reloadSchedulerSchedules();
+        await recordEventSafe({
+          category: 'worker',
+          action: 'worker_deleted',
+          summary: `${worker?.name ?? workerId} built-in worker removed. It can be restored from the store.`,
+          metadata: { workerId, builtIn: true },
+        });
+        return sendJson(res, 200, await buildDashboardState());
       }
 
       const sourcePath = worker?.sourcePath ?? storedWorker?.sourcePath;
@@ -733,6 +772,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
  * snappy to open.
  */
 async function buildDashboardState(): Promise<DashboardState> {
+  // Sync hidden built-ins BEFORE any listWorkers() call so soft-deleted plugin
+  // workers are excluded from the registry and scheduler view.
+  await syncHiddenBuiltIns();
+
   const localProvider = getActiveLocalProvider();
   const [scheduler, lmStudioRunning, loadedCount, health, localResult, pinnedModelId] = await Promise.all([
     getSchedulerSnapshot(),
@@ -1283,6 +1326,7 @@ function listWorkerSummaries(
       tagline: worker.tagline,
       bfrostEngineRange: worker.bfrostEngineRange,
       builtIn: worker.builtIn,
+      deletable: worker.deletable ?? false,
       kind: deriveWorkerKind(worker),
       enabled,
       missing,

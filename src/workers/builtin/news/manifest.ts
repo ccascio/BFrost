@@ -34,6 +34,7 @@ export const newsWorker: WorkerManifest = {
   description: 'Collects, evaluates, deduplicates, and queues news digest items.',
   tagline: 'Pulls articles from sources you choose, scores them for quality, and queues a short digest you can review before anything else uses it.',
   builtIn: true,
+  deletable: true,
   requiredDependencies: [
     { key: 'googleSearchConfigured', label: 'Google Web Search', settingsTarget: 'config' },
   ],

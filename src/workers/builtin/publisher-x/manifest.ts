@@ -16,6 +16,7 @@ export const xPublisherWorker: WorkerManifest = {
   description: 'Selects approved queue items and drafts or publishes X posts.',
   tagline: 'Turns digest items you have approved into X posts. Drafts go out only after you say yes — nothing is published behind your back.',
   builtIn: true,
+  deletable: true,
   requiredCredentials: [
     { key: 'xConfigured', label: 'X API credentials', settingsTarget: 'health-x' },
   ],

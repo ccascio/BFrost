@@ -29,6 +29,7 @@
   --color-store-trust-community: #64748b;
   --color-store-trust-verified: #0f766e;
   --color-store-trust-trusted: #6d5bd0;
+  --color-store-trust-core: #1d4ed8;
   --store-card-shadow: 0 14px 34px rgba(29, 35, 39, 0.08);
   --shadow: 0 12px 30px rgba(29, 35, 39, 0.08);
   --sidebar-width: 240px;
@@ -2168,6 +2169,12 @@ code {
   color: var(--color-store-trust-trusted);
   background: color-mix(in srgb, var(--color-store-trust-trusted) 13%, var(--panel));
   border-color: color-mix(in srgb, var(--color-store-trust-trusted) 24%, transparent);
+}
+
+.store-trust-badge.core {
+  color: var(--color-store-trust-core);
+  background: color-mix(in srgb, var(--color-store-trust-core) 10%, var(--panel));
+  border-color: color-mix(in srgb, var(--color-store-trust-core) 22%, transparent);
 }
 
 .store-card-title-row {

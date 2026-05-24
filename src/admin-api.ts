@@ -283,6 +283,8 @@ export const WorkerSummarySchema = z.object({
   tagline: z.string().optional(),
   bfrostEngineRange: z.string().optional(),
   builtIn: z.boolean(),
+  /** True when the built-in worker can be soft-deleted and restored from the store. */
+  deletable: z.boolean().optional(),
   kind: z.enum(['feature', 'channel', 'provider']),
   enabled: z.boolean(),
   missing: z.boolean(),
