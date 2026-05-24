@@ -113,8 +113,20 @@ async function withBootstrapSetup(moduleJs: string, fn: TestFn): Promise<void> {
   }
 }
 
-test('bootstrap — onMigrate called with fromVersion=null on first boot', async () => {
+test('bootstrap — freshly discovered local workers stay disabled until explicitly enabled', async () => {
   await withBootstrapSetup(WORKER_MODULE_JS, async (workerDir) => {
+    const result = await bootstrapLocalWorkers();
+
+    assert.ok(result.skipped.includes(WORKER_ID), 'worker skipped');
+    assert.equal(result.loaded.includes(WORKER_ID), false);
+    assert.deepEqual(await readLifecycleCalls(workerDir), []);
+  });
+});
+
+test('bootstrap — onMigrate called with fromVersion=null on first enabled boot', async () => {
+  await withBootstrapSetup(WORKER_MODULE_JS, async (workerDir) => {
+    await saveWorkerState({ workers: { [WORKER_ID]: { builtIn: false, enabled: true } } });
+
     const result = await bootstrapLocalWorkers();
 
     assert.ok(result.loaded.includes(WORKER_ID), 'worker loaded');

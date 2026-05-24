@@ -17,7 +17,6 @@ import {
 import { loadLocalWorkerModule, WorkerLoadError } from './loader';
 import { listLocalWorkerModules, registerLoadedLocalModule, unregisterLocalWorkerModule } from './registry';
 import {
-  isWorkerEnabled,
   loadWorkerState,
   setWorkerInstalledVersion,
   type WorkerStateStore,
@@ -108,7 +107,7 @@ export async function bootstrapLocalWorkers(): Promise<BootstrapLocalWorkersResu
   };
 
   for (const worker of discovery.workers) {
-    const enabled = isWorkerEnabled(worker.manifest.id, state);
+    const enabled = state.workers[worker.manifest.id]?.enabled ?? false;
     if (!enabled) {
       result.skipped.push(worker.manifest.id);
       continue;

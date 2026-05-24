@@ -119,16 +119,17 @@ export async function startScheduler(): Promise<void> {
 }
 
 export async function getSchedulerSnapshot(): Promise<{ timezone: string; jobs: SchedulerJobState[] }> {
-  const settings = await ensureSettings();
   const workerState = await loadWorkerState();
 
   // Load recent runs to compute per-job consecutive error counts (stuck detector).
   const recentRuns = await listSchedulerRuns(30).catch(() => []);
   const consecutiveErrorsByJob = computeConsecutiveErrors(recentRuns);
+  const settings = await ensureSettings();
+  const jobNames = knownJobs();
 
   return {
     timezone: settings.timezone,
-    jobs: knownJobs().map((name) =>
+    jobs: jobNames.map((name) =>
       buildJobState(name, settings.jobs[name], workerState, consecutiveErrorsByJob[name]),
     ),
   };
@@ -251,7 +252,16 @@ async function reloadSchedules(): Promise<void> {
 }
 
 async function doReloadSchedules(): Promise<void> {
-  const settings = await ensureSettings();
+  let settings = await ensureSettings();
+  let jobNames = knownJobs();
+  // If a new community worker was just hot-activated, its jobs won't be in the
+  // settings cache that was seeded at startup.  Clear the cache so normalizeSettings
+  // runs again with the full knownJobs() list before we iterate.
+  if (jobNames.some((name) => !settings.jobs[name])) {
+    settingsCache = null;
+    settings = await ensureSettings();
+    jobNames = knownJobs();
+  }
   const workerState = await loadWorkerState();
 
   for (const [name, task] of tasks.entries()) {
@@ -260,7 +270,7 @@ async function doReloadSchedules(): Promise<void> {
     tasks.delete(name);
   }
 
-  for (const name of knownJobs()) {
+  for (const name of jobNames) {
     const jobSettings = settings.jobs[name];
     const registered = getRegisteredWorkerJob(name);
     if (!jobSettings.enabled || !isWorkerEnabled(registered.worker.id, workerState)) {
@@ -617,6 +627,10 @@ async function finishSchedulerRunSafe(
 
 async function ensureSettings(): Promise<AdminSettings> {
   if (!settingsCache) {
+    settingsCache = await loadAdminSettings();
+    await saveAdminSettings(settingsCache);
+  }
+  if (knownJobs().some((name) => !settingsCache?.jobs[name])) {
     settingsCache = await loadAdminSettings();
     await saveAdminSettings(settingsCache);
   }

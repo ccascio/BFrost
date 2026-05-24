@@ -230,12 +230,14 @@ interface WorkerJobBaseField {
 export interface WorkerJobTextField extends WorkerJobBaseField {
   type: 'text';
   defaultValue: string;
+  placeholder?: string;
 }
 
 export interface WorkerJobTextareaField extends WorkerJobBaseField {
   type: 'textarea';
   defaultValue: string;
   rows?: number;
+  placeholder?: string;
 }
 
 export interface WorkerJobNumberField extends WorkerJobBaseField {

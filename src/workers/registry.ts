@@ -1,5 +1,6 @@
 import { config } from '../config';
 import { builtInWorkers, builtInWorkerModules } from './builtin';
+import type { AdminApiRoute } from '../admin-route';
 import type {
   BackendWorkerModule,
   ChannelAdapterFactory,
@@ -14,6 +15,7 @@ import type {
   WorkerToolManifest,
   RegisteredWorkerJob,
 } from './types';
+import { validateBackendWorkerModules } from './validation';
 
 export interface RegisteredChannelAdapter {
   worker: WorkerManifest;
@@ -57,6 +59,7 @@ export function registerLoadedLocalModule(module: BackendWorkerModule, workerDir
   if (builtInWorkers.some((worker) => worker.id === id)) {
     throw new Error(`Local worker id ${id} conflicts with a built-in worker.`);
   }
+  validateBackendWorkerModules([...builtInWorkerModules, ...listLocalWorkerModules(), module]);
   localModules.set(id, { module, workerDir });
   cachedIndexes = null;
   providerAdapterInstances.clear();
@@ -70,6 +73,10 @@ export function unregisterLocalWorkerModule(id: string): void {
 
 export function listLocalWorkerModules(): BackendWorkerModule[] {
   return Array.from(localModules.values()).map((entry) => entry.module);
+}
+
+export function listWorkerModules(): BackendWorkerModule[] {
+  return allModules();
 }
 
 function allModules(): BackendWorkerModule[] {
@@ -161,6 +168,10 @@ function indexes(): RegistryIndexes {
 
 export function listWorkers(): WorkerManifest[] {
   return allManifests();
+}
+
+export function listRegisteredApiRoutes(): AdminApiRoute[] {
+  return allModules().flatMap((module) => module.apiRoutes ?? []);
 }
 
 export function listBuiltInWorkers(): WorkerManifest[] {

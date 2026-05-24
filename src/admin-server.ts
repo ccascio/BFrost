@@ -12,6 +12,7 @@ import { upsertEnvValue } from './env-file';
 import {
   getActiveLocalProvider,
   getRegisteredProvider,
+  listRegisteredApiRoutes,
   listRegisteredChannels,
   listRegisteredProviders,
 } from './workers/registry';
@@ -46,7 +47,7 @@ import { getAppHealthSnapshot } from './health';
 import type { AppHealthSnapshot, HealthStatus } from './health';
 import { listRecentEventsSafe, recordEventSafe } from './event-log';
 import { loadQueueSnapshot, updateDashboardQueueItem } from './jobs/queue-service';
-import { loadBuiltInWorkerDashboardData } from './workers/builtin/dashboard-data';
+import { loadRegisteredWorkerDashboardData } from './workers/dashboard-data';
 import {
   AdminLoginBodySchema,
   AutoBackupSettingsSchema,
@@ -79,7 +80,6 @@ import {
   type QueueSection,
 } from './admin-api';
 import { BadRequestError } from './admin-route';
-import { builtInWorkerApiRoutes } from './workers/builtin/api-routes';
 import { listSchedulerRuns } from './scheduler-runs';
 import {
   createAppBackup,
@@ -271,7 +271,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return sendJson(res, 200, { response: response.text, dashboard: await buildDashboardState() });
     }
 
-    const workerRoute = builtInWorkerApiRoutes.find((route) =>
+    const workerRoute = listRegisteredApiRoutes().find((route) =>
       route.method === req.method && route.path === url.pathname,
     );
     if (workerRoute) {
@@ -832,7 +832,7 @@ async function buildBackupsSection(): Promise<BackupsSection> {
 }
 
 async function buildWorkerDataSection(): Promise<WorkerDataSection> {
-  const workerDashboardData = await loadBuiltInWorkerDashboardData();
+  const workerDashboardData = await loadRegisteredWorkerDashboardData();
   return WorkerDataSectionSchema.parse({ workerData: workerDashboardData });
 }
 
@@ -1273,7 +1273,7 @@ function listWorkerSummaries(
         workerHealthRequirementStatus('dependency', false, requirement, dependencyStatuses),
       ),
     ];
-    const healthState = workerHealthState(workerJobs, healthRows);
+    const healthState = workerHealthState(healthRows);
     return {
       id: worker.id,
       name: worker.name,
@@ -1347,12 +1347,8 @@ function workerHealthRequirementStatus(
 }
 
 function workerHealthState(
-  jobs: DashboardState['cron']['jobs'],
   healthRows: DashboardState['workers'][number]['health'],
 ): DashboardState['workers'][number]['healthState'] {
-  if (jobs.length > 0 && jobs.every((job) => !job.enabled)) {
-    return 'disabled';
-  }
   if (healthRows.some((row) => row.required && !row.ok && row.kind === 'credential')) {
     return 'missing_credentials';
   }
@@ -1371,7 +1367,7 @@ function workerHealthDetail(
 ): string {
   const missingRequired = healthRows.filter((row) => row.required && !row.ok);
   const missingOptional = healthRows.filter((row) => !row.required && !row.ok);
-  if (state === 'disabled') return 'All worker jobs are disabled.';
+  if (state === 'disabled') return 'Worker is disabled.';
   if (missingRequired.length > 0) {
     return `Missing ${missingRequired.map((row) => row.label).join(', ')}.`;
   }

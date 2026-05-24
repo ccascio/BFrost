@@ -29,6 +29,8 @@ async function pollUntil<T>(
 const FAKE_WORKER_ID = 'test.fake-scheduler-worker';
 const SUCCESS_JOB_ID = 'test.fake-scheduler-success';
 const FAIL_JOB_ID = 'test.fake-scheduler-fail';
+const LATE_WORKER_ID = 'test.fake-scheduler-late-worker';
+const LATE_JOB_ID = 'test.fake-scheduler-late-job';
 
 function buildFakeWorkerModule(): BackendWorkerModule {
   const manifest: WorkerManifest = {
@@ -73,6 +75,37 @@ function buildFakeWorkerModule(): BackendWorkerModule {
         run: async () => {
           throw new Error('Fake job failed on purpose.');
         },
+      },
+    ],
+  };
+
+  return { manifest };
+}
+
+function buildLateWorkerModule(): BackendWorkerModule {
+  const manifest: WorkerManifest = {
+    id: LATE_WORKER_ID,
+    name: 'Late Scheduler Worker',
+    version: '0.1.0',
+    description: 'Fake worker registered after scheduler settings have been cached.',
+    builtIn: false,
+    jobs: [
+      {
+        id: LATE_JOB_ID,
+        workerId: LATE_WORKER_ID,
+        label: 'Late Scheduler Job',
+        description: 'A job that appears after the settings cache is warm.',
+        defaultEnabled: true,
+        defaultCron: '0 0 * * *',
+        defaultModelAlias: 'gpt-5.4-mini',
+        approvalRequiredDefault: false,
+        approvalRequiredEditable: false,
+        defaultPrompt: '',
+        prompt: { editable: false },
+        paramsSchema: z.object({}),
+        defaultParams: {},
+        dashboardFields: [],
+        run: async () => ({ summary: 'Late job completed.', itemCount: 1 }),
       },
     ],
   };
@@ -159,6 +192,34 @@ test('scheduler integration — failing job produces an error run record and cor
     assert.match(jobState.lastError ?? '', /Fake job failed on purpose/);
   } finally {
     unregisterLocalWorkerModule(FAKE_WORKER_ID);
+    config.appDbPath = prevDbPath;
+    config.openaiApiKey = prevOpenaiKey;
+    config.modelFallbackAliases = prevFallbacks;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('scheduler snapshot refreshes cached settings when a new worker job appears', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-sched-late-worker-'));
+  const prevDbPath = config.appDbPath;
+  const prevOpenaiKey = config.openaiApiKey;
+  const prevFallbacks = config.modelFallbackAliases;
+
+  config.appDbPath = path.join(dir, 'app.sqlite');
+  config.openaiApiKey = 'test-key';
+  config.modelFallbackAliases = [];
+
+  try {
+    await getSchedulerSnapshot();
+    registerLoadedLocalModule(buildLateWorkerModule());
+
+    const snapshot = await getSchedulerSnapshot();
+    const jobState = snapshot.jobs.find((j) => j.name === LATE_JOB_ID);
+    assert.ok(jobState, 'snapshot includes a job registered after settings were cached');
+    assert.equal(jobState.modelAlias, 'gpt-5.4-mini');
+    assert.equal(jobState.effectiveModelAlias, 'gpt-5.4-mini');
+  } finally {
+    unregisterLocalWorkerModule(LATE_WORKER_ID);
     config.appDbPath = prevDbPath;
     config.openaiApiKey = prevOpenaiKey;
     config.modelFallbackAliases = prevFallbacks;

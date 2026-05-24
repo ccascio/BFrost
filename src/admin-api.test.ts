@@ -55,6 +55,44 @@ test('admin API schemas accept expected dashboard payloads', () => {
   );
   assert.deepEqual(
     JobDashboardFieldSchema.parse({
+      key: 'baseUrl',
+      label: 'Base URL',
+      type: 'text',
+      defaultValue: '',
+      placeholder: 'https://example.com',
+      helpText: 'Enter the site root.',
+    }),
+    {
+      key: 'baseUrl',
+      label: 'Base URL',
+      type: 'text',
+      defaultValue: '',
+      placeholder: 'https://example.com',
+      helpText: 'Enter the site root.',
+    },
+  );
+  assert.deepEqual(
+    JobDashboardFieldSchema.parse({
+      key: 'feeds',
+      label: 'Feed URLs',
+      type: 'textarea',
+      defaultValue: '',
+      rows: 8,
+      placeholder: 'https://feeds.example.com/rss',
+      helpText: 'One URL per line.',
+    }),
+    {
+      key: 'feeds',
+      label: 'Feed URLs',
+      type: 'textarea',
+      defaultValue: '',
+      rows: 8,
+      placeholder: 'https://feeds.example.com/rss',
+      helpText: 'One URL per line.',
+    },
+  );
+  assert.deepEqual(
+    JobDashboardFieldSchema.parse({
       key: 'queries',
       label: 'News interests',
       type: 'string-list',
@@ -194,8 +232,8 @@ test('dashboard response schema accepts the control-room payload shape', () => {
         kind: 'feature',
         enabled: true,
         missing: false,
-        healthState: 'disabled',
-        healthDetail: 'All worker jobs are disabled.',
+        healthState: 'healthy',
+        healthDetail: 'All declared worker checks passed.',
         jobCount: 1,
         enabledJobCount: 0,
         runningJobCount: 0,

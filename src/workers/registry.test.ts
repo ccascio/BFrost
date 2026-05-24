@@ -2,12 +2,17 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { builtInWorkerApiRoutes } from './builtin/api-routes';
 import { builtInWorkerModules } from './builtin';
+import type { BackendWorkerModule } from './module';
 import {
   getRegisteredWorkerJob,
   isJobName,
   jobLabels,
   knownJobs,
+  listRegisteredApiRoutes,
+  listWorkerModules,
   listWorkers,
+  registerLoadedLocalModule,
+  unregisterLocalWorkerModule,
 } from './registry';
 import { validateBackendWorkerModules } from './validation';
 
@@ -66,5 +71,70 @@ test('built-in worker API routes have unique method/path pairs and known owners'
     for (const workerId of route.workerIds) {
       assert.equal(workerIds.has(workerId), true, `${key} declares unknown worker owner ${workerId}`);
     }
+  }
+});
+
+test('local module registration validates modules before exposing routes', () => {
+  const badModule = {
+    manifest: {
+      id: 'local.invalid-registry-test',
+      name: 'Invalid Local Worker',
+      version: '0.1.0',
+      description: 'A malformed worker module.',
+      builtIn: false,
+      jobs: [
+        {
+          id: 'local-invalid-job',
+          label: 'Invalid job',
+          description: 'Missing workerId and the rest of the job contract.',
+        },
+      ],
+    },
+  } as unknown as BackendWorkerModule;
+
+  assert.throws(
+    () => registerLoadedLocalModule(badModule),
+    /expected local.invalid-registry-test/,
+  );
+  assert.equal(listWorkers().some((worker) => worker.id === 'local.invalid-registry-test'), false);
+});
+
+test('registered local modules expose API routes and dashboard data hooks through the registry', () => {
+  const module: BackendWorkerModule = {
+    manifest: {
+      id: 'local.registry-test',
+      name: 'Registry Test Worker',
+      version: '0.1.0',
+      description: 'A local module used by registry tests.',
+      builtIn: false,
+      jobs: [],
+    },
+    apiRoutes: [
+      {
+        method: 'GET',
+        path: '/api/workers/local.registry-test/status',
+        workerIds: ['local.registry-test'],
+        async handle() {
+          return { status: 200, body: { ok: true } };
+        },
+      },
+    ],
+    async loadDashboardData() {
+      return { ok: true };
+    },
+  };
+
+  registerLoadedLocalModule(module);
+  try {
+    assert.equal(
+      listRegisteredApiRoutes().some((route) => route.path === '/api/workers/local.registry-test/status'),
+      true,
+    );
+    assert.equal(
+      listWorkerModules().some((entry) => entry.manifest.id === 'local.registry-test' && entry.loadDashboardData),
+      true,
+    );
+  } finally {
+    unregisterLocalWorkerModule('local.registry-test');
   }
 });

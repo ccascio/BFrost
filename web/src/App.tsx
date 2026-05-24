@@ -160,12 +160,14 @@ interface JobBaseField {
 interface JobTextField extends JobBaseField {
   type: 'text';
   defaultValue: string;
+  placeholder?: string;
 }
 
 interface JobTextareaField extends JobBaseField {
   type: 'textarea';
   defaultValue: string;
   rows?: number;
+  placeholder?: string;
 }
 
 interface JobNumberField extends JobBaseField {
@@ -1695,6 +1697,7 @@ export default function App() {
           <textarea
             value={String(value)}
             rows={field.rows ?? 4}
+            placeholder={field.placeholder}
             onChange={(event) => onChange(event.target.value)}
           />
           {field.helpText ? <small>{field.helpText}</small> : null}
@@ -1727,7 +1730,7 @@ export default function App() {
         <input
           type={field.type === 'number' ? 'number' : field.type === 'secret-reference' ? 'password' : 'text'}
           value={value as string | number}
-          placeholder={field.type === 'secret-reference' ? field.placeholder : undefined}
+          placeholder={field.type === 'secret-reference' || field.type === 'text' ? field.placeholder : undefined}
           min={field.type === 'number' ? field.min : undefined}
           max={field.type === 'number' ? field.max : undefined}
           step={field.type === 'number' ? field.step : undefined}
@@ -3260,7 +3263,7 @@ export default function App() {
           </button>
           <button
             type="button"
-            disabled={busyKey === `worker-delete-${worker.id}` || worker.builtIn}
+            disabled={busyKey === `worker-delete-${worker.id}` || worker.builtIn || worker.enabled}
             onClick={() => void deleteWorker(worker)}
           >
             Delete
@@ -4342,9 +4345,21 @@ function fieldDefaultDraftValue(
 
 function resolveSeedPath(root: Record<string, unknown>, path: string): unknown {
   let cursor: unknown = root;
-  for (const segment of path.split('.')) {
+  let segments = path.split('.');
+  while (segments.length > 0) {
     if (cursor === null || cursor === undefined || typeof cursor !== 'object') return undefined;
-    cursor = (cursor as Record<string, unknown>)[segment];
+    const current = cursor as Record<string, unknown>;
+    let matched = false;
+    for (let length = segments.length; length >= 1; length -= 1) {
+      const key = segments.slice(0, length).join('.');
+      if (Object.prototype.hasOwnProperty.call(current, key)) {
+        cursor = current[key];
+        segments = segments.slice(length);
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) return undefined;
   }
   return cursor;
 }

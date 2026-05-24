@@ -37,6 +37,34 @@ test('local worker discovery loads manifest-only workers from configured directo
             description: 'A local worker settings surface.',
             tab: 'workers',
             path: '/api/workers/local.example',
+            fields: [
+              {
+                key: 'homepage',
+                label: 'Homepage',
+                type: 'text',
+                defaultValue: '',
+                placeholder: 'https://example.com',
+                helpText: 'Example text field with placeholder.',
+              },
+              {
+                key: 'notes',
+                label: 'Notes',
+                type: 'textarea',
+                defaultValue: '',
+                rows: 3,
+                placeholder: 'One item per line',
+                helpText: 'Example textarea field with placeholder.',
+              },
+              {
+                key: 'topics',
+                label: 'Topics',
+                type: 'string-list',
+                defaultValue: ['News'],
+                suggestions: ['News', 'Technology'],
+                placeholder: 'Add another topic',
+                helpText: 'Example string-list field with suggestions.',
+              },
+            ],
           },
         ],
       },
@@ -51,6 +79,13 @@ test('local worker discovery loads manifest-only workers from configured directo
     assert.equal(workers[0].manifest.jobs.length, 0);
     assert.equal(workers[0].manifest.ownedSettings?.[0]?.scope, 'job');
     assert.equal(workers[0].manifest.dashboard?.settings?.[0]?.id, 'example-settings');
+    const fields = workers[0].manifest.dashboard?.settings?.[0]?.fields ?? [];
+    assert.equal(fields[0]?.type, 'text');
+    assert.equal(fields[0].placeholder, 'https://example.com');
+    assert.equal(fields[1]?.type, 'textarea');
+    assert.equal(fields[1].placeholder, 'One item per line');
+    assert.equal(fields[2]?.type, 'string-list');
+    assert.equal(fields[2].placeholder, 'Add another topic');
     assert.equal(workers[0].sourcePath, path.join(workerDir, 'worker.json'));
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -129,6 +164,9 @@ test('worker state persists enable and disable lifecycle', async () => {
 
   try {
     let state = await rememberSeenWorkers([{ id: 'local.example', builtIn: false, sourcePath: '/tmp/worker.json' }]);
+    assert.equal(isWorkerEnabled('local.example', state), false);
+
+    state = await setWorkerEnabled('local.example', true, { builtIn: false, sourcePath: '/tmp/worker.json' });
     assert.equal(isWorkerEnabled('local.example', state), true);
 
     state = await setWorkerEnabled('local.example', false, { builtIn: false, sourcePath: '/tmp/worker.json' });
