@@ -386,8 +386,10 @@ interface StoreWorkerListing {
 interface StoreWorkerVersion {
   version: string;
   bfrostEngine: string;
+  releaseUrl?: string;
   bundleUrl?: string;
   bundleSha256?: string;
+  bundleSizeBytes?: number;
   changelog?: string;
   publishedAt: string;
   yanked: boolean;
@@ -715,11 +717,26 @@ export default function App() {
     setStoreDetailLoading(true);
     setStoreDetail(null);
     try {
-      const res = await fetch(`${STORE_API}/workers/${encodeURIComponent(id)}`);
-      if (!res.ok) throw new Error(`Store API returned ${res.status}`);
-      setStoreDetail(await res.json() as StoreWorkerDetail);
-    } catch {
-      setStoreDetail(null);
+      // ── Attempt first-party API (has bundleUrl, versions, etc.) ────────────
+      try {
+        const res = await fetch(`${STORE_API}/workers/${encodeURIComponent(id)}`);
+        if (res.ok) {
+          setStoreDetail(await res.json() as StoreWorkerDetail);
+          return;
+        }
+      } catch {
+        // fall through to CDN
+      }
+      // ── CDN fallback — index.json has all StoreWorkerDetail fields ─────────
+      const cdnRes = await fetch(STORE_CDN);
+      if (!cdnRes.ok) throw new Error(`CDN returned ${cdnRes.status}`);
+      const all = await cdnRes.json() as StoreWorkerDetail[];
+      const found = Array.isArray(all) ? all.find((w) => w.id === id) : null;
+      if (!found) throw new Error('Worker not found in registry.');
+      setStoreDetail(found);
+    } catch (err) {
+      // leave storeDetail null — UI shows "Could not load worker details"
+      console.error('[store] fetchStoreDetail failed:', err);
     } finally {
       setStoreDetailLoading(false);
     }
