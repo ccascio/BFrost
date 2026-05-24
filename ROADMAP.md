@@ -171,20 +171,17 @@ Original `ROADMAP.md` Phase 4. Required before workers can responsibly do real-w
 
 ### Workstream 7 — Community And Publication Readiness
 
-- [x] Add a `LICENSE` file with the **MIT License** (matches OpenClaw).
+- [x] Add a `LICENSE` file (MIT).
 - [x] `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1).
 - [x] `SECURITY.md` with a private disclosure path and a brief threat-model note.
-- [x] README rewritten with a worker-first lede ("worker-first local AI operations platform"); built-in workflows reframed as reference workers, not as the product.
-- [ ] `CODE_OF_CONDUCT.md` (Contributor Covenant).
-- [ ] `SECURITY.md` with a private disclosure path.
-- [ ] `CONTRIBUTING.md` expansion: dev loop, test expectations, worker authoring tutorial linking the examples.
-- [ ] Issue and PR templates: bug, feature, worker proposal, worker bug (some already exist — verify completeness).
+- [x] `CONTRIBUTING.md` expanded: full dev loop, test expectations table, worker authoring tutorial with scaffold guide and Claude Code skill instructions. _(Done 2026-05-24)_
+- [x] Issue and PR templates: `bug_report`, `feature_request`, `worker_proposal`, `plugin_bug`, `plugin_idea` + `PULL_REQUEST_TEMPLATE.md` with worker-first checklist.
+- [x] README rewritten with a worker-first lede — platform story first, bundled workers as examples. _(Done 2026-05-24)_
+- [x] Versioning policy: semver for core, declared `bfrostApiVersion` enforced on worker load.
+- [ ] First tagged release — `v0.2.0` reflecting Workstreams 1–4 complete.
 - [ ] A short docs site (Astro/VitePress) generated from `workers/README.md`, manifest type docstrings, and per-worker READMEs. Hosted on GitHub Pages.
-- [ ] README rewrite that leads with **BFrost = pluggable local AI ops platform**. The current README leads with "Telegram + news + X publisher" — that framing undersells the platform story.
 - [ ] A scripted demo (asciinema or short video) showing: install a local worker, enable it, configure it, run it, see results, disable it, delete it.
 - [ ] A "Worker Gallery" page in the dashboard listing built-in workers as installable examples — community workers can be linked from a curated `awesome-bfrost` repo later.
-- [x] Versioning policy: semver for core, declared `bfrostApiVersion` enforced on worker load (already in the manifest type — wire it up and write the deprecation policy).
-- [ ] First tagged release (`v0.1.0` once Workstream 1 lands; `v1.0.0` only after Workstreams 1–4 are complete).
 
 ---
 

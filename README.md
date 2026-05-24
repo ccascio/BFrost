@@ -4,11 +4,13 @@
 
 # BFrost
 
-**A local-first personal AI operations platform built on a worker-first contract.**
+**A worker-first local AI operations platform — every capability is a pluggable worker.**
 
-BFrost is a control room you run on your own machine. You talk to it through Telegram (more channels coming), it answers using a model you choose — a local one via LM Studio or Ollama, or a cloud one via your own OpenAI or Anthropic key — and it schedules background work for you: news harvesting, research notes, publishing to X or WordPress, anything else you add. Every capability — assistants, channels, scheduled jobs, model providers, publishing destinations — is a **worker**. The core knows how to install, configure, schedule, run, observe, and uninstall workers; it knows nothing about any specific workflow. Add a worker to add a feature. Remove it to remove the feature.
+BFrost is a local scheduler and orchestration runtime for AI-driven automations. Every capability — scheduled jobs, AI assistants, communication channels, model providers, publishing destinations — is a **worker**. The core knows only how to install, configure, schedule, run, observe, and uninstall workers; it knows nothing about any specific workflow. Add a worker to add a feature. Remove it to remove the feature.
 
-BFrost is local-first by design: model inference, scheduler state, queue state, and dashboard operations all run on your machine. There is no hosted service, no remote loading, no worker marketplace. Workers load from local directories you control, and your data stays in a SQLite file you own.
+Run it on your own machine: model inference, scheduler state, queue state, and the dashboard all stay local. There is no hosted service, no remote loading, no usage tracking. Workers load from directories you control, and your data stays in a SQLite file you own.
+
+**What comes in the box:** The bundled reference workers give you a news-harvesting → research-notes → multi-channel-publishing pipeline out of the box (Telegram two-way chat, Discord notifications, X / WordPress publishing, LM Studio / Ollama / OpenAI / Anthropic model providers). These workers are normal contributors — they use the same contract you use — and you can swap, disable, or replace any of them without touching the core.
 
 ## How BFrost compares
 
