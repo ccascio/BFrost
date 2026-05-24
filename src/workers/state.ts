@@ -56,7 +56,9 @@ export async function rememberSeenWorkers(
   const now = new Date().toISOString();
   for (const worker of workers) {
     state.workers[worker.id] = {
-      enabled: state.workers[worker.id]?.enabled ?? true,
+      // Built-in workers start enabled; freshly-installed community workers start disabled
+      // so the user explicitly enables them after reviewing permissions.
+      enabled: state.workers[worker.id]?.enabled ?? worker.builtIn,
       builtIn: worker.builtIn,
       sourcePath: worker.sourcePath ?? state.workers[worker.id]?.sourcePath,
       lastSeenAt: now,

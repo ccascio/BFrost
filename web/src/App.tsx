@@ -529,6 +529,7 @@ export default function App() {
   const [storeError, setStoreError] = useState<string | null>(null);
   const [storeQuery, setStoreQuery] = useState('');
   const [storeQueryInput, setStoreQueryInput] = useState('');
+  const [storeCategoryFilter, setStoreCategoryFilter] = useState('all');
   const [storeSelectedId, setStoreSelectedId] = useState<string | null>(null);
   const [storeDetail, setStoreDetail] = useState<StoreWorkerDetail | null>(null);
   const [storeDetailLoading, setStoreDetailLoading] = useState(false);
@@ -782,7 +783,7 @@ export default function App() {
       if (!res.ok || !payload.ok) {
         throw new Error(payload.error ?? `Install failed (HTTP ${res.status})`);
       }
-      setNotice(`"${worker.name}" installed! Enable it in the Workers tab.`);
+      setNotice(`"${worker.name}" installed! Use the Enable button to activate it.`);
       // Refresh dashboard to show the new worker.
       await fetchDashboard(true);
     } catch (err) {
@@ -3666,6 +3667,37 @@ export default function App() {
   function renderStoreTab() {
     const STORE_URL = 'https://bfrost.net/store';
     const installedIds = new Set(dashboard.workers.map((w) => w.id));
+    const categoryOptions = storeWorkers
+      ? Array.from(
+        storeWorkers.reduce((categories, worker) => {
+          const key = storeCategoryKey(worker.category);
+          if (!categories.has(key)) categories.set(key, storeCategoryLabel(worker.category));
+          return categories;
+        }, new Map<string, string>()),
+      )
+        .map(([key, label]) => ({ key, label }))
+        .sort((a, b) => a.label.localeCompare(b.label))
+      : [];
+    const activeCategoryFilter = categoryOptions.some((category) => category.key === storeCategoryFilter)
+      ? storeCategoryFilter
+      : 'all';
+    const filteredStoreWorkers = storeWorkers
+      ? storeWorkers.filter(
+        (worker) => activeCategoryFilter === 'all' || storeCategoryKey(worker.category) === activeCategoryFilter,
+      )
+      : [];
+    const activeCategoryLabel = activeCategoryFilter === 'all'
+      ? 'all categories'
+      : categoryOptions.find((category) => category.key === activeCategoryFilter)?.label ?? 'this category';
+    const selectedListing = storeSelectedId && storeWorkers
+      ? storeWorkers.find((worker) => worker.id === storeSelectedId) ?? null
+      : null;
+    const selectedWorker = storeDetail ?? selectedListing;
+
+    const openStoreWorker = (workerId: string) => {
+      setStoreSelectedId(workerId);
+      void fetchStoreDetail(workerId);
+    };
 
     return (
       <section className="panel tab-page store-tab">
@@ -3676,30 +3708,56 @@ export default function App() {
             <h2>Worker Store <HelpTip>Browse community-built workers from bfrost.net. Search by name or category, click a card to read the details and declared permissions, then click Install to add it — no terminal needed. Installed workers appear in the Workers tab immediately.</HelpTip></h2>
           </div>
           <a href={STORE_URL} target="_blank" rel="noopener noreferrer" className="store-external-link">
-            bfrost.net/store ↗
+            bfrost.net/store
           </a>
         </div>
 
         {/* Search */}
-        <div className="store-search-row">
-          <input
-            type="search"
-            className="store-search-input"
-            placeholder="Search workers…"
-            value={storeQueryInput}
-            onChange={(e) => setStoreQueryInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') setStoreQuery(storeQueryInput);
-            }}
-            autoComplete="off"
-          />
-          <button type="button" onClick={() => setStoreQuery(storeQueryInput)} disabled={storeLoading}>
-            {storeLoading ? 'Searching…' : 'Search'}
-          </button>
-          {storeQuery ? (
-            <button type="button" onClick={() => { setStoreQuery(''); setStoreQueryInput(''); }}>
-              Clear
+        <div className="store-catalog-tools">
+          <div className="store-search-row">
+            <input
+              type="search"
+              className="store-search-input"
+              placeholder="Search workers..."
+              value={storeQueryInput}
+              onChange={(e) => setStoreQueryInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') setStoreQuery(storeQueryInput);
+              }}
+              autoComplete="off"
+            />
+            <button type="button" className="store-search-button" onClick={() => setStoreQuery(storeQueryInput)} disabled={storeLoading}>
+              {storeLoading ? 'Searching...' : 'Search'}
             </button>
+            {storeQuery ? (
+              <button type="button" className="store-clear-button" onClick={() => { setStoreQuery(''); setStoreQueryInput(''); }}>
+                Clear
+              </button>
+            ) : null}
+          </div>
+
+          {categoryOptions.length > 0 ? (
+            <div className="store-filter-row" aria-label="Worker categories">
+              <button
+                type="button"
+                className={`store-filter-chip${activeCategoryFilter === 'all' ? ' active' : ''}`}
+                aria-pressed={activeCategoryFilter === 'all'}
+                onClick={() => setStoreCategoryFilter('all')}
+              >
+                All
+              </button>
+              {categoryOptions.map((category) => (
+                <button
+                  key={category.key}
+                  type="button"
+                  className={`store-filter-chip${activeCategoryFilter === category.key ? ' active' : ''}`}
+                  aria-pressed={activeCategoryFilter === category.key}
+                  onClick={() => setStoreCategoryFilter(category.key)}
+                >
+                  {category.label}
+                </button>
+              ))}
+            </div>
           ) : null}
         </div>
 
@@ -3735,80 +3793,166 @@ export default function App() {
         {/* Detail panel */}
         {storeSelectedId ? (
           <div className="store-detail-panel">
-            <div className="panel-head section-break">
-              <div>
-                <p className="panel-kicker">Worker detail</p>
-                <h2>{storeDetail?.name ?? storeSelectedId}</h2>
-              </div>
-              <button type="button" onClick={() => { setStoreSelectedId(null); setStoreDetail(null); }}>
-                ← Back to catalog
+            <div className="store-detail-toolbar">
+              <button type="button" className="store-back-button" onClick={() => { setStoreSelectedId(null); setStoreDetail(null); }}>
+                Back to catalog
               </button>
+              <a
+                href={`https://bfrost.net/store/${storeSelectedId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="store-external-link"
+              >
+                View on bfrost.net
+              </a>
             </div>
+
+            {selectedWorker ? (
+              <div className={`store-detail-hero store-palette-${storePaletteIndex(selectedWorker.category)}`}>
+                <StoreWorkerLogo worker={selectedWorker} size="large" installed={installedIds.has(selectedWorker.id)} />
+                <div className="store-detail-title">
+                  <span className="store-category-chip">{storeCategoryLabel(selectedWorker.category)}</span>
+                  <h2>{selectedWorker.name}</h2>
+                  <p>{selectedWorker.tagline}</p>
+                </div>
+                <StoreTrustBadge trust={selectedWorker.trust} />
+              </div>
+            ) : null}
+
             {storeDetailLoading ? (
-              <p className="footnote">Loading…</p>
+              <div className="store-detail-loading" aria-live="polite">
+                <span className="store-skeleton-line wide" />
+                <span className="store-skeleton-line" />
+                <span className="store-skeleton-line short" />
+              </div>
             ) : storeDetail ? (
               <>
-                <p>{storeDetail.tagline}</p>
                 <div className="store-detail-meta">
-                  <span>By <strong>{storeDetail.author}</strong></span>
+                  <span>{storeAuthorHandle(storeDetail.author)}</span>
                   <span>v{storeDetail.latestVersion}</span>
-                  <span>{storeDetail.license ?? ''}</span>
-                  <StatusPill tone="info">{storeDetail.trust}</StatusPill>
+                  {storeDetail.license ? <span>{storeDetail.license}</span> : null}
                   {storeDetail.downloadCount > 0 ? (
                     <span>{storeDetail.downloadCount.toLocaleString()} installs</span>
                   ) : null}
                 </div>
-                {storeDetail.permissions.length > 0 ? (
-                  <div className="store-permissions">
-                    <strong>Permissions this worker uses:</strong>
-                    <ul>
-                      {storeDetail.permissions.map((p) => <li key={p}><code>{p}</code></li>)}
-                    </ul>
+
+                <div className="store-detail-content">
+                  <section className="store-detail-section store-detail-description">
+                    <h3>Description</h3>
+                    <p>{storeDetail.description || storeDetail.tagline}</p>
+                  </section>
+
+                  <div className="store-detail-grid">
+                    <section className="store-detail-section">
+                      <h3>Permissions</h3>
+                      {storeDetail.permissions.length > 0 ? (
+                        <ul className="store-permission-list">
+                          {storeDetail.permissions.map((permission) => <li key={permission}><code>{permission}</code></li>)}
+                        </ul>
+                      ) : (
+                        <p className="footnote">No special permissions declared.</p>
+                      )}
+                    </section>
+
+                    <section className="store-detail-section">
+                      <h3>Capabilities</h3>
+                      <div className="store-capabilities">
+                        {storeDetail.capabilities.jobs.length > 0 ? (
+                          <span>Jobs: {storeDetail.capabilities.jobs.join(', ')}</span>
+                        ) : null}
+                        {storeDetail.capabilities.tools.length > 0 ? (
+                          <span>Tools: {storeDetail.capabilities.tools.join(', ')}</span>
+                        ) : null}
+                        {storeDetail.capabilities.channels.length > 0 ? (
+                          <span>Channels: {storeDetail.capabilities.channels.join(', ')}</span>
+                        ) : null}
+                        {storeDetail.capabilities.providers.length > 0 ? (
+                          <span>Providers: {storeDetail.capabilities.providers.join(', ')}</span>
+                        ) : null}
+                        {storeDetail.capabilities.jobs.length === 0
+                          && storeDetail.capabilities.tools.length === 0
+                          && storeDetail.capabilities.channels.length === 0
+                          && storeDetail.capabilities.providers.length === 0 ? (
+                            <span>No runtime capabilities declared.</span>
+                          ) : null}
+                      </div>
+                    </section>
                   </div>
-                ) : null}
-                {storeDetail.capabilities && (
-                  <div className="store-capabilities">
-                    {storeDetail.capabilities.jobs.length > 0 && (
-                      <span>Jobs: {storeDetail.capabilities.jobs.join(', ')}</span>
-                    )}
-                    {storeDetail.capabilities.tools.length > 0 && (
-                      <span>Tools: {storeDetail.capabilities.tools.join(', ')}</span>
+
+                  {storeDetail.versions.length > 0 ? (
+                    <section className="store-detail-section">
+                      <h3>Version history</h3>
+                      <ol className="store-version-list">
+                        {storeDetail.versions.slice(0, 5).map((version) => (
+                          <li key={version.version} className={version.yanked ? 'is-yanked' : ''}>
+                            <div className="store-version-head">
+                              <strong>v{version.version}</strong>
+                              <span>{formatDate(version.publishedAt)}</span>
+                              {version.yanked ? <StatusPill tone="warning">yanked</StatusPill> : null}
+                            </div>
+                            {version.changelog ? <p>{version.changelog}</p> : null}
+                            <span className="store-version-meta">
+                              Engine {version.bfrostEngine}
+                              {version.bundleSizeBytes ? ` · ${formatBytes(version.bundleSizeBytes)}` : ''}
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                    </section>
+                  ) : null}
+
+                  <div className="store-detail-actions">
+                    {installedIds.has(storeDetail.id) ? (() => {
+                      const installedWorker = dashboard.workers.find((w) => w.id === storeDetail.id);
+                      const isEnabled = installedWorker?.enabled ?? false;
+                      return (
+                        <>
+                          <span className="store-installed-callout">✓ Installed</span>
+                          <button
+                            type="button"
+                            className={isEnabled ? '' : 'primary'}
+                            disabled={busyKey === `worker-${storeDetail.id}`}
+                            onClick={() =>
+                              void mutate(
+                                `worker-${storeDetail.id}`,
+                                `/api/workers/${encodeURIComponent(storeDetail.id)}`,
+                                { method: 'POST', body: JSON.stringify({ enabled: !isEnabled }) },
+                                `${storeDetail.name} ${isEnabled ? 'disabled' : 'enabled'}.`,
+                              )
+                            }
+                          >
+                            {busyKey === `worker-${storeDetail.id}`
+                              ? (isEnabled ? 'Disabling…' : 'Enabling…')
+                              : (isEnabled ? 'Disable' : 'Enable')}
+                          </button>
+                        </>
+                      );
+                    })() : (
+                      <button
+                        type="button"
+                        className="primary store-install-button"
+                        disabled={busyKey === `store-install-${storeDetail.id}`}
+                        onClick={() => {
+                          const version = storeDetail.versions?.find((v) => !v.yanked && v.bundleUrl && v.bundleSha256);
+                          if (!version) {
+                            window.open(`https://bfrost.net/store/${storeDetail.id}`, '_blank');
+                            return;
+                          }
+                          void installFromStore(storeDetail);
+                        }}
+                      >
+                        {busyKey === `store-install-${storeDetail.id}` ? 'Installing…' : 'Install worker'}
+                      </button>
                     )}
                   </div>
-                )}
-                <div className="panel-actions" style={{ marginTop: '0.75rem' }}>
-                  {installedIds.has(storeDetail.id) ? (
-                    <StatusPill tone="good">Already installed</StatusPill>
-                  ) : (
-                    <button
-                      type="button"
-                      className="primary"
-                      disabled={busyKey === `store-install-${storeDetail.id}`}
-                      onClick={() => {
-                        // Check if we have bundle info to install
-                        const version = storeDetail.versions?.find((v) => !v.yanked && v.bundleUrl && v.bundleSha256);
-                        if (!version) {
-                          // Open in browser as fallback
-                          window.open(`https://bfrost.net/store/${storeDetail.id}`, '_blank');
-                          return;
-                        }
-                        void installFromStore(storeDetail);
-                      }}
-                    >
-                      {busyKey === `store-install-${storeDetail.id}` ? 'Installing…' : 'Install'}
-                    </button>
-                  )}
-                  <a
-                    href={`https://bfrost.net/store/${storeDetail.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    View on bfrost.net ↗
-                  </a>
                 </div>
               </>
             ) : (
-              <p className="footnote">Could not load worker details.</p>
+              <div className="empty-state store-empty-state">
+                <div className="store-empty-icon" aria-hidden="true">📦</div>
+                <p>Could not load worker details.</p>
+                <p className="footnote">Try returning to the catalog and opening the listing again.</p>
+              </div>
             )}
           </div>
         ) : null}
@@ -3828,47 +3972,52 @@ export default function App() {
                 </div>
               </div>
             ) : storeLoading && !storeWorkers ? (
-              <p className="footnote">Loading catalog…</p>
-            ) : storeWorkers && storeWorkers.length === 0 ? (
-              <div className="empty-state">
-                <p>No workers found{storeQuery ? ` for "${storeQuery}"` : ''}.</p>
-                <p className="footnote">Try a different search, or browse the full catalog on bfrost.net.</p>
+              <div className="store-catalog-grid store-skeleton-grid" aria-label="Loading catalog">
+                {[0, 1, 2].map((item) => (
+                  <div key={item} className="store-card store-card-skeleton">
+                    <div className="store-card-top">
+                      <span className="store-logo-skeleton" />
+                      <span className="store-skeleton-pill" />
+                    </div>
+                    <span className="store-skeleton-line wide" />
+                    <span className="store-skeleton-line" />
+                    <span className="store-skeleton-line short" />
+                  </div>
+                ))}
+              </div>
+            ) : storeWorkers && filteredStoreWorkers.length === 0 ? (
+              <div className="empty-state store-empty-state">
+                <div className="store-empty-icon" aria-hidden="true">🔍</div>
+                <p>No workers found{storeQuery ? ` for "${storeQuery}"` : activeCategoryFilter !== 'all' ? ` in ${activeCategoryLabel}` : ''}.</p>
+                <p className="footnote">Try a different search or another category.</p>
               </div>
             ) : storeWorkers ? (
               <div className="store-catalog-grid">
-                {storeWorkers.map((worker) => (
-                  <div
+                {filteredStoreWorkers.map((worker) => (
+                  <button
+                    type="button"
                     key={worker.id}
-                    className="store-card"
-                    onClick={() => {
-                      setStoreSelectedId(worker.id);
-                      void fetchStoreDetail(worker.id);
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        setStoreSelectedId(worker.id);
-                        void fetchStoreDetail(worker.id);
-                      }
-                    }}
+                    className={`store-card store-palette-${storePaletteIndex(worker.category)}`}
+                    aria-label={`View details for ${worker.name}`}
+                    onClick={() => openStoreWorker(worker.id)}
                   >
-                    <div className="store-card-head">
-                      <strong>{worker.name}</strong>
-                      <StatusPill tone="info">{worker.trust}</StatusPill>
+                    <div className="store-card-top">
+                      <StoreWorkerLogo worker={worker} installed={installedIds.has(worker.id)} />
+                      <StoreTrustBadge trust={worker.trust} />
+                    </div>
+                    <div className="store-card-title-row">
+                      <h3>{worker.name}</h3>
+                      <span className="store-category-chip">{storeCategoryLabel(worker.category)}</span>
                     </div>
                     <p className="store-card-tagline">{worker.tagline}</p>
                     <div className="store-card-meta">
-                      <span>{worker.author}</span>
+                      <span className="store-author-handle">{storeAuthorHandle(worker.author)}</span>
                       <span>v{worker.latestVersion}</span>
                       {worker.downloadCount > 0 ? (
                         <span>{worker.downloadCount.toLocaleString()} installs</span>
                       ) : null}
-                      {installedIds.has(worker.id) ? (
-                        <StatusPill tone="good">Installed</StatusPill>
-                      ) : null}
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             ) : null}
@@ -4267,6 +4416,76 @@ function HealthRow({ label, status }: { label: string; status: HealthStatus }) {
       <StatusPill tone={status.ok ? 'good' : 'warning'}>{status.ok ? 'ready' : 'missing'}</StatusPill>
     </div>
   );
+}
+
+type StoreVisualWorker = Pick<StoreWorkerListing, 'id' | 'category' | 'tags'>;
+
+const STORE_VISUAL_RULES: Array<{ icon: string; keywords: string[] }> = [
+  { icon: '📡', keywords: ['rss', 'feed', 'feeds', 'atom', 'reader'] },
+  { icon: '🐘', keywords: ['fediverse', 'mastodon', 'activitypub', 'social'] },
+  { icon: '📝', keywords: ['wordpress', 'publishing', 'publish', 'blog', 'cms', 'writer', 'write', 'post'] },
+  { icon: '🤖', keywords: ['ai', 'llm', 'agent', 'assistant', 'model', 'automation'] },
+  { icon: '🔔', keywords: ['notify', 'notification', 'alert', 'webhook', 'mail', 'message'] },
+  { icon: '🔍', keywords: ['search', 'lookup', 'crawl', 'discover', 'index', 'knowledge'] },
+];
+
+const STORE_PALETTE_COUNT = 8;
+
+function StoreWorkerLogo({
+  worker,
+  size = 'default',
+  installed = false,
+}: {
+  worker: StoreVisualWorker;
+  size?: 'default' | 'large';
+  installed?: boolean;
+}) {
+  return (
+    <span className={`store-worker-logo store-palette-${storePaletteIndex(worker.category)} ${size === 'large' ? 'large' : ''}`}>
+      <span aria-hidden="true">{storeWorkerIcon(worker)}</span>
+      {installed ? <span className="store-installed-badge" aria-label="Installed">✓</span> : null}
+    </span>
+  );
+}
+
+function StoreTrustBadge({ trust }: { trust: string }) {
+  const label = trust.trim() || 'Community';
+  return <span className={`store-trust-badge ${storeTrustTone(label)}`}>{label}</span>;
+}
+
+function storeWorkerIcon(worker: StoreVisualWorker): string {
+  const signal = [worker.category, worker.id, ...worker.tags].join(' ').toLowerCase();
+  return STORE_VISUAL_RULES.find((rule) => rule.keywords.some((keyword) => signal.includes(keyword)))?.icon ?? '📦';
+}
+
+function storePaletteIndex(category: string): number {
+  const label = storeCategoryLabel(category).toLowerCase();
+  let hash = 0;
+  for (const char of label) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return hash % STORE_PALETTE_COUNT;
+}
+
+function storeCategoryKey(category: string): string {
+  return storeCategoryLabel(category).toLowerCase();
+}
+
+function storeCategoryLabel(category: string): string {
+  const label = category.trim();
+  return label || 'General';
+}
+
+function storeTrustTone(trust: string): 'community' | 'verified' | 'trusted' {
+  const normalized = trust.trim().toLowerCase();
+  if (normalized === 'verified') return 'verified';
+  if (normalized === 'trusted') return 'trusted';
+  return 'community';
+}
+
+function storeAuthorHandle(author: string): string {
+  const trimmed = author.trim();
+  if (!trimmed) return 'Unknown author';
+  if (trimmed.startsWith('@') || trimmed.includes(' ')) return trimmed;
+  return `@${trimmed}`;
 }
 
 function StatusPill({
