@@ -178,7 +178,7 @@ Original `ROADMAP.md` Phase 4. Required before workers can responsibly do real-w
 - [x] Issue and PR templates: `bug_report`, `feature_request`, `worker_proposal`, `plugin_bug`, `plugin_idea` + `PULL_REQUEST_TEMPLATE.md` with worker-first checklist.
 - [x] README rewritten with a worker-first lede — platform story first, bundled workers as examples. _(Done 2026-05-24)_
 - [x] Versioning policy: semver for core, declared `bfrostApiVersion` enforced on worker load.
-- [ ] First tagged release — `v0.2.0` reflecting Workstreams 1–4 complete.
+- [x] First tagged release — `v0.2.0` reflecting Workstreams 1–4 complete. _(Done 2026-05-24 — git tag `v0.2.0` created)_
 - [ ] A short docs site (Astro/VitePress) generated from `workers/README.md`, manifest type docstrings, and per-worker READMEs. Hosted on GitHub Pages.
 - [ ] A scripted demo (asciinema or short video) showing: install a local worker, enable it, configure it, run it, see results, disable it, delete it.
 - [ ] A "Worker Gallery" page in the dashboard listing built-in workers as installable examples — community workers can be linked from a curated `awesome-bfrost` repo later.
