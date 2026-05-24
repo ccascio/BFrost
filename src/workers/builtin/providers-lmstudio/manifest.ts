@@ -30,4 +30,14 @@ export const lmStudioProviderWorker: WorkerManifest = {
       },
     },
   ],
+  dashboard: {
+    settings: [],
+    routes: [
+      {
+        id: 'lmstudio-runtime',
+        label: 'Runtime controls',
+        description: 'Start, stop, load and unload LM Studio models.',
+      },
+    ],
+  },
 };

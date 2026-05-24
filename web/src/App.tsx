@@ -60,146 +60,6 @@ type CoreConfigKey = 'cloud-api-keys' | 'platform-routing' | 'embedding-model';
 const DASHBOARD_REFRESH_INTERVAL_MS = 30000;
 const JOBS_REFRESH_INTERVAL_MS = 5000;
 
-interface MemoryCleanupStatus {
-  platform: 'darwin' | 'linux' | 'win32' | 'unsupported';
-  supported: boolean;
-  configured: boolean;
-  command: string | null;
-  sudoersLine: string | null;
-  sudoersDropInPath: string;
-}
-
-function MemoryCleanupPanel() {
-  const [status, setStatus] = useState<MemoryCleanupStatus | null>(null);
-  const [expanded, setExpanded] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  async function refresh() {
-    try {
-      const res = await fetch('/api/workers/lmstudio/memory-cleanup', { credentials: 'include' });
-      if (!res.ok) return;
-      setStatus(await res.json());
-    } catch {
-      // best-effort; panel hides on failure
-    }
-  }
-
-  useEffect(() => {
-    void refresh();
-  }, []);
-
-  async function runTest() {
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const res = await fetch('/api/workers/lmstudio/memory-cleanup/test', {
-        method: 'POST',
-        credentials: 'include',
-      });
-      const payload = await res.json();
-      setTestResult(
-        payload.ok
-          ? `Memory cleanup ran in ${payload.durationMs} ms.`
-          : `Cleanup did not complete${payload.errorMessage ? `: ${payload.errorMessage}` : '.'} Add the sudoers line below and try again.`,
-      );
-      await refresh();
-    } catch (err) {
-      setTestResult(err instanceof Error ? err.message : String(err));
-    } finally {
-      setTesting(false);
-    }
-  }
-
-  async function copySudoersLine() {
-    if (!status?.sudoersLine) return;
-    try {
-      await navigator.clipboard.writeText(status.sudoersLine);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // clipboard denial — surface nothing, user can select manually
-    }
-  }
-
-  if (!status) return null;
-
-  if (!status.supported) {
-    return (
-      <p className="footnote" style={{ marginTop: '0.5rem' }}>
-        Memory cleanup after model unload is not supported on this platform ({status.platform}); the
-        OS reclaims memory on its own.
-      </p>
-    );
-  }
-
-  const toneClass = status.configured ? 'good' : 'warning';
-  const statusLabel = status.configured ? 'Configured' : 'Not configured';
-
-  return (
-    <div style={{ marginTop: '0.75rem', borderTop: '1px solid var(--border)', paddingTop: '0.75rem' }}>
-      <button
-        type="button"
-        onClick={() => setExpanded((value) => !value)}
-        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit' }}
-      >
-        <span className={`status-pill ${toneClass}`} style={{ marginRight: '0.5rem' }}>
-          {statusLabel}
-        </span>
-        Memory cleanup after unload {expanded ? '▾' : '▸'}
-      </button>
-
-      {expanded ? (
-        <div style={{ marginTop: '0.5rem' }}>
-          <p className="footnote">
-            BFrost runs <code>{status.command}</code> after a model unload to help the OS reclaim
-            inactive memory. The command needs <strong>passwordless sudo</strong> so it can run
-            unattended (including from cron jobs).
-          </p>
-          {status.configured ? (
-            <p className="footnote" style={{ color: 'var(--good)' }}>
-              Passwordless sudo is configured — no action needed.
-            </p>
-          ) : (
-            <>
-              <p className="footnote">
-                Add the line below to a sudoers drop-in file. Open a terminal and run:
-              </p>
-              <pre className="codeblock" style={{ userSelect: 'all' }}>
-                {`sudo visudo -f ${status.sudoersDropInPath}`}
-              </pre>
-              <p className="footnote">Then paste this line and save:</p>
-              <pre className="codeblock" style={{ userSelect: 'all' }}>
-                {status.sudoersLine}
-              </pre>
-              <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
-                <button type="button" onClick={() => void copySudoersLine()}>
-                  {copied ? 'Copied!' : 'Copy line'}
-                </button>
-                <button type="button" disabled={testing} onClick={() => void runTest()}>
-                  {testing ? 'Testing...' : 'Test memory cleanup'}
-                </button>
-              </div>
-              <p className="footnote" style={{ marginTop: '0.5rem' }}>
-                To remove this access later, delete <code>{status.sudoersDropInPath}</code>.
-              </p>
-            </>
-          )}
-          {status.configured ? (
-            <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
-              <button type="button" disabled={testing} onClick={() => void runTest()}>
-                {testing ? 'Testing...' : 'Test memory cleanup'}
-              </button>
-            </div>
-          ) : null}
-          {testResult ? <p className="footnote" style={{ marginTop: '0.5rem' }}>{testResult}</p> : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 const CHAT_WELCOME = (
   <div className="chat-empty" role="note">
     <p className="chat-empty-kicker">Welcome to dashboard chat</p>
@@ -212,10 +72,10 @@ const CHAT_WELCOME = (
       Try one of these:
     </p>
     <ul className="chat-empty-prompts footnote">
-      <li>"Run a news digest now."</li>
-      <li>"What are the latest news items I have queued?"</li>
-      <li>"Did the research job run today?"</li>
+      <li>"What jobs ran today?"</li>
+      <li>"Show me recent items in the queue."</li>
       <li>"What models are loaded?"</li>
+      <li>"Did any jobs fail recently?"</li>
     </ul>
   </div>
 );
@@ -395,6 +255,7 @@ interface RegisteredPlatformEntry {
 interface WorkerSummary {
   id: string;
   name: string;
+  displayName?: string;
   version: string;
   description: string;
   builtIn: boolean;
@@ -1908,7 +1769,6 @@ export default function App() {
           {renderStuckDetectorBanner()}
           <section className="grid top-grid">
             {renderModelPanel()}
-            {renderRuntimePanel()}
           </section>
 
           <section className="grid overview-grid">
@@ -2001,7 +1861,11 @@ export default function App() {
               <p className="panel-kicker">Assistant</p>
               <h2>Dashboard chat <HelpTip>Type naturally to ask about your queue, schedules, or workers — or give commands like "enable the news digest at 8am". The assistant uses the same AI model you have configured in Settings. All messages stay on your machine.</HelpTip></h2>
             </div>
-            <StatusPill tone={dashboard.lmStudio.running ? 'good' : 'warning'}>
+            <StatusPill tone={
+              dashboard.workers.find(
+                (w) => w.kind === 'provider' && w.id.endsWith(`.${dashboard.defaultModel.provider}`)
+              )?.healthState === 'healthy' ? 'good' : 'warning'
+            }>
               {dashboard.defaultModel.alias}
             </StatusPill>
           </div>
@@ -2424,13 +2288,15 @@ export default function App() {
       ) : null}
 
       {activeTab === 'system' ? (() => {
-        const hasModel = dashboard.integrations.openaiConfigured?.ok || dashboard.integrations.anthropicConfigured?.ok || dashboard.lmStudio?.running;
+        const hasModel = dashboard.workers.some(
+          (w) => w.kind === 'provider' && w.enabled && w.healthState === 'healthy',
+        ) || dashboard.lmStudio?.running;
         const hasChannel = dashboard.workers.some((w) => w.kind === 'channel' && w.healthState === 'healthy');
         const hasEnabledWorker = dashboard.workers.some((w) => w.enabled && w.healthState === 'healthy');
         const hasRun = dashboard.cron.jobs.some((j) => j.lastStartedAt !== null && j.lastStartedAt !== undefined);
         const allDone = hasModel && hasChannel && hasEnabledWorker && hasRun;
         const steps = [
-          { done: hasModel, label: 'Connect a model', detail: 'Add an OpenAI or Anthropic API key, or start LM Studio.', action: () => setActiveTab('config') },
+          { done: hasModel, label: 'Connect a model', detail: 'Configure a model provider — add a cloud API key or start your local AI runtime.', action: () => setActiveTab('config') },
           { done: hasChannel, label: 'Connect a channel', detail: 'Set up Telegram or Discord so BFrost can reach you.', action: () => setActiveTab('channels') },
           { done: hasEnabledWorker, label: 'Enable a worker', detail: 'Turn on a worker from the Workers tab — try the News Digest.', action: () => setActiveTab('workers') },
           { done: hasRun, label: 'Let a job run', detail: 'Trigger a job manually from the Jobs tab, or wait for the scheduler.', action: () => setActiveTab('jobs') },
@@ -2773,7 +2639,7 @@ export default function App() {
             >
               {providersInUse.map((provider) => (
                 <option key={provider} value={provider}>
-                  {providerLabel(provider)}
+                  {providerLabel(provider, dashboard.workers)}
                 </option>
               ))}
             </select>
@@ -2822,109 +2688,6 @@ export default function App() {
             {busyKey === 'save-model' ? 'Saving...' : 'Save default model'}
           </button>
         </div>
-      </article>
-    );
-  }
-
-  function renderRuntimePanel() {
-    return (
-      <article className="panel">
-        <div className="panel-head">
-          <div>
-            <p className="panel-kicker">Runtime services</p>
-            <h2>LM Studio <HelpTip>LM Studio lets you download and run open-source AI models entirely on your computer — no API key, no cloud. Install LM Studio from lmstudio.ai, download a model there, then enable the LM Studio provider here so BFrost can use it.</HelpTip></h2>
-          </div>
-          <StatusPill tone={dashboard.lmStudio.running ? 'good' : 'warning'}>
-            {dashboard.lmStudio.running ? 'Running' : 'Stopped'}
-          </StatusPill>
-        </div>
-
-        <div className="metric-row">
-          <Metric label="Loaded models" value={String(dashboard.lmStudio.loadedCount)} />
-          <Metric label="Default model" value={`${dashboard.defaultModel.alias} / ${providerLabel(dashboard.defaultModel.provider)}`} />
-        </div>
-
-        <p className="mini-list">
-          {dashboard.lmStudio.loadedModels.length > 0
-            ? dashboard.lmStudio.loadedModels.join(', ')
-            : 'No models are currently loaded.'}
-        </p>
-
-        <div className="panel-actions wrap">
-          <button
-            className="primary"
-            disabled={busyKey === 'lm-start'}
-            onClick={() =>
-              void mutate(
-                'lm-start',
-                '/api/lmstudio',
-                { method: 'POST', body: JSON.stringify({ action: 'start' }) },
-                'LM Studio server started.',
-              )
-            }
-          >
-            Start server
-          </button>
-          <button
-            disabled={busyKey === 'lm-stop'}
-            onClick={() =>
-              void mutate(
-                'lm-stop',
-                '/api/lmstudio',
-                { method: 'POST', body: JSON.stringify({ action: 'stop' }) },
-                'LM Studio server stopped.',
-              )
-            }
-          >
-            Stop server
-          </button>
-          <button
-            disabled={
-              busyKey === 'lm-load' ||
-              dashboard.defaultModel.provider !== dashboard.platform.activeLocalProviderId
-            }
-            onClick={() =>
-              void mutate(
-                'lm-load',
-                '/api/lmstudio',
-                { method: 'POST', body: JSON.stringify({ action: 'load-default' }) },
-                'Default model loaded in LM Studio.',
-              )
-            }
-          >
-            Load default model
-          </button>
-          <button
-            disabled={
-              busyKey === 'lm-unload' ||
-              dashboard.defaultModel.provider !== dashboard.platform.activeLocalProviderId
-            }
-            onClick={() =>
-              void mutate(
-                'lm-unload',
-                '/api/lmstudio',
-                { method: 'POST', body: JSON.stringify({ action: 'unload-default' }) },
-                'Default model unloaded.',
-              )
-            }
-          >
-            Unload default model
-          </button>
-          <button
-            disabled={busyKey === 'lm-unload-all'}
-            onClick={() =>
-              void mutate(
-                'lm-unload-all',
-                '/api/lmstudio',
-                { method: 'POST', body: JSON.stringify({ action: 'unload-all' }) },
-                'All LM Studio models unloaded.',
-              )
-            }
-          >
-            Free LM Studio memory
-          </button>
-        </div>
-        <MemoryCleanupPanel />
       </article>
     );
   }
@@ -4577,11 +4340,11 @@ function queueItemReason(item: QueueItem): string | null {
   return item.stateReason ?? item.selectionReason ?? item.rejectionReason ?? item.lastError ?? null;
 }
 
-function providerLabel(provider: ModelOption['provider']): string {
-  if (provider === 'lmstudio') return 'LM Studio';
-  if (provider === 'openai') return 'OpenAI';
-  if (provider === 'anthropic') return 'Anthropic';
-  return provider;
+function providerLabel(provider: string, workers: WorkerSummary[]): string {
+  const match = workers.find(
+    (w) => w.kind === 'provider' && w.id.endsWith(`.${provider}`)
+  );
+  return match?.displayName ?? match?.name ?? provider;
 }
 
 function hostsToDraft(values: string[]): string {
