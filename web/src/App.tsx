@@ -662,17 +662,48 @@ export default function App() {
   // ── Store ──────────────────────────────────────────────────────────────────
 
   const STORE_API = 'https://api.bfrost.net/v1';
+  // CDN fallback used when the first-party API is unavailable (pre-launch or offline).
+  // Mirrors the registry data source used by the BFrost website.
+  const STORE_CDN = 'https://raw.githubusercontent.com/ccascio/bfrost-workers/main/index.json';
 
   async function fetchStoreCatalog(query: string): Promise<void> {
     setStoreLoading(true);
     setStoreError(null);
     try {
-      const params = new URLSearchParams({ limit: '50' });
-      if (query.trim()) params.set('q', query.trim());
-      const res = await fetch(`${STORE_API}/workers?${params.toString()}`);
-      if (!res.ok) throw new Error(`Store API returned ${res.status}`);
-      const data = await res.json() as { workers: StoreWorkerListing[] };
-      setStoreWorkers(Array.isArray(data.workers) ? data.workers : []);
+      // ── Attempt first-party API ──────────────────────────────────────────────
+      let apiOk = false;
+      try {
+        const params = new URLSearchParams({ limit: '50' });
+        if (query.trim()) params.set('q', query.trim());
+        const res = await fetch(`${STORE_API}/workers?${params.toString()}`);
+        if (res.ok) {
+          const data = await res.json() as { workers: StoreWorkerListing[] };
+          setStoreWorkers(Array.isArray(data.workers) ? data.workers : []);
+          apiOk = true;
+        }
+      } catch {
+        // API unreachable — fall through to CDN
+      }
+
+      if (apiOk) return;
+
+      // ── CDN fallback (same source as the BFrost website) ────────────────────
+      const cdnRes = await fetch(STORE_CDN);
+      if (!cdnRes.ok) throw new Error(`Store registry returned ${cdnRes.status}`);
+      let all = await cdnRes.json() as StoreWorkerListing[];
+      if (!Array.isArray(all)) all = [];
+
+      // Client-side search filter when CDN is the source
+      if (query.trim()) {
+        const q = query.toLowerCase();
+        all = all.filter(
+          (w) =>
+            w.name.toLowerCase().includes(q) ||
+            w.tagline.toLowerCase().includes(q) ||
+            w.tags.some((t) => t.toLowerCase().includes(q)),
+        );
+      }
+      setStoreWorkers(all);
     } catch (err) {
       setStoreError(err instanceof Error ? err.message : 'Failed to load store catalog.');
     } finally {
@@ -1769,6 +1800,14 @@ export default function App() {
           {renderStuckDetectorBanner()}
           <section className="grid top-grid">
             {renderModelPanel()}
+            {(() => {
+              // Render the active local provider's runtime panel from its worker bundle.
+              // The bundle owns the JSX; we just find + call it here.
+              const lmView = dashboardViews.find((v) => v.workerId === 'core.providers.lmstudio');
+              const lmWorker = dashboard.workers.find((w) => w.id === 'core.providers.lmstudio');
+              if (!lmView || !lmWorker || !lmWorker.enabled) return null;
+              return lmView.render(workerViewContext);
+            })()}
           </section>
 
           <section className="grid overview-grid">
