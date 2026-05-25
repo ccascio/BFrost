@@ -57,6 +57,10 @@ async function loadCanonicalEnums() {
   } catch {
     console.error(`  ✗ Could not load local fallback at ${LOCAL_FALLBACK}`);
     console.error('    Run `npm run generate:enums` in BFrost-Workers first.');
+    console.error('');
+    console.error('    Push order matters: BFrost-Workers must be pushed (and GitHub must');
+    console.error('    serve the file) BEFORE running this check against the CDN in CI.');
+    console.error('    Until then, the local fallback path above must exist.');
     process.exit(1);
   }
 }
