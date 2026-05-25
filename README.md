@@ -46,7 +46,7 @@ What still gates a `v1.0.0` tag:
 
 - **Permissioned action runtime** (Workstream 5). Workers can already produce items, run jobs, and surface UIs, but the formal approval queue + per-worker filesystem/network/credential scopes are not yet wired up. Use the existing approval gates on the queue, and keep destructive workers narrow until this lands.
 - **Frontend smoke tests, per-worker metrics, accessibility pass, and guarded SQLite restore tooling** (Workstream 6).
-- **Hosted docs site, scripted demo, Worker Gallery in the dashboard, and a `CONTRIBUTING.md` expansion** (Workstream 7). The browsable documentation at <https://convertprivately.com/bfrost/> already covers getting started, architecture, example workers, and authoring with Claude Code.
+- **Hosted docs site, scripted demo, Worker Gallery in the dashboard, and a `CONTRIBUTING.md` expansion** (Workstream 7). The browsable documentation at <https://bfrost.net/> already covers getting started, architecture, example workers, and authoring with Claude Code.
 
 The full punch list lives in [`ROADMAP.md`](./ROADMAP.md). Issues, worker proposals, and PRs are welcome.
 
