@@ -6,7 +6,7 @@ import { loadRuntimeWorkerBundle, workerQueueItemDetails, useWorkerDashboardView
 import type { WorkerDashboardViewDefinition } from './workers/types';
 
 type RunStatus = 'idle' | 'success' | 'error' | 'skipped';
-type CoreDashboardTab = 'overview' | 'channels' | 'workers' | 'jobs' | 'config' | 'chat' | 'system' | 'store';
+type CoreDashboardTab = 'overview' | 'channels' | 'workers' | 'jobs' | 'config' | 'chat' | 'system' | 'store' | 'actions';
 
 interface AppError {
   friendly: string;
@@ -87,6 +87,7 @@ const CORE_MENU_ENTRIES: Array<Omit<SidebarEntry<DashboardTab>, 'count'>> = [
   { id: 'workers', label: 'Workers', icon: 'workers', group: 'Workspace', order: 30 },
   { id: 'store', label: 'Store', icon: 'store', group: 'Workspace', order: 35 },
   { id: 'config', label: 'Config', icon: 'config', group: 'Workspace', order: 40 },
+  { id: 'actions', label: 'Actions', icon: 'actions', group: 'System', order: 5 },
   { id: 'chat', label: 'Chat', icon: 'chat', group: 'System', order: 10 },
   { id: 'system', label: 'System', icon: 'system', group: 'System', order: 20 },
 ];
@@ -96,6 +97,23 @@ interface ModelOption {
   id: string;
   label: string;
   provider: string;
+}
+
+type ActionClass = 'read-only' | 'approved-write' | 'draft' | 'trusted-automation' | 'blocked';
+type ActionState = 'pending' | 'approved' | 'rejected' | 'executed' | 'failed';
+
+interface ActionRequest {
+  id: string;
+  workerId: string;
+  actionClass: ActionClass;
+  label: string;
+  rationale: string;
+  payload: Record<string, unknown>;
+  preview: string | null;
+  state: ActionState;
+  createdAt: string;
+  decidedAt: string | null;
+  executedAt: string | null;
 }
 
 interface SchedulerJobState {
@@ -549,6 +567,11 @@ export default function App() {
   // In-product changelog
   const [whatsNew, setWhatsNew] = useState<WhatsNewEntry[] | null>(null);
 
+  // Actions tab state
+  const [pendingActions, setPendingActions] = useState<ActionRequest[]>([]);
+  const [actionsLoading, setActionsLoading] = useState(false);
+  const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
+
   // Auto-backup settings state (system tab)
   const [autoBackupSettings, setAutoBackupSettings] = useState<AutoBackupSettings | null>(null);
   const [openaiApiKeyDraft, setOpenaiApiKeyDraft] = useState('');
@@ -662,6 +685,14 @@ export default function App() {
   useEffect(() => {
     if (activeTab !== 'system' || autoBackupSettings !== null) return;
     void fetchAutoBackupSettings();
+  }, [activeTab]);
+
+  // Poll for pending actions when on the Actions tab (and on first load if there are any).
+  useEffect(() => {
+    if (activeTab !== 'actions') return;
+    void fetchPendingActions();
+    const timer = window.setInterval(() => void fetchPendingActions(), 3000);
+    return () => window.clearInterval(timer);
   }, [activeTab]);
 
   async function refreshActiveTabSections(): Promise<void> {
@@ -826,6 +857,42 @@ export default function App() {
   }
 
   // ── Auto-backup ────────────────────────────────────────────────────────────
+
+  // ── Actions ────────────────────────────────────────────────────────────────
+
+  async function fetchPendingActions(): Promise<void> {
+    setActionsLoading(true);
+    try {
+      const res = await fetch('/api/actions/pending', { credentials: 'include' });
+      if (!res.ok) return;
+      const data = await res.json() as { pendingActions: ActionRequest[] };
+      setPendingActions(data.pendingActions ?? []);
+    } catch {
+      // best-effort
+    } finally {
+      setActionsLoading(false);
+    }
+  }
+
+  async function decideAction(requestId: string, approved: boolean): Promise<void> {
+    setBusyKey(`action-${requestId}`);
+    try {
+      const res = await fetch(`/api/actions/${encodeURIComponent(requestId)}/${approved ? 'approve' : 'reject'}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) throw new Error('Request failed');
+      // Remove from pending list immediately; re-poll will reconcile
+      setPendingActions((prev) => prev.filter((a) => a.id !== requestId));
+      if (selectedActionId === requestId) setSelectedActionId(null);
+    } catch (err) {
+      setError(toAppError(err));
+    } finally {
+      setBusyKey(null);
+    }
+  }
 
   async function fetchAutoBackupSettings(): Promise<void> {
     try {
@@ -1528,6 +1595,7 @@ export default function App() {
         chat: chatTurns.length,
         system: dashboard.events.length,
         store: storeUpdates.size,
+        pendingActions: pendingActions.length,
       }),
     })),
     ...workerTabDefinitions.map((tab) => ({
@@ -2324,6 +2392,8 @@ export default function App() {
       ) : null}
 
       {activeTab === 'store' ? renderStoreTab() : null}
+
+      {activeTab === 'actions' ? renderActionsTab() : null}
 
       {activeTab === 'system' && whatsNew && whatsNew.length > 0 ? (
         <section className="panel tab-page">
@@ -3670,6 +3740,83 @@ export default function App() {
     );
   }
 
+  // ── Actions tab ───────────────────────────────────────────────────────────
+
+  function renderActionsTab() {
+    const selectedAction = pendingActions.find((a) => a.id === selectedActionId) ?? null;
+
+    return (
+      <div className="tab-content actions-tab">
+        <div className="panel">
+          <div className="panel-header">
+            <h2>
+              Pending Actions
+              <HelpTip>
+                Workers that need to perform write operations (e.g. creating or modifying files) must
+                request your approval first. Review the diff preview and approve or reject each request.
+                Approved actions run immediately; rejected ones are cancelled.
+              </HelpTip>
+            </h2>
+          </div>
+
+          {actionsLoading && pendingActions.length === 0 ? (
+            <div className="empty-state"><p>Loading…</p></div>
+          ) : pendingActions.length === 0 ? (
+            <div className="empty-state">
+              <p>No pending actions.</p>
+              <p className="footnote">
+                When a worker requests a file write or another approved-write operation, it will appear
+                here for your review.
+              </p>
+            </div>
+          ) : (
+            <div className="actions-list">
+              {pendingActions.map((action) => (
+                <div
+                  key={action.id}
+                  className={`actions-item${selectedActionId === action.id ? ' selected' : ''}`}
+                  onClick={() => setSelectedActionId(selectedActionId === action.id ? null : action.id)}
+                >
+                  <div className="actions-item-header">
+                    <span className="actions-item-label">{action.label}</span>
+                    <span className="actions-item-worker footnote">{action.workerId}</span>
+                    <StatusPill tone="warning">pending</StatusPill>
+                  </div>
+                  <div className="actions-item-rationale footnote">{action.rationale}</div>
+                  <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+                    <button
+                      className="btn btn-primary"
+                      disabled={busyKey === `action-${action.id}`}
+                      onClick={(e) => { e.stopPropagation(); void decideAction(action.id, true); }}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      className="btn btn-danger"
+                      disabled={busyKey === `action-${action.id}`}
+                      onClick={(e) => { e.stopPropagation(); void decideAction(action.id, false); }}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {selectedAction?.preview ? (
+          <div className="panel">
+            <div className="panel-header">
+              <h2>Diff preview — {selectedAction.label}</h2>
+            </div>
+            <pre className="actions-diff">{selectedAction.preview}</pre>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   // ── Store tab ─────────────────────────────────────────────────────────────
 
   function renderStoreTab() {
@@ -4168,7 +4315,7 @@ function jobConfigSummary(job: SchedulerJobState): string {
 
 function coreMenuCount(
   id: DashboardTab,
-  counts: { workers: number; channels: number; jobs: number; config: number; chat: number; system: number; store: number },
+  counts: { workers: number; channels: number; jobs: number; config: number; chat: number; system: number; store: number; pendingActions: number },
 ): number | undefined {
   switch (id) {
     case 'workers':
@@ -4185,6 +4332,8 @@ function coreMenuCount(
       return counts.system;
     case 'store':
       return counts.store > 0 ? counts.store : undefined;
+    case 'actions':
+      return counts.pendingActions > 0 ? counts.pendingActions : undefined;
     default:
       return undefined;
   }

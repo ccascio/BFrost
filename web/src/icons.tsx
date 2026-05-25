@@ -1,6 +1,7 @@
 import type { SVGProps } from 'react';
 
 export type IconKey =
+  | 'actions'
   | 'activity'
   | 'article'
   | 'channels'
@@ -31,6 +32,16 @@ const baseProps = {
 } satisfies SVGProps<SVGSVGElement>;
 
 const icons: Record<IconKey, IconComponent> = {
+  actions: (props) => (
+    <svg {...baseProps} {...props}>
+      <path d="M9 3H5a2 2 0 0 0-2 2v4" />
+      <path d="M9 21H5a2 2 0 0 1-2-2v-4" />
+      <path d="M15 3h4a2 2 0 0 1 2 2v4" />
+      <path d="M15 21h4a2 2 0 0 0 2-2v-4" />
+      <path d="M9 12h6" />
+      <path d="m15 9 3 3-3 3" />
+    </svg>
+  ),
   activity: (props) => (
     <svg {...baseProps} {...props}>
       <path d="M4 13h4l2-7 4 12 2-5h4" />

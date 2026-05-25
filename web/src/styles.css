@@ -1919,6 +1919,71 @@ code {
   font-size: 0.92rem;
 }
 
+/* ── Actions tab ────────────────────────────────────────────────────────── */
+
+.actions-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.actions-item {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.actions-item:hover {
+  background: color-mix(in srgb, var(--accent) 5%, var(--panel));
+}
+
+.actions-item.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+}
+
+.actions-item-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.actions-item-label {
+  font-weight: 500;
+  flex: 1;
+}
+
+.actions-item-worker {
+  color: var(--muted);
+}
+
+.actions-item-rationale {
+  margin-top: 0.25rem;
+  color: var(--muted);
+}
+
+.actions-diff {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.78rem;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  color: var(--text);
+}
+
 /* ── Community store ────────────────────────────────────────────────────── */
 
 .store-tab {

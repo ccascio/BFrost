@@ -475,3 +475,50 @@ export type WorkerDataSection = z.infer<typeof WorkerDataSectionSchema>;
 export type LmStudioModelsSection = z.infer<typeof LmStudioModelsSectionSchema>;
 
 export type DashboardState = z.infer<typeof DashboardStateSchema>;
+
+// ---------------------------------------------------------------------------
+// Action runtime schemas (Workstream 5)
+// ---------------------------------------------------------------------------
+
+export const ActionClassSchema = z.enum([
+  'read-only',
+  'approved-write',
+  'draft',
+  'trusted-automation',
+  'blocked',
+]);
+
+export const ActionStateSchema = z.enum([
+  'pending',
+  'approved',
+  'rejected',
+  'executed',
+  'failed',
+]);
+
+export const ActionRequestSchema = z.object({
+  id: z.string(),
+  workerId: z.string(),
+  actionClass: ActionClassSchema,
+  label: z.string(),
+  rationale: z.string(),
+  payload: z.record(z.unknown()),
+  preview: z.string().nullable(),
+  state: ActionStateSchema,
+  createdAt: z.string(),
+  decidedAt: z.string().nullable(),
+  executedAt: z.string().nullable(),
+}).strict();
+
+export const ActionDecisionBodySchema = z.object({
+  approved: z.boolean(),
+  note: z.string().optional(),
+}).strict();
+
+export const ActionsSectionSchema = z.object({
+  pendingActions: z.array(ActionRequestSchema),
+}).strict();
+
+export type ActionRequestRecord = z.infer<typeof ActionRequestSchema>;
+export type ActionDecisionBody = z.infer<typeof ActionDecisionBodySchema>;
+export type ActionsSection = z.infer<typeof ActionsSectionSchema>;

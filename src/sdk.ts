@@ -14,6 +14,7 @@
  */
 import { openWorkerKv } from './workers/storage';
 import { openWorkerDb } from './workers/db';
+import { requestFileRead, requestFileWrite } from './actions/primitives';
 import {
   publishItem,
   listItemsForConsumer,
@@ -33,6 +34,9 @@ export const bfrostSdk = {
   // Per-worker private storage
   openWorkerKv,
   openWorkerDb,
+  // Permissioned action primitives (Workstream 5)
+  requestFileRead,
+  requestFileWrite,
   // Item Bus (cross-worker producer/consumer queue)
   publishItem,
   listItemsForConsumer,
@@ -60,6 +64,8 @@ export const bfrostSdk = {
   recordEventSafe,
 };
 
+export { requestFileRead, requestFileWrite };
+
 export type BfrostSdk = typeof bfrostSdk;
 
 // Public re-exports so a worker can both call the API and type its own callbacks
@@ -84,6 +90,7 @@ export {
   recordEventSafe,
 };
 
+export type { ActionClass, ActionState, ActionRequest, ActionResult } from './actions/types';
 export type { ModelOption } from './config';
 export type { QueueItem, QueueItemState } from './jobs/queue';
 export type { WorkerKvStore } from './workers/storage';

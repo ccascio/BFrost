@@ -73,6 +73,7 @@ import {
   WorkerUpdateBodySchema,
   QueueItemActionBodySchema,
   QueueSectionSchema,
+  ActionDecisionBodySchema,
   type BackupsSection,
   type CronRunsSection,
   type DashboardState,
@@ -81,6 +82,12 @@ import {
   type WorkerDataSection,
   type QueueSection,
 } from './admin-api';
+import {
+  listPendingActionRequests,
+  listActionRequests,
+  approveActionRequest,
+  rejectActionRequest,
+} from './actions';
 import { BadRequestError } from './admin-route';
 import { listSchedulerRuns } from './scheduler-runs';
 import {
@@ -747,6 +754,43 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       });
 
       return sendJson(res, 200, { ok: true });
+    }
+
+    // -----------------------------------------------------------------------
+    // Action runtime (Workstream 5)
+    // -----------------------------------------------------------------------
+
+    if (url.pathname === '/api/actions/pending' && req.method === 'GET') {
+      const pending = await listPendingActionRequests();
+      return sendJson(res, 200, { pendingActions: pending });
+    }
+
+    if (url.pathname === '/api/actions' && req.method === 'GET') {
+      const workerId = url.searchParams.get('workerId') ?? undefined;
+      const limit = parseInt(url.searchParams.get('limit') ?? '50', 10);
+      const actions = await listActionRequests({ workerId, limit });
+      return sendJson(res, 200, { actions });
+    }
+
+    const actionDecideMatch = url.pathname.match(/^\/api\/actions\/([^/]+)\/(approve|reject)$/);
+    if (actionDecideMatch && req.method === 'POST') {
+      const requestId = decodeURIComponent(actionDecideMatch[1]);
+      const decision = actionDecideMatch[2] as 'approve' | 'reject';
+      await readJsonBody(req, ActionDecisionBodySchema).catch(() => ({}));
+      const updated = decision === 'approve'
+        ? await approveActionRequest(requestId)
+        : await rejectActionRequest(requestId);
+      if (!updated) {
+        return sendJson(res, 404, { error: 'Action request not found or already decided.' });
+      }
+      await recordEventSafe({
+        category: 'actions',
+        action: `action-${decision}d`,
+        severity: 'info',
+        summary: `Action request ${requestId} ${decision}d by operator.`,
+        metadata: { requestId, workerId: updated.workerId, label: updated.label },
+      });
+      return sendJson(res, 200, { ok: true, action: updated });
     }
 
     if (req.method === 'GET') {

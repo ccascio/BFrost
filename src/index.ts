@@ -16,6 +16,7 @@ import { builtInWorkers } from './workers/builtin';
 import { applyPlatformSettingsToConfig, loadAdminSettings } from './admin-config';
 import { releaseStaleQueueLockOnBoot } from './jobs/queue';
 import { registerBfrostRuntimeModule } from './sdk-runtime';
+import { ensureActionTable } from './actions';
 import { refreshActiveLocalProviderModels, refreshCloudProviderModels } from './model-discovery';
 import type { ChannelAdapter, ProviderAdapter } from './workers/module';
 
@@ -28,6 +29,7 @@ async function main(): Promise<void> {
   logStartupHealthSummary(health);
   await hydrateConversations();
   await releaseStaleQueueLockOnBoot();
+  await ensureActionTable();
   // Make `import { ... } from 'bfrost'` resolvable inside local worker bundles.
   // Must happen before bootstrapLocalWorkers so the first require() inside a worker
   // entrypoint sees the synthetic module.
