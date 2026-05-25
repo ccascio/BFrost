@@ -12,7 +12,7 @@ import { acquireSchedulerExecutionLock } from './scheduler-locks';
 import { isWorkerEnabled, loadWorkerState, type WorkerStateStore } from './workers/state';
 
 const SCHEDULER_STATE_STORE_KEY = 'scheduler.state';
-const MISSED_CATCHUP_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+const MISSED_CATCHUP_WINDOW_MS = 7 * 60 * 60 * 1000; // 7 hours
 
 type SchedulerJobDashboardField = WorkerJobDashboardField;
 
