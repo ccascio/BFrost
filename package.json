@@ -15,7 +15,8 @@
     "task": "node dist/cron.js",
     "dev": "node scripts/dev.mjs",
     "dev:watch": "tsc --watch",
-    "dev:web": "vite"
+    "dev:web": "vite",
+    "check:manifest": "node scripts/check-manifest-enums.mjs"
   },
   "devDependencies": {
     "@types/node": "^25.5.2",

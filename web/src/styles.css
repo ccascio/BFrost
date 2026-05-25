@@ -26,6 +26,7 @@
   --color-store-palette-5: #4f46e5;
   --color-store-palette-6: #64748b;
   --color-store-palette-7: #15803d;
+  --color-store-trust-review: #b45309;
   --color-store-trust-community: #64748b;
   --color-store-trust-verified: #0f766e;
   --color-store-trust-trusted: #6d5bd0;
@@ -2151,6 +2152,12 @@ code {
   font-weight: 800;
   line-height: 1;
   white-space: nowrap;
+}
+
+.store-trust-badge.review {
+  color: var(--color-store-trust-review);
+  background: color-mix(in srgb, var(--color-store-trust-review) 10%, var(--panel));
+  border-color: color-mix(in srgb, var(--color-store-trust-review) 18%, transparent);
 }
 
 .store-trust-badge.community {

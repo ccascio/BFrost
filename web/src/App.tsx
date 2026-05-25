@@ -4505,8 +4505,9 @@ function storeCategoryLabel(category: string): string {
   return label || 'General';
 }
 
-function storeTrustTone(trust: string): 'community' | 'verified' | 'trusted' | 'core' {
+function storeTrustTone(trust: string): 'review' | 'community' | 'verified' | 'trusted' | 'core' {
   const normalized = trust.trim().toLowerCase();
+  if (normalized === 'review') return 'review';
   if (normalized === 'verified') return 'verified';
   if (normalized === 'trusted') return 'trusted';
   if (normalized === 'core') return 'core';
