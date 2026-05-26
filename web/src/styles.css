@@ -2678,6 +2678,58 @@ code {
   accent-color: var(--accent);
 }
 
+/* Schedule edit preview panel (shown before "Save schedule" commits) */
+.schedule-preview-box {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  background: color-mix(in srgb, var(--brand) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand) 30%, transparent);
+  border-radius: 6px;
+}
+
+.schedule-preview-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  color: var(--brand, #2271b1);
+}
+
+.schedule-preview-no-changes {
+  font-size: 0.85rem;
+  color: var(--muted, #666);
+  margin: 0;
+}
+
+.schedule-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin-bottom: 0;
+}
+
+.schedule-preview-table th {
+  text-align: left;
+  padding: 0.25rem 0.5rem 0.25rem 0;
+  font-weight: 600;
+  color: var(--muted, #666);
+  border-bottom: 1px solid var(--line, #ddd);
+}
+
+.schedule-preview-table td {
+  padding: 0.3rem 0.5rem 0.3rem 0;
+  vertical-align: top;
+}
+
+.schedule-preview-old {
+  color: var(--muted, #666);
+  text-decoration: line-through;
+}
+
+.schedule-preview-new {
+  color: var(--good, #1f7a57);
+  font-weight: 500;
+}
+
 .factory-reset-confirm {
   margin-top: 0.75rem;
   padding: 0.75rem;

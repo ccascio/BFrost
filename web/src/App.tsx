@@ -576,6 +576,9 @@ export default function App() {
   // First-run wizard state
   const [wizardOpen, setWizardOpen] = useState(false);
 
+  // Preview-before-save for schedule edits: holds job.name when awaiting confirmation
+  const [confirmSaveJobName, setConfirmSaveJobName] = useState<string | null>(null);
+
   // Auto-backup settings state (system tab)
   const [autoBackupSettings, setAutoBackupSettings] = useState<AutoBackupSettings | null>(null);
   const [openaiApiKeyDraft, setOpenaiApiKeyDraft] = useState('');
@@ -3008,26 +3011,75 @@ export default function App() {
           ) : null}
         </div>
 
+        {/* Preview-before-save confirmation panel */}
+        {confirmSaveJobName === job.name ? (() => {
+          const changes: Array<{ field: string; from: string; to: string }> = [];
+          if (draft.enabled !== job.enabled)
+            changes.push({ field: 'Enabled', from: job.enabled ? 'Yes' : 'No', to: draft.enabled ? 'Yes' : 'No' });
+          if (draft.cron !== job.cron)
+            changes.push({ field: 'Schedule', from: job.cron, to: draft.cron });
+          if (draft.modelAlias !== job.modelAlias)
+            changes.push({ field: 'Model', from: job.modelAlias || '(platform default)', to: draft.modelAlias || '(platform default)' });
+          if (draft.approvalRequired !== job.approvalRequired)
+            changes.push({ field: 'Require approval', from: job.approvalRequired ? 'Yes' : 'No', to: draft.approvalRequired ? 'Yes' : 'No' });
+          return (
+            <div className="schedule-preview-box">
+              <p className="schedule-preview-title">Review changes before saving</p>
+              {changes.length === 0 ? (
+                <p className="schedule-preview-no-changes">No changes to save.</p>
+              ) : (
+                <table className="schedule-preview-table">
+                  <thead>
+                    <tr><th>Field</th><th>Current</th><th>New value</th></tr>
+                  </thead>
+                  <tbody>
+                    {changes.map((c) => (
+                      <tr key={c.field}>
+                        <td>{c.field}</td>
+                        <td className="schedule-preview-old">{c.from}</td>
+                        <td className="schedule-preview-new">{c.to}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <div className="panel-actions wrap" style={{ marginTop: '0.5rem' }}>
+                <button
+                  className="primary"
+                  disabled={busyKey === `save-${job.name}` || changes.length === 0}
+                  onClick={() => {
+                    setConfirmSaveJobName(null);
+                    void mutate(
+                      `save-${job.name}`,
+                      `/api/cron-jobs/${job.name}`,
+                      {
+                        method: 'POST',
+                        body: JSON.stringify({
+                          enabled: draft.enabled,
+                          cron: draft.cron,
+                          modelAlias: draft.modelAlias,
+                          approvalRequired: draft.approvalRequired,
+                        }),
+                      },
+                      `${job.label} schedule saved.`,
+                    );
+                  }}
+                >
+                  {busyKey === `save-${job.name}` ? 'Saving…' : 'Confirm save'}
+                </button>
+                <button type="button" onClick={() => setConfirmSaveJobName(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          );
+        })() : null}
+
         <div className="panel-actions wrap">
           <button
             className="primary"
-            disabled={busyKey === `save-${job.name}`}
-            onClick={() =>
-              void mutate(
-                `save-${job.name}`,
-                `/api/cron-jobs/${job.name}`,
-                {
-                  method: 'POST',
-                  body: JSON.stringify({
-                    enabled: draft.enabled,
-                    cron: draft.cron,
-                    modelAlias: draft.modelAlias,
-                    approvalRequired: draft.approvalRequired,
-                  }),
-                },
-                `${job.label} schedule saved.`,
-              )
-            }
+            disabled={jobDrafts[job.name] === undefined || confirmSaveJobName === job.name}
+            onClick={() => setConfirmSaveJobName(job.name)}
           >
             Save schedule
           </button>
@@ -3046,13 +3098,14 @@ export default function App() {
           {jobDrafts[job.name] !== undefined ? (
             <button
               type="button"
-              onClick={() =>
+              onClick={() => {
+                setConfirmSaveJobName(null);
                 setJobDrafts((current) => {
                   const next = { ...current };
                   delete next[job.name];
                   return next;
-                })
-              }
+                });
+              }}
             >
               Discard changes
             </button>
