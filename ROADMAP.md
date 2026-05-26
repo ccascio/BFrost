@@ -167,7 +167,7 @@ Original `ROADMAP.md` Phase 4. Required before workers can responsibly do real-w
 - [x] Manifest version migration tests: `src/workers/bootstrap.test.ts` covers `onMigrate` on first boot (fromVersion=null), version-unchanged skip, version-bump call, and failure-leaves-installedVersion-unchanged retry semantics. `src/admin-config.test.ts` covers job params preservation from older schemas with new-field defaults filled in. Two bugs fixed: `setWorkerInstalledVersion` now upserts on first boot (previously silently no-op'd); `bootstrap.ts` now only advances `installedVersion` when `onMigrate` succeeds (previously always advanced it).
 - [ ] Per-worker metrics surfaced in Health: success rate, p50/p95 run duration, last failure reason.
 - [ ] Backups + restore: implement the guarded SQLite restore/import tooling promised in the older roadmap; worker-owned tables included automatically.
-- [ ] Accessibility pass on the dashboard (keyboard navigation, focus management, contrast). Public projects get judged on this.
+- [x] Accessibility pass on the dashboard (keyboard navigation, focus management, contrast). Public projects get judged on this. _(Done 2026-05-26 — global `:focus-visible` ring + `.sr-only` utility, Wizard focus trap + Escape + `aria-live` + complete ARIA tab pattern, `actions-item` body extracted to `<button>`, `btn-icon` buttons upgraded from `title=` to `aria-label=`, schedule-preview panel `autoFocus` on mount, splash `aria-busy`)_
 
 ### Workstream 7 — Community And Publication Readiness
 

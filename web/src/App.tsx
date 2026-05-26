@@ -1528,7 +1528,7 @@ export default function App() {
 
   if (!dashboard) {
     return (
-      <div className="bfrost-splash">
+      <div className="bfrost-splash" aria-busy="true" aria-live="polite">
         <img src="/bfrost-logo.jpeg" alt="BFrost" />
         <span>Loading BFrost…</span>
         {error ? (
@@ -3023,7 +3023,7 @@ export default function App() {
           if (draft.approvalRequired !== job.approvalRequired)
             changes.push({ field: 'Require approval', from: job.approvalRequired ? 'Yes' : 'No', to: draft.approvalRequired ? 'Yes' : 'No' });
           return (
-            <div className="schedule-preview-box">
+            <div className="schedule-preview-box" role="region" aria-label="Review changes before saving" aria-live="polite">
               <p className="schedule-preview-title">Review changes before saving</p>
               {changes.length === 0 ? (
                 <p className="schedule-preview-no-changes">No changes to save.</p>
@@ -3067,7 +3067,8 @@ export default function App() {
                 >
                   {busyKey === `save-${job.name}` ? 'Saving…' : 'Confirm save'}
                 </button>
-                <button type="button" onClick={() => setConfirmSaveJobName(null)}>
+                {/* autoFocus moves keyboard focus to this panel when it mounts */}
+                <button type="button" autoFocus onClick={() => setConfirmSaveJobName(null)}>
                   Cancel
                 </button>
               </div>
@@ -3641,11 +3642,11 @@ export default function App() {
                 autoComplete="off"
                 onChange={(event) => setOpenaiApiKeyDraft(event.target.value)}
               />
-              <button type="button" className="btn-icon" onClick={() => setShowOpenaiKey((v) => !v)} title={showOpenaiKey ? 'Hide' : 'Show'}>
+              <button type="button" className="btn-icon" aria-label={showOpenaiKey ? 'Hide OpenAI key' : 'Show OpenAI key'} onClick={() => setShowOpenaiKey((v) => !v)}>
                 {showOpenaiKey ? '🙈' : '👁'}
               </button>
               {openaiApiKeyDraft ? (
-                <button type="button" className="btn-icon" onClick={() => { void navigator.clipboard.writeText(openaiApiKeyDraft); setNotice('API key copied.'); }} title="Copy">
+                <button type="button" className="btn-icon" aria-label="Copy OpenAI key" onClick={() => { void navigator.clipboard.writeText(openaiApiKeyDraft); setNotice('API key copied.'); }}>
                   📋
                 </button>
               ) : null}
@@ -3661,11 +3662,11 @@ export default function App() {
                 autoComplete="off"
                 onChange={(event) => setAnthropicApiKeyDraft(event.target.value)}
               />
-              <button type="button" className="btn-icon" onClick={() => setShowAnthropicKey((v) => !v)} title={showAnthropicKey ? 'Hide' : 'Show'}>
+              <button type="button" className="btn-icon" aria-label={showAnthropicKey ? 'Hide Anthropic key' : 'Show Anthropic key'} onClick={() => setShowAnthropicKey((v) => !v)}>
                 {showAnthropicKey ? '🙈' : '👁'}
               </button>
               {anthropicApiKeyDraft ? (
-                <button type="button" className="btn-icon" onClick={() => { void navigator.clipboard.writeText(anthropicApiKeyDraft); setNotice('API key copied.'); }} title="Copy">
+                <button type="button" className="btn-icon" aria-label="Copy Anthropic key" onClick={() => { void navigator.clipboard.writeText(anthropicApiKeyDraft); setNotice('API key copied.'); }}>
                   📋
                 </button>
               ) : null}
@@ -3877,26 +3878,36 @@ export default function App() {
                 <div
                   key={action.id}
                   className={`actions-item${selectedActionId === action.id ? ' selected' : ''}`}
-                  onClick={() => setSelectedActionId(selectedActionId === action.id ? null : action.id)}
                 >
-                  <div className="actions-item-header">
-                    <span className="actions-item-label">{action.label}</span>
-                    <span className="actions-item-worker footnote">{action.workerId}</span>
-                    <StatusPill tone="warning">pending</StatusPill>
-                  </div>
-                  <div className="actions-item-rationale footnote">{action.rationale}</div>
+                  {/* Selectable region — opens diff preview below */}
+                  <button
+                    type="button"
+                    className="actions-item-body"
+                    aria-expanded={selectedActionId === action.id}
+                    aria-label={`${action.label} from ${action.workerId} — ${selectedActionId === action.id ? 'collapse' : 'expand'} diff preview`}
+                    onClick={() => setSelectedActionId(selectedActionId === action.id ? null : action.id)}
+                  >
+                    <div className="actions-item-header">
+                      <span className="actions-item-label">{action.label}</span>
+                      <span className="actions-item-worker footnote">{action.workerId}</span>
+                      <StatusPill tone="warning">pending</StatusPill>
+                    </div>
+                    <div className="actions-item-rationale footnote">{action.rationale}</div>
+                  </button>
                   <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
                     <button
+                      type="button"
                       className="btn btn-primary"
                       disabled={busyKey === `action-${action.id}`}
-                      onClick={(e) => { e.stopPropagation(); void decideAction(action.id, true); }}
+                      onClick={() => void decideAction(action.id, true)}
                     >
                       Approve
                     </button>
                     <button
+                      type="button"
                       className="btn btn-danger"
                       disabled={busyKey === `action-${action.id}`}
-                      onClick={(e) => { e.stopPropagation(); void decideAction(action.id, false); }}
+                      onClick={() => void decideAction(action.id, false)}
                     >
                       Reject
                     </button>

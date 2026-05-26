@@ -14,7 +14,7 @@
  * re-triggered from the "Getting started" checklist.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 // ── Shared types (duplicated from App.tsx to keep the component self-contained)
 
@@ -172,15 +172,24 @@ function StepModel({ dashboard, onRefresh }: { dashboard: DashboardSnapshot; onR
       <h2>Connect a model provider</h2>
       <p className="wizard-lead">BFrost needs at least one model to run workers. Choose how you want to connect.</p>
 
-      <div className="wizard-tabs" role="tablist">
+      <div className="wizard-tabs" role="tablist" aria-label="Model provider">
         {(['openai', 'anthropic', 'local'] as const).map((t) => (
           <button
             key={t}
+            id={`wizard-tab-${t}`}
             role="tab"
             type="button"
             aria-selected={tab === t}
+            aria-controls={`wizard-panel-${t}`}
+            tabIndex={tab === t ? 0 : -1}
             className={`wizard-tab${tab === t ? ' active' : ''}`}
             onClick={() => setTab(t)}
+            onKeyDown={(e) => {
+              const tabs = ['openai', 'anthropic', 'local'] as const;
+              const idx = tabs.indexOf(t);
+              if (e.key === 'ArrowRight') setTab(tabs[(idx + 1) % tabs.length]);
+              if (e.key === 'ArrowLeft') setTab(tabs[(idx + tabs.length - 1) % tabs.length]);
+            }}
           >
             {t === 'openai' ? 'OpenAI' : t === 'anthropic' ? 'Anthropic' : 'Local (LM Studio)'}
             {t === 'openai' && openaiOk ? ' ✓' : ''}
@@ -190,89 +199,103 @@ function StepModel({ dashboard, onRefresh }: { dashboard: DashboardSnapshot; onR
         ))}
       </div>
 
-      {tab === 'openai' && (
-        <div className="wizard-tab-panel">
-          {openaiOk ? (
-            <p className="wizard-status-ok">✓ OpenAI API is configured.</p>
-          ) : null}
-          <label className="wizard-field-label">OpenAI API key</label>
-          <div className="wizard-key-row">
-            <input
-              type="password"
-              placeholder={openaiOk ? 'Configured — enter new key to update' : 'sk-...'}
-              value={openaiKey}
-              autoComplete="off"
-              onChange={(e) => setOpenaiKey(e.target.value)}
-            />
-            <button
-              type="button"
-              className="primary"
-              disabled={saving || !openaiKey.trim()}
-              onClick={() => void saveKey('openai')}
-            >
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-          </div>
-          {saved === 'openai' ? <p className="wizard-status-ok">✓ Saved successfully.</p> : null}
-          <p className="wizard-footnote">Get your key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">platform.openai.com/api-keys</a></p>
+      <div
+        id="wizard-panel-openai"
+        role="tabpanel"
+        aria-labelledby="wizard-tab-openai"
+        hidden={tab !== 'openai'}
+        className="wizard-tab-panel"
+      >
+        {openaiOk ? (
+          <p className="wizard-status-ok">✓ OpenAI API is configured.</p>
+        ) : null}
+        <label className="wizard-field-label" htmlFor="wizard-openai-key">OpenAI API key</label>
+        <div className="wizard-key-row">
+          <input
+            id="wizard-openai-key"
+            type="password"
+            placeholder={openaiOk ? 'Configured — enter new key to update' : 'sk-...'}
+            value={openaiKey}
+            autoComplete="off"
+            onChange={(e) => setOpenaiKey(e.target.value)}
+          />
+          <button
+            type="button"
+            className="primary"
+            disabled={saving || !openaiKey.trim()}
+            onClick={() => void saveKey('openai')}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
         </div>
-      )}
+        {saved === 'openai' ? <p className="wizard-status-ok">✓ Saved successfully.</p> : null}
+        <p className="wizard-footnote">Get your key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">platform.openai.com/api-keys</a></p>
+      </div>
 
-      {tab === 'anthropic' && (
-        <div className="wizard-tab-panel">
-          {anthropicOk ? (
-            <p className="wizard-status-ok">✓ Anthropic API is configured.</p>
-          ) : null}
-          <label className="wizard-field-label">Anthropic API key</label>
-          <div className="wizard-key-row">
-            <input
-              type="password"
-              placeholder={anthropicOk ? 'Configured — enter new key to update' : 'sk-ant-...'}
-              value={anthropicKey}
-              autoComplete="off"
-              onChange={(e) => setAnthropicKey(e.target.value)}
-            />
-            <button
-              type="button"
-              className="primary"
-              disabled={saving || !anthropicKey.trim()}
-              onClick={() => void saveKey('anthropic')}
-            >
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-          </div>
-          {saved === 'anthropic' ? <p className="wizard-status-ok">✓ Saved successfully.</p> : null}
-          <p className="wizard-footnote">Get your key at <a href="https://console.anthropic.com/account/keys" target="_blank" rel="noreferrer">console.anthropic.com</a></p>
+      <div
+        id="wizard-panel-anthropic"
+        role="tabpanel"
+        aria-labelledby="wizard-tab-anthropic"
+        hidden={tab !== 'anthropic'}
+        className="wizard-tab-panel"
+      >
+        {anthropicOk ? (
+          <p className="wizard-status-ok">✓ Anthropic API is configured.</p>
+        ) : null}
+        <label className="wizard-field-label" htmlFor="wizard-anthropic-key">Anthropic API key</label>
+        <div className="wizard-key-row">
+          <input
+            id="wizard-anthropic-key"
+            type="password"
+            placeholder={anthropicOk ? 'Configured — enter new key to update' : 'sk-ant-...'}
+            value={anthropicKey}
+            autoComplete="off"
+            onChange={(e) => setAnthropicKey(e.target.value)}
+          />
+          <button
+            type="button"
+            className="primary"
+            disabled={saving || !anthropicKey.trim()}
+            onClick={() => void saveKey('anthropic')}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
         </div>
-      )}
+        {saved === 'anthropic' ? <p className="wizard-status-ok">✓ Saved successfully.</p> : null}
+        <p className="wizard-footnote">Get your key at <a href="https://console.anthropic.com/account/keys" target="_blank" rel="noreferrer">console.anthropic.com</a></p>
+      </div>
 
-      {tab === 'local' && (
-        <div className="wizard-tab-panel">
-          {lmRunning ? (
-            <p className="wizard-status-ok">✓ LM Studio is running with {dashboard.lmStudio.loadedCount} model(s) loaded.</p>
-          ) : (
-            <>
-              <p>LM Studio is not detected. Download it to run AI models fully locally.</p>
-              <a
-                href="https://lmstudio.ai"
-                target="_blank"
-                rel="noreferrer"
-                className="wizard-external-link"
-              >
-                Download LM Studio →
-              </a>
-              <p className="wizard-footnote">Once installed and running, load a model in LM Studio, then come back.</p>
-            </>
-          )}
-          {dashboard.lmStudio.loadedModels.length > 0 && (
-            <ul className="wizard-bullets">
-              {dashboard.lmStudio.loadedModels.map((m) => (
-                <li key={m}>📦 {m}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+      <div
+        id="wizard-panel-local"
+        role="tabpanel"
+        aria-labelledby="wizard-tab-local"
+        hidden={tab !== 'local'}
+        className="wizard-tab-panel"
+      >
+        {lmRunning ? (
+          <p className="wizard-status-ok">✓ LM Studio is running with {dashboard.lmStudio.loadedCount} model(s) loaded.</p>
+        ) : (
+          <>
+            <p>LM Studio is not detected. Download it to run AI models fully locally.</p>
+            <a
+              href="https://lmstudio.ai"
+              target="_blank"
+              rel="noreferrer"
+              className="wizard-external-link"
+            >
+              Download LM Studio →
+            </a>
+            <p className="wizard-footnote">Once installed and running, load a model in LM Studio, then come back.</p>
+          </>
+        )}
+        {dashboard.lmStudio.loadedModels.length > 0 && (
+          <ul className="wizard-bullets">
+            {dashboard.lmStudio.loadedModels.map((m) => (
+              <li key={m}>📦 {m}</li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {error ? <p className="wizard-error">{error}</p> : null}
     </div>
@@ -558,6 +581,10 @@ function StepFirstRun({
 export function Wizard({ dashboard, onDismiss, onComplete, onRefreshDashboard, onNavigate }: WizardProps) {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(true);
+  const shellRef = useRef<HTMLDivElement>(null);
+  // Ref-wrapped callbacks so the focus-trap closure stays stable
+  const onDismissRef = useRef(onDismiss);
+  useEffect(() => { onDismissRef.current = onDismiss; }, [onDismiss]);
 
   // Load persisted step on mount
   useEffect(() => {
@@ -569,6 +596,51 @@ export function Wizard({ dashboard, onDismiss, onComplete, onRefreshDashboard, o
       .catch(() => undefined)
       .finally(() => setLoading(false));
   }, []);
+
+  // Focus trap: capture origin, focus first element, trap Tab, close on Escape
+  useEffect(() => {
+    const prevFocus = document.activeElement as HTMLElement | null;
+
+    // Focus the first focusable child once the shell is mounted
+    const shell = shellRef.current;
+    if (shell) {
+      const focusable = shell.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      );
+      focusable[0]?.focus();
+    }
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onDismissRef.current();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const sh = shellRef.current;
+      if (!sh) return;
+      const focusable = Array.from(
+        sh.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => !el.closest('[hidden]'));
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      prevFocus?.focus();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally mount-only
 
   async function goTo(nextStep: number) {
     setStep(nextStep);
@@ -588,7 +660,7 @@ export function Wizard({ dashboard, onDismiss, onComplete, onRefreshDashboard, o
   if (loading) {
     return (
       <div className="wizard-overlay" role="dialog" aria-modal="true" aria-label="Setup wizard">
-        <div className="wizard-shell">
+        <div className="wizard-shell" ref={shellRef}>
           <p className="wizard-loading">Loading…</p>
         </div>
       </div>
@@ -599,8 +671,8 @@ export function Wizard({ dashboard, onDismiss, onComplete, onRefreshDashboard, o
   const isLast = step === TOTAL_STEPS - 1;
 
   return (
-    <div className="wizard-overlay" role="dialog" aria-modal="true" aria-label="Setup wizard">
-      <div className="wizard-shell">
+    <div className="wizard-overlay" role="dialog" aria-modal="true" aria-labelledby="wizard-step-heading">
+      <div className="wizard-shell" ref={shellRef}>
         {/* Header */}
         <div className="wizard-header">
           <div className="wizard-progress-labels">
@@ -631,8 +703,13 @@ export function Wizard({ dashboard, onDismiss, onComplete, onRefreshDashboard, o
           />
         </div>
 
-        {/* Step content */}
-        <div className="wizard-content">
+        {/* Visually hidden heading used as the dialog's accessible name */}
+        <span id="wizard-step-heading" className="sr-only">
+          Setup wizard — Step {step + 1} of {TOTAL_STEPS}: {STEP_LABELS[step]}
+        </span>
+
+        {/* Step content — aria-live announces step changes to screen readers */}
+        <div className="wizard-content" aria-live="polite" aria-atomic="false">
           {step === 0 && <StepWelcome />}
           {step === 1 && <StepModel dashboard={dashboard} onRefresh={onRefreshDashboard} />}
           {step === 2 && <StepChannels dashboard={dashboard} onRefresh={onRefreshDashboard} />}

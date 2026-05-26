@@ -82,6 +82,40 @@ button:disabled {
   opacity: 0.6;
 }
 
+/* ── Screen-reader-only utility ─────────────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ── Keyboard focus ring ─────────────────────────────────────────── */
+/* Visible only when navigating by keyboard (pointer clicks don't show it) */
+:focus-visible {
+  outline: 3px solid var(--brand, #2271b1);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Inputs/selects/textareas get a more subtle inset ring */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--brand, #2271b1);
+  outline-offset: 0;
+}
+
+/* Suppress the legacy browser :focus ring when :focus-visible is supported */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
 button.primary {
   background: var(--brand);
   color: #fff;
@@ -1937,11 +1971,34 @@ code {
   padding: 0.75rem 1rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  cursor: pointer;
   transition: background 0.1s;
 }
 
-.actions-item:hover {
+/* The selectable header+rationale region — a real <button> so keyboard works */
+.actions-item-body {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.actions-item-body:hover {
+  background: none;
+}
+
+.actions-item-body:hover ~ *,
+.actions-item:has(.actions-item-body:hover) {
+  /* Hover highlight handled at the card level via :has() */
+}
+
+.actions-item:hover,
+.actions-item:has(.actions-item-body:hover) {
   background: color-mix(in srgb, var(--accent) 5%, var(--panel));
 }
 
