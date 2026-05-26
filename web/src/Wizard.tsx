@@ -28,6 +28,9 @@ interface WorkerSummary {
   tagline?: string;
   description: string;
   kind: WorkerKind;
+  builtIn: boolean;
+  /** Only true for built-in workers that are optional features (not core infrastructure). */
+  deletable?: boolean;
   enabled: boolean;
   missing: boolean;
   healthState: WorkerHealthState;
@@ -345,7 +348,13 @@ function StepChannels({ dashboard, onRefresh }: { dashboard: DashboardSnapshot; 
 }
 
 function StepWorkers({ dashboard, onRefresh }: { dashboard: DashboardSnapshot; onRefresh: () => Promise<void> }) {
-  const starterWorkers = dashboard.workers.filter((w) => w.kind === 'feature' && !w.missing);
+  // Show only optional feature workers: built-ins flagged deletable (news, research, publisher…)
+  // plus any local/community workers (which are always optional by definition).
+  // Core infrastructure workers (control panel, bus inspector, memory, article reader, etc.)
+  // are never shown here — disabling them would break the platform for the user.
+  const starterWorkers = dashboard.workers.filter(
+    (w) => w.kind === 'feature' && !w.missing && (!w.builtIn || w.deletable === true),
+  );
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -370,8 +379,8 @@ function StepWorkers({ dashboard, onRefresh }: { dashboard: DashboardSnapshot; o
   if (starterWorkers.length === 0) {
     return (
       <div className="wizard-step-body">
-        <h2>Enable a worker</h2>
-        <p className="wizard-lead">No feature workers found. Install workers from the Store tab.</p>
+        <h2>Enable workers</h2>
+        <p className="wizard-lead">No optional workers found. Browse the Store tab to install community workers, or check the Workers tab to see what's installed.</p>
       </div>
     );
   }
