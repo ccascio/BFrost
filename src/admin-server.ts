@@ -772,6 +772,23 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return sendJson(res, 200, { actions });
     }
 
+    // ── Wizard state ─────────────────────────────────────────────────────────
+    if (url.pathname === '/api/wizard/state' && req.method === 'GET') {
+      const state = await loadKvJson<{ step?: number; completed?: boolean }>('wizard.state') ?? {};
+      return sendJson(res, 200, { step: state.step ?? 0, completed: state.completed ?? false });
+    }
+
+    if (url.pathname === '/api/wizard/state' && req.method === 'POST') {
+      const body = await readJsonBody(req, z.object({
+        step: z.number().int().min(0).max(5).optional(),
+        completed: z.boolean().optional(),
+      }).strict());
+      const prev = await loadKvJson<{ step?: number; completed?: boolean }>('wizard.state') ?? {};
+      const next = { ...prev, ...body };
+      await saveKvJson('wizard.state', next);
+      return sendJson(res, 200, { ok: true, ...next });
+    }
+
     const actionDecideMatch = url.pathname.match(/^\/api\/actions\/([^/]+)\/(approve|reject)$/);
     if (actionDecideMatch && req.method === 'POST') {
       const requestId = decodeURIComponent(actionDecideMatch[1]);

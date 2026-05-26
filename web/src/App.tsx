@@ -4,6 +4,7 @@ import { TopBar } from './TopBar';
 import { Markdown } from './Markdown';
 import { loadRuntimeWorkerBundle, workerQueueItemDetails, useWorkerDashboardViews } from './workers/registry';
 import type { WorkerDashboardViewDefinition } from './workers/types';
+import { Wizard } from './Wizard';
 
 type RunStatus = 'idle' | 'success' | 'error' | 'skipped';
 type CoreDashboardTab = 'overview' | 'channels' | 'workers' | 'jobs' | 'config' | 'chat' | 'system' | 'store' | 'actions';
@@ -572,6 +573,9 @@ export default function App() {
   const [actionsLoading, setActionsLoading] = useState(false);
   const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
 
+  // First-run wizard state
+  const [wizardOpen, setWizardOpen] = useState(false);
+
   // Auto-backup settings state (system tab)
   const [autoBackupSettings, setAutoBackupSettings] = useState<AutoBackupSettings | null>(null);
   const [openaiApiKeyDraft, setOpenaiApiKeyDraft] = useState('');
@@ -985,6 +989,18 @@ export default function App() {
         window.history.replaceState({}, '', window.location.pathname);
       }
       await fetchDashboard(false);
+      // Check whether to open the first-run wizard.
+      try {
+        const wizRes = await fetch('/api/wizard/state', { credentials: 'include' });
+        if (wizRes.ok) {
+          const wizState = await wizRes.json() as { step: number; completed: boolean };
+          if (!wizState.completed) {
+            setWizardOpen(true);
+          }
+        }
+      } catch {
+        // Non-fatal — wizard won't auto-open on network error
+      }
     }
   }
 
@@ -2463,6 +2479,15 @@ export default function App() {
               <p className="footnote" style={{ marginTop: '0.75rem' }}>
                 You can return to this checklist any time from the System tab. Nothing is permanent — enable or disable workers freely.
               </p>
+              <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => setWizardOpen(true)}
+                >
+                  Open setup wizard
+                </button>
+              </div>
             </div>
           </section>
         );
@@ -2740,6 +2765,30 @@ export default function App() {
         </section>
       ) : null}
       </main>
+
+      {/* First-run wizard overlay */}
+      {wizardOpen && dashboard ? (
+        <Wizard
+          dashboard={dashboard}
+          onDismiss={() => {
+            setWizardOpen(false);
+            void fetch('/api/wizard/state', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ completed: true }),
+            });
+          }}
+          onComplete={() => {
+            setWizardOpen(false);
+            void fetchDashboard(true);
+          }}
+          onRefreshDashboard={() => fetchDashboard(true)}
+          onNavigate={(tab) => {
+            setWizardOpen(false);
+            setActiveTab(tab as CoreDashboardTab);
+          }}
+        />
+      ) : null}
     </div>
   );
 

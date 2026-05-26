@@ -2881,3 +2881,295 @@ code {
   color: var(--text, inherit);
   white-space: normal;
 }
+
+/* ── First-run Setup Wizard ──────────────────────────────────────────────── */
+
+.wizard-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.wizard-shell {
+  background: var(--panel, #fff);
+  border-radius: 12px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.22);
+  width: 100%;
+  max-width: 640px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.wizard-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 1rem 1.25rem 0.5rem;
+  gap: 0.75rem;
+}
+
+.wizard-progress-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  flex: 1;
+}
+
+.wizard-progress-label {
+  font-size: 0.75rem;
+  color: var(--muted, #666);
+  white-space: nowrap;
+}
+
+.wizard-progress-label.active {
+  color: var(--brand, #2271b1);
+  font-weight: 600;
+}
+
+.wizard-progress-label.done {
+  color: var(--good, #1f7a57);
+}
+
+.wizard-close {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+  color: var(--muted, #666);
+  padding: 0.25rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.wizard-close:hover {
+  color: var(--text, #1d2327);
+}
+
+.wizard-progress-bar {
+  height: 3px;
+  background: var(--line, #ddd);
+  margin: 0.5rem 1.25rem;
+  border-radius: 2px;
+}
+
+.wizard-progress-fill {
+  height: 100%;
+  background: var(--brand, #2271b1);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.wizard-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 1.25rem;
+}
+
+.wizard-step-body {
+  padding: 0.75rem 0 1rem;
+}
+
+.wizard-step-body h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+
+.wizard-lead {
+  color: var(--muted, #555);
+  margin: 0 0 1rem;
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.wizard-footnote {
+  font-size: 0.82rem;
+  color: var(--muted, #888);
+  margin: 0.75rem 0 0;
+}
+
+.wizard-hero {
+  text-align: center;
+  padding: 0.5rem 0;
+}
+
+.wizard-hero-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.wizard-hero h2 {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.wizard-bullets {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem auto;
+  text-align: left;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.wizard-bullets li {
+  font-size: 0.9rem;
+  color: var(--text, #1d2327);
+}
+
+.wizard-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--line, #ddd);
+  margin-bottom: 1rem;
+}
+
+.wizard-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  color: var(--muted, #666);
+  margin-bottom: -1px;
+}
+
+.wizard-tab.active {
+  color: var(--brand, #2271b1);
+  border-bottom-color: var(--brand, #2271b1);
+  font-weight: 600;
+}
+
+.wizard-tab:hover:not(.active) {
+  color: var(--text, #333);
+}
+
+.wizard-tab-panel {
+  padding: 0.25rem 0;
+}
+
+.wizard-field-label {
+  display: block;
+  font-size: 0.88rem;
+  font-weight: 500;
+  margin-bottom: 0.35rem;
+}
+
+.wizard-key-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.wizard-key-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.wizard-status-ok {
+  color: var(--good, #1f7a57);
+  font-size: 0.88rem;
+  margin: 0.5rem 0;
+}
+
+.wizard-error {
+  color: var(--tone-error, #dc2626);
+  font-size: 0.88rem;
+  margin: 0.5rem 0;
+}
+
+.wizard-external-link {
+  display: inline-block;
+  margin: 0.5rem 0;
+  color: var(--brand, #2271b1);
+  font-weight: 500;
+}
+
+.wizard-worker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.wizard-worker-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line, #ddd);
+  border-radius: 6px;
+  background: var(--bg, #f8f8f8);
+}
+
+.wizard-worker-item.enabled {
+  border-color: color-mix(in srgb, var(--good) 40%, transparent);
+  background: color-mix(in srgb, var(--good) 5%, transparent);
+}
+
+.wizard-worker-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.wizard-worker-desc {
+  font-size: 0.82rem;
+  color: var(--muted, #666);
+}
+
+.wizard-worker-badge {
+  font-size: 0.75rem;
+  color: var(--good, #1f7a57);
+  font-weight: 600;
+}
+
+.wizard-run-summary {
+  color: var(--good, #1f7a57);
+}
+
+.wizard-run-error {
+  color: var(--tone-error, #dc2626);
+}
+
+.wizard-empty-notice {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line, #ddd);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  color: var(--muted, #555);
+  background: var(--bg, #f8f8f8);
+}
+
+.wizard-loading {
+  text-align: center;
+  color: var(--muted, #666);
+  padding: 2rem;
+}
+
+.wizard-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--line, #ddd);
+  gap: 0.5rem;
+}
+
+.wizard-footer-left,
+.wizard-footer-right {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
