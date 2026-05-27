@@ -14,12 +14,14 @@ import os from 'node:os';
 
 // Must set DB path before any module that opens the DB is required.
 const TEST_DB = path.join(os.tmpdir(), `bfrost-actions-test-${Date.now()}.db`);
-process.env['BFROST_DB_PATH'] = TEST_DB;
+process.env['APP_DB_PATH'] = TEST_DB;
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const store = require('./store') as typeof import('./store');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const primitives = require('./primitives') as typeof import('./primitives');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const sqlite = require('../sqlite') as typeof import('../sqlite');
 
 let tmpDir: string;
 
@@ -29,6 +31,7 @@ before(async () => {
 });
 
 after(async () => {
+  sqlite.closeDb();
   await rm(tmpDir, { recursive: true, force: true });
   if (existsSync(TEST_DB)) await rm(TEST_DB, { force: true });
 });
