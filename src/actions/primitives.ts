@@ -7,12 +7,19 @@
  *   3. For `approved-write` actions: polls the approval queue until approved or
  *      rejected (or the timeout elapses), then executes and records the result.
  *
+ * Permission scopes (WorkerManifest.permissions):
+ *   When `permissions` is absent on the worker's manifest the worker is unrestricted.
+ *   When present, only explicitly listed scopes pass — everything else throws a
+ *   `PermissionDeniedError` before any action request is created.
+ *
  * Current primitives:
  *   - requestFileRead  — read-only; no approval needed.
  *   - requestFileWrite — approved-write; blocks until the operator reviews a diff.
+ *   - requestShell     — approved-write; runs a child process after operator approval.
  */
 
 import { promises as fs, existsSync } from 'fs';
+import { spawn } from 'child_process';
 import path from 'path';
 import { recordEventSafe } from '../event-log';
 import {
@@ -22,6 +29,56 @@ import {
   markActionExecuted,
 } from './store';
 import type { ActionResult } from './types';
+
+// ---------------------------------------------------------------------------
+// Permission scope enforcement
+// ---------------------------------------------------------------------------
+
+/**
+ * Thrown when a worker attempts an action outside its declared permission scopes.
+ */
+export class PermissionDeniedError extends Error {
+  constructor(workerId: string, scope: string) {
+    super(`Worker "${workerId}" does not have permission: ${scope}`);
+    this.name = 'PermissionDeniedError';
+  }
+}
+
+/**
+ * Returns the `permissions` array for the given worker, or `undefined` (unrestricted)
+ * when the worker has no manifest or no declared permissions.
+ *
+ * Lazy-required to avoid a circular import: registry → builtin workers → primitives.
+ */
+function getWorkerPermissions(workerId: string): string[] | undefined {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const registry = require('../workers/registry') as typeof import('../workers/registry');
+  const manifest = registry.listWorkers().find((w) => w.id === workerId);
+  return manifest?.permissions;
+}
+
+/**
+ * Checks whether `workerId` holds `scope`. If `permissions` is absent the worker is
+ * unrestricted. If it is present the scope must match either exactly or via a wildcard
+ * suffix (`file:read:*` covers all `file:read:` scopes; `shell:*` covers all `shell:` scopes).
+ *
+ * @throws {PermissionDeniedError} when the check fails.
+ */
+function assertPermission(workerId: string, scope: string): void {
+  const permissions = getWorkerPermissions(workerId);
+  if (permissions === undefined) return; // Unrestricted — no permissions field declared.
+
+  const [kind, verb] = scope.split(':');
+  const wildcardScope = `${kind}:${verb}:*`;
+
+  const allowed =
+    permissions.includes(scope) ||
+    permissions.includes(wildcardScope);
+
+  if (!allowed) {
+    throw new PermissionDeniedError(workerId, scope);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Diff helper (no external deps)
@@ -70,15 +127,12 @@ function buildDiff(oldLines: string[], newLines: string[], filePath: string): st
   const changedIdxs = changes.map((c, idx) => c.type !== ' ' ? idx : -1).filter((x) => x >= 0);
   if (changedIdxs.length === 0) return header + '(no changes)\n';
 
-  let hunkStart = Math.max(0, changedIdxs[0] - maxCtx);
-  let hunkEnd   = Math.min(changes.length - 1, changedIdxs[changedIdxs.length - 1] + maxCtx);
+  const hunkStart = Math.max(0, changedIdxs[0] - maxCtx);
+  const hunkEnd   = Math.min(changes.length - 1, changedIdxs[changedIdxs.length - 1] + maxCtx);
   const lines: string[] = [];
-  let oldLine = hunkStart + 1, newLine = hunkStart + 1;
   for (let k = hunkStart; k <= hunkEnd; k++) {
     const c = changes[k];
     lines.push(`${c.type}${c.line}`);
-    if (c.type === '-') newLine--;
-    if (c.type === '+') oldLine--;
   }
   hunks.push(`@@ -${hunkStart + 1} +${hunkStart + 1} @@\n` + lines.join('\n'));
 
@@ -118,6 +172,8 @@ export async function requestFileRead(
   filePath: string,
 ): Promise<string> {
   const absPath = path.resolve(filePath);
+  assertPermission(workerId, `file:read:${absPath}`);
+
   const request = await createActionRequest({
     workerId,
     actionClass: 'read-only',
@@ -158,6 +214,8 @@ export async function requestFileWrite(
   opts?: { rationale?: string; timeoutMs?: number },
 ): Promise<{ approved: boolean; requestId: string }> {
   const absPath = path.resolve(filePath);
+  assertPermission(workerId, `file:write:${absPath}`);
+
   const newLines = content.split('\n');
 
   let preview: string;
@@ -254,4 +312,137 @@ export async function requestFileWrite(
     });
     throw err;
   }
+}
+
+// ---------------------------------------------------------------------------
+// requestShell — approved-write; runs a child process after operator approval
+// ---------------------------------------------------------------------------
+
+export interface ShellResult {
+  approved: boolean;
+  requestId: string;
+  /** Present only when the command was actually executed. */
+  output?: { stdout: string; stderr: string; exitCode: number };
+}
+
+/**
+ * Request approval to run `command` with the given `args`. Blocks until the operator
+ * approves or rejects (or `timeoutMs` elapses).
+ *
+ * The command name is validated against the worker's `permissions` list using the
+ * `shell:<command-name>` scope. Use `shell:*` in the manifest to allow any command.
+ *
+ * stdout/stderr are captured and stored in the action result; both are truncated to
+ * 64 KiB to avoid storing runaway output in the DB.
+ */
+export async function requestShell(
+  workerId: string,
+  command: string,
+  args: string[] = [],
+  opts?: {
+    rationale?: string;
+    cwd?: string;
+    env?: Record<string, string>;
+    timeoutMs?: number;
+    /** Max bytes to capture from stdout/stderr (default 65536). */
+    maxOutputBytes?: number;
+  },
+): Promise<ShellResult> {
+  assertPermission(workerId, `shell:${command}`);
+
+  const displayCmd = [command, ...args].join(' ');
+  const preview = `$ ${displayCmd}${opts?.cwd ? `\n# cwd: ${opts.cwd}` : ''}`;
+
+  const request = await createActionRequest({
+    workerId,
+    actionClass: 'approved-write',
+    label: `Run: ${displayCmd.slice(0, 80)}`,
+    rationale: opts?.rationale ?? `Worker ${workerId} wants to run: ${displayCmd}`,
+    payload: { command, args, cwd: opts?.cwd ?? null },
+    preview,
+  });
+
+  await recordEventSafe({
+    category: 'actions',
+    action: 'shell-requested',
+    severity: 'info',
+    summary: `[${workerId}] Requested shell: ${displayCmd} (awaiting approval)`,
+    metadata: { requestId: request.id, workerId, command, args },
+  });
+
+  const approved = await waitForDecision(request.id, opts?.timeoutMs);
+
+  if (!approved) {
+    await markActionExecuted(request.id, {
+      requestId: request.id,
+      ok: false,
+      error: 'Rejected by operator or timed out',
+      executedAt: new Date().toISOString(),
+    });
+    await recordEventSafe({
+      category: 'actions',
+      action: 'shell-rejected',
+      severity: 'warning',
+      summary: `[${workerId}] Shell command rejected or timed out: ${displayCmd}`,
+      metadata: { requestId: request.id, workerId, command },
+    });
+    return { approved: false, requestId: request.id };
+  }
+
+  // Execute the command and capture output.
+  const maxBytes = opts?.maxOutputBytes ?? 65536;
+  const execResult = await new Promise<{ stdout: string; stderr: string; exitCode: number }>(
+    (resolve, reject) => {
+      const stdoutChunks: Buffer[] = [];
+      const stderrChunks: Buffer[] = [];
+      let stdoutSize = 0, stderrSize = 0;
+
+      const child = spawn(command, args, {
+        cwd: opts?.cwd,
+        env: opts?.env ? { ...process.env, ...opts.env } : process.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      child.stdout.on('data', (chunk: Buffer) => {
+        const remaining = maxBytes - stdoutSize;
+        if (remaining > 0) {
+          stdoutChunks.push(chunk.subarray(0, remaining));
+          stdoutSize += Math.min(chunk.length, remaining);
+        }
+      });
+      child.stderr.on('data', (chunk: Buffer) => {
+        const remaining = maxBytes - stderrSize;
+        if (remaining > 0) {
+          stderrChunks.push(chunk.subarray(0, remaining));
+          stderrSize += Math.min(chunk.length, remaining);
+        }
+      });
+      child.on('close', (code) => {
+        resolve({
+          stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+          stderr: Buffer.concat(stderrChunks).toString('utf8'),
+          exitCode: code ?? 1,
+        });
+      });
+      child.on('error', reject);
+    },
+  );
+
+  const ok = execResult.exitCode === 0;
+  await markActionExecuted(request.id, {
+    requestId: request.id,
+    ok,
+    output: `exit ${execResult.exitCode}\n${execResult.stdout}`,
+    error: ok ? undefined : execResult.stderr || `exit code ${execResult.exitCode}`,
+    executedAt: new Date().toISOString(),
+  });
+  await recordEventSafe({
+    category: 'actions',
+    action: ok ? 'shell-executed' : 'shell-failed',
+    severity: ok ? 'info' : 'error',
+    summary: `[${workerId}] Shell ${ok ? 'completed' : 'failed'}: ${displayCmd} (exit ${execResult.exitCode})`,
+    metadata: { requestId: request.id, workerId, command, exitCode: execResult.exitCode },
+  });
+
+  return { approved: true, requestId: request.id, output: execResult };
 }

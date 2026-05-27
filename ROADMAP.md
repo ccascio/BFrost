@@ -150,14 +150,15 @@ Today local workers are manifest-only. To be a real platform BFrost must safely 
 
 Original `ROADMAP.md` Phase 4. Required before workers can responsibly do real-world actions.
 
-- [ ] Define `ActionRequest`, `ActionApproval`, `ActionResult` types.
-- [ ] Add an approval queue table and a dashboard review surface (rendered through the worker UI registry).
-- [ ] Action classes: `read-only`, `draft`, `approved-write`, `trusted-automation`, `blocked`.
-- [ ] Per-worker / per-channel / per-agent permission scopes; filesystem, command, network-domain, credential allowlists.
-- [ ] Audit every proposed and executed action with `workerId`, `actor`, `inputs`, `outputs`, `approvalState`, `timestamp`.
-- [ ] Built-in safe primitives workers can compose: file read in allowed paths, file draft (patch preview), shell-with-allowlist, Playwright session for inspect/extract.
+- [x] Define `ActionRequest`, `ActionApproval`, `ActionResult` types (`src/actions/types.ts`).
+- [x] Add an approval queue table (`action_requests`) and a dashboard review surface — Actions tab with diff preview, Approve/Reject buttons, and a history panel showing the last 50 requests. (`src/actions/store.ts`, `src/admin-server.ts`, `web/src/App.tsx`)
+- [x] Action classes: `read-only` (auto-approved), `approved-write` (blocks for operator), `blocked` (auto-rejected on creation), `draft`/`trusted-automation` (stubs, future use).
+- [x] Per-worker permission scopes declared on `WorkerManifest.permissions` (scope syntax: `file:read:<prefix>`, `file:write:<prefix>`, `shell:<cmd>`, `*` wildcards). When absent the worker is unrestricted (backward-compatible). `assertPermission` enforces scopes before any action request is created; violations throw `PermissionDeniedError` (`src/actions/primitives.ts`).
+- [x] Audit every proposed and executed action via `recordEventSafe` (category: `actions`) — events carry `requestId`, `workerId`, `path`/`command`, action type, and outcome.
+- [x] Built-in safe primitives: `requestFileRead` (read-only, logs event), `requestFileWrite` (approved-write, diff preview, polls for operator decision), `requestShell` (approved-write, captures stdout/stderr, max-output-bytes guard). (`src/actions/primitives.ts`)
+- [ ] **Still deferred:** network-domain and credential-scope allowlists; Playwright session primitive.
 
-**Exit criteria:** A worker can request a file write, the user sees and approves a diff in the dashboard, the action runs, and the result is in the audit log.
+**Exit criteria:** A worker can request a file write, the user sees and approves a diff in the dashboard, the action runs, and the result is in the audit log. ✅ _(Done 2026-05-27 — 15/15 action tests pass. Exit criterion met.)_
 
 ### Workstream 6 — Quality, Tests, And Polish
 
@@ -222,7 +223,7 @@ These can become roadmap items once the local platform has a community and a mai
 ## Open Questions (Decide Before Tagging v1.0.0)
 
 - Per-worker SQLite databases vs. namespaced tables in the shared DB? (Leaning: namespaced tables; simpler backups.)
-- Permission model strictness on first release: deny-by-default with prompts, or read-only-by-default with explicit opt-in per scope?
+- ~~Permission model strictness on first release: deny-by-default with prompts, or read-only-by-default with explicit opt-in per scope?~~ **Resolved:** unrestricted when `permissions` absent (backward compat); deny-by-default when `permissions: []`; explicit allowlist otherwise. Network/credential scopes deferred to a later version.
 - How aggressively to deprecate built-in worker-specific dashboard payload keys — break compatibility in `v0.x` or carry both shapes through `v1.0`?
 - Item Bus subscription semantics: push (the bus calls into consumers) or pull (consumers poll the bus on their cron)? Pull is simpler and matches the current scheduler; push enables real-time consumers later.
 

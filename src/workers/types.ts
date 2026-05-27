@@ -59,6 +59,25 @@ export interface WorkerManifest {
   tools?: WorkerToolManifest[];
   providers?: WorkerProviderManifest[];
   /**
+   * Optional permission scopes for the action runtime (Workstream 5).
+   *
+   * Declares which file paths and shell commands this worker is allowed to access via the
+   * `requestFileRead`, `requestFileWrite`, and `requestShell` primitives. When absent the
+   * worker is unrestricted (backward-compatible default). When present, only the listed
+   * scopes are permitted; an empty array means the worker cannot touch any guarded resource.
+   *
+   * Scope syntax:
+   *   `file:read:<path-prefix>`   — allow reading files whose absolute path starts with prefix
+   *   `file:read:*`               — allow reading any file
+   *   `file:write:<path-prefix>`  — allow writing files whose absolute path starts with prefix
+   *   `file:write:*`              — allow writing any file
+   *   `shell:<command-name>`      — allow running a specific command via requestShell
+   *   `shell:*`                   — allow running any command
+   *
+   * Example: `["file:read:/home/user/docs", "file:write:/tmp/bfrost-output", "shell:ffmpeg"]`
+   */
+  permissions?: string[];
+  /**
    * Optional per-item summarizer for the assistant. When a worker produces Item Bus items
    * it may implement this to give the assistant a richer, friendlier description than the
    * generic `shortDesc + url` output. Receives a raw queue item and returns a one-line

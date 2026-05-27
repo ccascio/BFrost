@@ -62,7 +62,11 @@ export async function createActionRequest(opts: {
   const db = await getAppDb();
   const id = randomUUID();
   const now = new Date().toISOString();
-  const state: ActionState = opts.actionClass === 'read-only' ? 'approved' : 'pending';
+  // `read-only` → auto-approved; `blocked` → auto-rejected; everything else → pending.
+  const state: ActionState =
+    opts.actionClass === 'read-only' ? 'approved' :
+    opts.actionClass === 'blocked'   ? 'rejected'  :
+    'pending';
 
   db.prepare(
     `INSERT INTO ${TABLE}
@@ -78,7 +82,7 @@ export async function createActionRequest(opts: {
     opts.preview,
     state,
     now,
-    state === 'approved' ? now : null,
+    (state === 'approved' || state === 'rejected') ? now : null,
     null,
     null,
   );

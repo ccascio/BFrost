@@ -605,6 +605,7 @@ export default function App() {
 
   // Actions tab state
   const [pendingActions, setPendingActions] = useState<ActionRequest[]>([]);
+  const [actionHistory, setActionHistory] = useState<ActionRequest[]>([]);
   const [actionsLoading, setActionsLoading] = useState(false);
   const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
 
@@ -742,10 +743,11 @@ export default function App() {
     void fetchJobMetrics();
   }, [activeTab]);
 
-  // Poll for pending actions when on the Actions tab (and on first load if there are any).
+  // Poll for pending actions + load history when on the Actions tab.
   useEffect(() => {
     if (activeTab !== 'actions') return;
     void fetchPendingActions();
+    void fetchActionHistory();
     const timer = window.setInterval(() => void fetchPendingActions(), 3000);
     return () => window.clearInterval(timer);
   }, [activeTab]);
@@ -929,6 +931,17 @@ export default function App() {
     }
   }
 
+  async function fetchActionHistory(): Promise<void> {
+    try {
+      const res = await fetch('/api/actions?limit=50', { credentials: 'include' });
+      if (!res.ok) return;
+      const data = await res.json() as { actions: ActionRequest[] };
+      setActionHistory(data.actions ?? []);
+    } catch {
+      // best-effort
+    }
+  }
+
   async function decideAction(requestId: string, approved: boolean): Promise<void> {
     setBusyKey(`action-${requestId}`);
     try {
@@ -942,6 +955,8 @@ export default function App() {
       // Remove from pending list immediately; re-poll will reconcile
       setPendingActions((prev) => prev.filter((a) => a.id !== requestId));
       if (selectedActionId === requestId) setSelectedActionId(null);
+      // Refresh history so the decided action appears in the log
+      void fetchActionHistory();
     } catch (err) {
       setError(toAppError(err));
     } finally {
@@ -4252,6 +4267,52 @@ export default function App() {
               <h2>Diff preview — {selectedAction.label}</h2>
             </div>
             <pre className="actions-diff">{selectedAction.preview}</pre>
+          </div>
+        ) : null}
+
+        {/* ── Action history ─────────────────────────────────────────── */}
+        {actionHistory.length > 0 ? (
+          <div className="panel">
+            <div className="panel-header">
+              <h2>
+                Action History
+                <HelpTip>
+                  The last 50 action requests across all workers, newest first.
+                  Includes auto-approved reads, approved/rejected writes, and blocked requests.
+                </HelpTip>
+              </h2>
+            </div>
+            <table className="schedule-preview-table">
+              <thead>
+                <tr>
+                  <th>Worker</th>
+                  <th>Action</th>
+                  <th>Class</th>
+                  <th>State</th>
+                  <th>When</th>
+                </tr>
+              </thead>
+              <tbody>
+                {actionHistory.map((action) => {
+                  const stateTone: Record<ActionState, 'good' | 'warning' | 'info' | 'muted'> = {
+                    approved: 'good',
+                    executed: 'good',
+                    pending: 'warning',
+                    rejected: 'muted',
+                    failed: 'warning',
+                  };
+                  return (
+                    <tr key={action.id}>
+                      <td className="footnote">{action.workerId}</td>
+                      <td>{action.label}</td>
+                      <td><code className="footnote">{action.actionClass}</code></td>
+                      <td><StatusPill tone={stateTone[action.state]}>{action.state}</StatusPill></td>
+                      <td className="footnote">{new Date(action.createdAt).toLocaleString()}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         ) : null}
       </div>
