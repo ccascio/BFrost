@@ -10,6 +10,7 @@ import {
   LmStudioActionBodySchema,
   QueueItemActionBodySchema,
   SourceQualityRulesSchema,
+  JobMetricsResponseSchema,
 } from './admin-api';
 
 test('admin API schemas accept expected dashboard payloads', () => {
@@ -379,4 +380,81 @@ test('dashboard response schema accepts the control-room payload shape', () => {
   };
 
   assert.equal(DashboardStateSchema.safeParse(payload).success, true);
+});
+
+test('JobMetricsResponseSchema accepts a valid per-worker metrics payload', () => {
+  const payload = {
+    workers: [
+      {
+        workerId: 'core.publisher.x',
+        workerName: 'X Publisher',
+        totalRuns: 10,
+        successRate: 0.9,
+        p50Ms: 1200,
+        p95Ms: 3400,
+        lastFailureReason: 'API rate limit exceeded.',
+        jobs: [
+          {
+            jobName: 'tweet-post',
+            jobLabel: 'Tweet Post',
+            workerId: 'core.publisher.x',
+            totalRuns: 10,
+            successCount: 9,
+            errorCount: 1,
+            skippedCount: 0,
+            successRate: 0.9,
+            p50Ms: 1200,
+            p95Ms: 3400,
+            avgItemCount: 2.5,
+            lastFailureReason: 'API rate limit exceeded.',
+            recentStatuses: ['success', 'success', 'error', 'success'],
+          },
+        ],
+      },
+    ],
+    windowRuns: 10,
+    computedAt: '2026-05-26T10:00:00.000Z',
+  };
+
+  const result = JobMetricsResponseSchema.safeParse(payload);
+  assert.equal(result.success, true);
+  assert.equal(result.data?.workers[0].workerId, 'core.publisher.x');
+  assert.equal(result.data?.workers[0].jobs[0].successRate, 0.9);
+});
+
+test('JobMetricsResponseSchema accepts null metrics for jobs with no completed runs', () => {
+  const payload = {
+    workers: [
+      {
+        workerId: 'core.research',
+        workerName: 'Research',
+        totalRuns: 0,
+        successRate: null,
+        p50Ms: null,
+        p95Ms: null,
+        lastFailureReason: null,
+        jobs: [
+          {
+            jobName: 'personal-research',
+            jobLabel: 'Personal Research',
+            workerId: 'core.research',
+            totalRuns: 0,
+            successCount: 0,
+            errorCount: 0,
+            skippedCount: 0,
+            successRate: null,
+            p50Ms: null,
+            p95Ms: null,
+            avgItemCount: null,
+            lastFailureReason: null,
+            recentStatuses: [],
+          },
+        ],
+      },
+    ],
+    windowRuns: 0,
+    computedAt: '2026-05-26T10:00:00.000Z',
+  };
+
+  assert.equal(JobMetricsResponseSchema.safeParse(payload).success, true);
 });

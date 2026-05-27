@@ -522,3 +522,50 @@ export const ActionsSectionSchema = z.object({
 export type ActionRequestRecord = z.infer<typeof ActionRequestSchema>;
 export type ActionDecisionBody = z.infer<typeof ActionDecisionBodySchema>;
 export type ActionsSection = z.infer<typeof ActionsSectionSchema>;
+
+// ---------------------------------------------------------------------------
+// Per-worker job metrics schemas (Health tab)
+// ---------------------------------------------------------------------------
+
+export const JobRunMetricsSchema = z.object({
+  jobName: z.string(),
+  jobLabel: z.string(),
+  workerId: z.string(),
+  totalRuns: z.number().int().min(0),
+  successCount: z.number().int().min(0),
+  errorCount: z.number().int().min(0),
+  skippedCount: z.number().int().min(0),
+  /** null when there are fewer than 1 completed (success or error) run */
+  successRate: z.number().nullable(),
+  /** p50 duration in ms across completed runs; null when fewer than 5 completed runs */
+  p50Ms: z.number().nullable(),
+  /** p95 duration in ms across completed runs; null when fewer than 5 completed runs */
+  p95Ms: z.number().nullable(),
+  avgItemCount: z.number().nullable(),
+  lastFailureReason: z.string().nullable(),
+  /** Last ≤20 non-running statuses for sparkline rendering */
+  recentStatuses: z.array(z.enum(['success', 'error', 'skipped'])),
+}).strict();
+
+export const WorkerRunMetricsSchema = z.object({
+  workerId: z.string(),
+  workerName: z.string(),
+  totalRuns: z.number().int().min(0),
+  /** Aggregate across all jobs; null when no completed runs */
+  successRate: z.number().nullable(),
+  p50Ms: z.number().nullable(),
+  p95Ms: z.number().nullable(),
+  lastFailureReason: z.string().nullable(),
+  jobs: z.array(JobRunMetricsSchema),
+}).strict();
+
+export const JobMetricsResponseSchema = z.object({
+  workers: z.array(WorkerRunMetricsSchema),
+  /** Total number of runs in the metrics window */
+  windowRuns: z.number().int().min(0),
+  computedAt: z.string(),
+}).strict();
+
+export type JobRunMetrics = z.infer<typeof JobRunMetricsSchema>;
+export type WorkerRunMetrics = z.infer<typeof WorkerRunMetricsSchema>;
+export type JobMetricsResponse = z.infer<typeof JobMetricsResponseSchema>;

@@ -9,6 +9,7 @@ export type IconKey =
   | 'chevron-left'
   | 'chevron-right'
   | 'config'
+  | 'health'
   | 'jobs'
   | 'megaphone'
   | 'newspaper'
@@ -84,6 +85,12 @@ const icons: Record<IconKey, IconComponent> = {
       <path d="M8 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" />
       <path d="M5 17h14" />
       <path d="M16 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" />
+    </svg>
+  ),
+  health: (props) => (
+    <svg {...baseProps} {...props}>
+      <path d="M4 13h4l2-7 4 12 2-5h4" />
+      <circle cx="12" cy="20" r="1" fill="currentColor" stroke="none" />
     </svg>
   ),
   jobs: (props) => (

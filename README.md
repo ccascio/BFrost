@@ -12,6 +12,33 @@ Run it on your own machine: model inference, scheduler state, queue state, and t
 
 **What comes in the box:** The bundled reference workers give you a news-harvesting → research-notes → multi-channel-publishing pipeline out of the box (Telegram two-way chat, Discord notifications, X / WordPress publishing, LM Studio / Ollama / OpenAI / Anthropic model providers). These workers are normal contributors — they use the same contract you use — and you can swap, disable, or replace any of them without touching the core.
 
+## Dashboard preview
+
+BFrost ships with a local dashboard for the whole worker lifecycle: pick models, inspect worker health, review events, install capabilities, and keep the approval queue visible before anything risky runs.
+
+<p align="center">
+  <img src="assets/screenshots/dashboard-overview.jpeg" alt="BFrost dashboard overview showing model defaults, LM Studio runtime controls, installed worker status, and recent events" />
+</p>
+
+<p align="center">
+  <em>The overview keeps model selection, runtime controls, worker health, and recent operational events in one place.</em>
+</p>
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="assets/screenshots/workers-catalog.jpeg" alt="BFrost installed workers screen grouped by provider and channel capabilities" />
+    </td>
+    <td width="50%">
+      <img src="assets/screenshots/worker-store.jpeg" alt="BFrost worker store showing searchable worker cards with trust and category badges" />
+    </td>
+  </tr>
+  <tr>
+    <td><strong>Installed capabilities.</strong> Workers are grouped by role, status, and lifecycle controls.</td>
+    <td><strong>Worker Store.</strong> Browse core and community workers without changing the platform core.</td>
+  </tr>
+</table>
+
 ## How BFrost compares
 
 BFrost lives in the same neighborhood as projects like [OpenClaw](https://github.com/openclaw/openclaw), [OpenHands](https://github.com/All-Hands-AI/OpenHands), and other personal-AI / self-hosted-assistant efforts. The differences worth knowing before you pick:

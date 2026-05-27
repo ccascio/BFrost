@@ -3282,3 +3282,310 @@ code {
   gap: 0.5rem;
   align-items: center;
 }
+
+/* ── Health tab ────────────────────────────────────────────────────────────── */
+
+:root {
+  --health-ok: #22c55e;
+  --health-warn: #f59e0b;
+  --health-err: #ef4444;
+  --health-skip: #a1a1aa;
+}
+
+.health-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Summary strip */
+.health-summary-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 1.25rem 1rem;
+}
+
+.health-summary-card {
+  flex: 1;
+  min-width: 100px;
+  background: var(--surface, #f5f5f5);
+  border: 1px solid var(--line, #ddd);
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.health-summary-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.health-summary-label {
+  color: var(--muted, #777);
+}
+
+/* Worker card list */
+.health-workers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.health-worker-card {
+  background: var(--bg, #fff);
+  border: 1px solid var(--line, #ddd);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.health-worker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  gap: 0.75rem;
+  transition: background 0.12s;
+}
+
+.health-worker-header:hover {
+  background: var(--surface, #f8f8f8);
+}
+
+.health-worker-header:focus-visible {
+  outline: 3px solid var(--brand, #2271b1);
+  outline-offset: -2px;
+}
+
+.health-worker-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.health-worker-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.health-worker-id {
+  color: var(--muted, #888);
+  font-family: var(--font-mono, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 32ch;
+}
+
+.health-worker-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.health-rate-badge {
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.health-run-count {
+  color: var(--muted, #888);
+}
+
+.health-expand-icon {
+  font-size: 0.65rem;
+  color: var(--muted, #aaa);
+}
+
+/* Per-job rows */
+.health-worker-jobs {
+  border-top: 1px solid var(--line, #eee);
+  display: flex;
+  flex-direction: column;
+}
+
+.health-job-row {
+  display: grid;
+  grid-template-columns: 120px 1fr auto auto;
+  grid-template-areas:
+    "sparkline info rate duration"
+    ". failure failure failure";
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+  padding: 0.55rem 1rem 0.55rem 1.25rem;
+  border-bottom: 1px solid var(--line, #f0f0f0);
+}
+
+.health-job-row:last-child {
+  border-bottom: none;
+}
+
+.health-job-sparkline {
+  grid-area: sparkline;
+}
+
+.health-job-info {
+  grid-area: info;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.health-job-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.health-job-counts {
+  color: var(--muted, #888);
+  font-variant-numeric: tabular-nums;
+}
+
+.health-job-rate {
+  grid-area: rate;
+}
+
+.health-job-duration {
+  grid-area: duration;
+  display: flex;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.health-job-failure {
+  grid-area: failure;
+  color: var(--health-err, #ef4444);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-top: 0.1rem;
+}
+
+/* Sparkline */
+.sparkline {
+  display: block;
+  width: 100%;
+  height: 16px;
+  max-width: 120px;
+}
+
+.sparkline-empty {
+  opacity: 0.4;
+}
+
+/* Success rate pill / bar */
+.success-rate-na {
+  color: var(--muted, #aaa);
+}
+
+.success-rate-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: var(--surface, #f2f2f2);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem 0.15rem 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  min-width: 52px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line, #ddd);
+}
+
+.success-rate-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  opacity: 0.15;
+  border-radius: 999px;
+  transition: width 0.3s;
+}
+
+.success-rate-label {
+  position: relative;
+  color: var(--rate-color, currentColor);
+}
+
+/* Duration chip */
+.duration-chip {
+  background: var(--surface, #f2f2f2);
+  border: 1px solid var(--line, #ddd);
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  font-family: var(--font-mono, monospace);
+  white-space: nowrap;
+  color: var(--muted, #666);
+}
+
+/* Loading / empty states */
+.health-loading {
+  text-align: center;
+  padding: 3rem 1.5rem;
+  color: var(--muted, #888);
+}
+
+.health-empty {
+  text-align: center;
+  padding: 3rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.health-empty-icon {
+  font-size: 2.5rem;
+}
+
+.health-computed-at {
+  color: var(--muted, #aaa);
+  text-align: right;
+  padding: 0.25rem 0.5rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+  .health-job-row {
+    grid-template-columns: 80px 1fr;
+    grid-template-areas:
+      "sparkline info"
+      ". rate"
+      ". duration"
+      ". failure";
+  }
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--brand, #2271b1);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+.link-btn:hover { opacity: 0.8; }
+.link-btn:focus-visible {
+  outline: 3px solid var(--brand, #2271b1);
+  outline-offset: 2px;
+  border-radius: 2px;
+}

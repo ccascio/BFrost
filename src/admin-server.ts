@@ -74,6 +74,7 @@ import {
   QueueItemActionBodySchema,
   QueueSectionSchema,
   ActionDecisionBodySchema,
+  JobMetricsResponseSchema,
   type BackupsSection,
   type CronRunsSection,
   type DashboardState,
@@ -81,6 +82,7 @@ import {
   type LmStudioModelsSection,
   type WorkerDataSection,
   type QueueSection,
+  type JobMetricsResponse,
 } from './admin-api';
 import {
   listPendingActionRequests,
@@ -232,6 +234,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     }
     if (url.pathname === '/api/dashboard/local-embedding-models' && req.method === 'GET') {
       return sendJson(res, 200, await buildLocalEmbeddingModelsSection());
+    }
+    if (url.pathname === '/api/dashboard/job-metrics' && req.method === 'GET') {
+      return sendJson(res, 200, await buildJobMetricsSection());
     }
 
     {
@@ -982,6 +987,181 @@ async function buildLmStudioModelsSection(): Promise<LmStudioModelsSection> {
   const loaded = await localProvider.listLoadedModels();
   return LmStudioModelsSectionSchema.parse({
     loadedModels: loaded.map((item) => item.modelKey || item.identifier || 'unknown'),
+  });
+}
+
+/** Compute percentile (0–100) of a sorted numeric array. Returns null if empty. */
+function percentile(sorted: number[], p: number): number | null {
+  if (sorted.length === 0) return null;
+  const idx = Math.max(0, Math.ceil((p / 100) * sorted.length) - 1);
+  return sorted[Math.min(idx, sorted.length - 1)];
+}
+
+async function buildJobMetricsSection(): Promise<JobMetricsResponse> {
+  const [runs, snapshot] = await Promise.all([
+    listSchedulerRuns(200),
+    getSchedulerSnapshot(),
+  ]);
+
+  // Build a map: jobName → { workerId, workerName } from the current scheduler state.
+  // Falls back to a synthetic "unknown" worker for runs whose job no longer exists.
+  const jobWorkerMap = new Map<string, { workerId: string; workerName: string }>(
+    snapshot.jobs.map((j) => [j.name, { workerId: j.workerId, workerName: j.workerName }]),
+  );
+
+  // Group runs by job name, preserving insertion order (runs are newest-first from storage).
+  const byJob = new Map<string, typeof runs>();
+  for (const run of runs) {
+    const bucket = byJob.get(run.job) ?? [];
+    bucket.push(run);
+    byJob.set(run.job, bucket);
+  }
+
+  // Compute per-job metrics.
+  type JobEntry = {
+    jobName: string;
+    jobLabel: string;
+    workerId: string;
+    workerName: string;
+    totalRuns: number;
+    successCount: number;
+    errorCount: number;
+    skippedCount: number;
+    successRate: number | null;
+    p50Ms: number | null;
+    p95Ms: number | null;
+    avgItemCount: number | null;
+    lastFailureReason: string | null;
+    recentStatuses: Array<'success' | 'error' | 'skipped'>;
+  };
+
+  const jobEntries: JobEntry[] = [];
+
+  for (const [jobName, jobRuns] of byJob) {
+    const workerInfo = jobWorkerMap.get(jobName) ?? { workerId: 'unknown', workerName: 'Unknown' };
+    // jobRuns are newest-first from storage
+    const completed = jobRuns.filter((r) => r.status === 'success' || r.status === 'error');
+    const successCount = completed.filter((r) => r.status === 'success').length;
+    const errorCount = completed.filter((r) => r.status === 'error').length;
+    const skippedCount = jobRuns.filter((r) => r.status === 'skipped').length;
+    const totalRuns = jobRuns.length;
+
+    const successRate = completed.length >= 1 ? successCount / completed.length : null;
+
+    // Durations only for completed runs with both timestamps
+    const durations = completed
+      .filter((r) => r.finishedAt !== null)
+      .map((r) => Date.parse(r.finishedAt as string) - Date.parse(r.startedAt))
+      .filter((d) => d >= 0)
+      .sort((a, b) => a - b);
+
+    const p50Ms = durations.length >= 5 ? percentile(durations, 50) : null;
+    const p95Ms = durations.length >= 5 ? percentile(durations, 95) : null;
+
+    // Average item count for runs that reported one
+    const withItems = completed.filter((r) => r.itemCount !== null);
+    const avgItemCount = withItems.length > 0
+      ? withItems.reduce((s, r) => s + (r.itemCount as number), 0) / withItems.length
+      : null;
+
+    // Most recent error message (runs are newest-first)
+    const lastError = jobRuns.find((r) => r.status === 'error');
+    const lastFailureReason = lastError?.error ?? null;
+
+    // Last ≤20 non-running statuses for sparkline (newest-first, reversed for display)
+    const recentStatuses = jobRuns
+      .filter((r): r is typeof r & { status: 'success' | 'error' | 'skipped' } =>
+        r.status === 'success' || r.status === 'error' || r.status === 'skipped',
+      )
+      .slice(0, 20)
+      .reverse()
+      .map((r) => r.status as 'success' | 'error' | 'skipped');
+
+    // label: use the first run's label as a stable display name
+    const jobLabel = jobRuns[0]?.label ?? jobName;
+
+    jobEntries.push({
+      jobName,
+      jobLabel,
+      workerId: workerInfo.workerId,
+      workerName: workerInfo.workerName,
+      totalRuns,
+      successCount,
+      errorCount,
+      skippedCount,
+      successRate,
+      p50Ms,
+      p95Ms,
+      avgItemCount,
+      lastFailureReason,
+      recentStatuses,
+    });
+  }
+
+  // Group job entries by worker.
+  const byWorker = new Map<string, { workerName: string; jobs: JobEntry[] }>();
+  for (const entry of jobEntries) {
+    const bucket = byWorker.get(entry.workerId) ?? { workerName: entry.workerName, jobs: [] };
+    bucket.jobs.push(entry);
+    byWorker.set(entry.workerId, bucket);
+  }
+
+  // Aggregate worker-level metrics.
+  const workers = Array.from(byWorker.entries()).map(([workerId, { workerName, jobs }]) => {
+    const totalSuccess = jobs.reduce((s, j) => s + j.successCount, 0);
+    const totalCompleted = jobs.reduce((s, j) => s + j.successCount + j.errorCount, 0);
+    const successRate = totalCompleted >= 1 ? totalSuccess / totalCompleted : null;
+
+    // Worker-level p50/p95: collect all completed-run durations across every job in this worker,
+    // sort them together, and compute percentiles directly (same ≥5 guard as per-job).
+    const workerDurations: number[] = [];
+    for (const j of jobs) {
+      for (const r of byJob.get(j.jobName) ?? []) {
+        if ((r.status === 'success' || r.status === 'error') && r.finishedAt !== null) {
+          const d = Date.parse(r.finishedAt) - Date.parse(r.startedAt);
+          if (d >= 0) workerDurations.push(d);
+        }
+      }
+    }
+    workerDurations.sort((a, b) => a - b);
+    const p50Ms = workerDurations.length >= 5 ? percentile(workerDurations, 50) : null;
+    const p95Ms = workerDurations.length >= 5 ? percentile(workerDurations, 95) : null;
+
+    // Most recent error reason across all jobs (runs are newest-first per job).
+    let lastFailureReason: string | null = null;
+    let lastFailureAt = 0;
+    for (const j of jobs) {
+      const firstError = (byJob.get(j.jobName) ?? []).find((r) => r.status === 'error');
+      if (firstError) {
+        const t = Date.parse(firstError.startedAt);
+        if (t > lastFailureAt) {
+          lastFailureAt = t;
+          lastFailureReason = firstError.error ?? null;
+        }
+      }
+    }
+
+    const totalRuns = jobs.reduce((s, j) => s + j.totalRuns, 0);
+
+    return {
+      workerId,
+      workerName,
+      totalRuns,
+      successRate,
+      p50Ms,
+      p95Ms,
+      lastFailureReason,
+      jobs: jobs.map(({ workerId: _wid, workerName: _wn, ...rest }) => ({ ...rest, workerId: _wid })),
+    };
+  });
+
+  // Sort workers: most runs first, then alphabetically
+  workers.sort((a, b) => b.totalRuns - a.totalRuns || a.workerName.localeCompare(b.workerName));
+
+  return JobMetricsResponseSchema.parse({
+    workers,
+    windowRuns: runs.length,
+    computedAt: new Date().toISOString(),
   });
 }
 
