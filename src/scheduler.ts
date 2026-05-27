@@ -7,7 +7,12 @@ import { getRegisteredWorkerJob, notifyOperatorChannels } from './workers/regist
 import type { WorkerJobDashboardField, WorkerJobPreset } from './workers/types';
 import { recordEventSafe } from './event-log';
 import { loadKvJson, saveKvJson } from './sqlite';
-import { finishSchedulerRun, listSchedulerRuns, startSchedulerRun } from './scheduler-runs';
+import {
+  abandonRunningSchedulerRuns,
+  finishSchedulerRun,
+  listSchedulerRuns,
+  startSchedulerRun,
+} from './scheduler-runs';
 import { acquireSchedulerExecutionLock } from './scheduler-locks';
 import { isWorkerEnabled, loadWorkerState, type WorkerStateStore } from './workers/state';
 
@@ -115,7 +120,22 @@ export async function startScheduler(): Promise<void> {
 
   started = true;
   await hydrateRuntime();
+  await reconcileAbandonedRuns();
   await reloadSchedules();
+}
+
+export async function stopScheduler(): Promise<void> {
+  if (!started) {
+    return;
+  }
+
+  for (const [name, task] of tasks.entries()) {
+    task.stop();
+    task.destroy();
+    tasks.delete(name);
+  }
+
+  started = false;
 }
 
 export async function getSchedulerSnapshot(): Promise<{ timezone: string; jobs: SchedulerJobState[] }> {
@@ -304,11 +324,27 @@ async function recordSkippedScheduleExecution(
   reason: 'missed' | 'overlap',
   ctx: TaskContext,
 ): Promise<void> {
-  // ctx.date is the NEXT scheduled slot after the missed one (node-cron advances
-  // expectedNextExecution before calling onMissedExecution).
-  const nextScheduledAt = ctx.date.toISOString();
   const now = new Date();
   const finishedAt = now.toISOString();
+  const missedSlotTime = reason === 'missed' ? getMissedSlotTime(name, ctx.date) : null;
+  if (reason === 'missed' && !missedSlotTime && ctx.date.getTime() > now.getTime()) {
+    console.warn(
+      `[Scheduler] Ignoring missed ${name} event with future context date ${ctx.date.toISOString()}.`,
+    );
+    return;
+  }
+
+  const slotTime = reason === 'missed' ? missedSlotTime ?? ctx.date : ctx.date;
+  const scheduledAt = schedulerSlotIso(slotTime);
+  const acquired = await acquireSchedulerExecutionLock({
+    commandKey: schedulerCommandKey(name),
+    scheduledAt,
+  });
+  if (!acquired) {
+    console.warn(`[Scheduler] Duplicate ${reason} execution ignored for ${name} at ${scheduledAt}.`);
+    return;
+  }
+
   const registered = getRegisteredWorkerJob(name);
   const reasonText = reason === 'missed'
     ? 'missed its scheduled execution because the Node event loop was unavailable'
@@ -326,7 +362,8 @@ async function recordSkippedScheduleExecution(
       workerId: registered.worker.id,
       workerName: registered.worker.name,
       trigger: 'schedule',
-      scheduledAt: nextScheduledAt,
+      scheduledAt,
+      contextDate: ctx.date.toISOString(),
       recordedAt: finishedAt,
       reason,
     },
@@ -336,16 +373,15 @@ async function recordSkippedScheduleExecution(
   // Misses are typically caused by macOS sleep freezing setTimeout timers; on wake-up
   // the heartbeat fires late and node-cron emits execution:missed for each skipped slot.
   if (reason === 'missed') {
-    const missedSlotTime = getMissedSlotTime(name, ctx.date);
-    const ageMs = missedSlotTime ? now.getTime() - missedSlotTime.getTime() : Infinity;
+    const ageMs = now.getTime() - slotTime.getTime();
 
-    if (missedSlotTime && ageMs <= MISSED_CATCHUP_WINDOW_MS) {
+    if (ageMs >= 0 && ageMs <= MISSED_CATCHUP_WINDOW_MS) {
       console.log(
         `[Scheduler] Missed ${name} execution (age: ${Math.round(ageMs / 1000)}s) — catching up now.`,
       );
-      // Pass the original missed slot as scheduledAt so the execution lock deduplicates
-      // correctly against any concurrent real fires for the same slot.
-      void runJob(name, jobSettings, 'schedule', { scheduledAt: schedulerSlotIso(missedSlotTime) });
+      // Reuse the slot lock acquired above so the catch-up run and skipped-run
+      // bookkeeping stay mutually exclusive for this scheduled minute.
+      void runJob(name, jobSettings, 'schedule', { scheduledAt, lockAlreadyAcquired: true });
       return; // Catch-up job records its own started/succeeded/failed events.
     }
 
@@ -358,7 +394,7 @@ async function recordSkippedScheduleExecution(
   runtimeCache[name] = {
     ...buildJobState(name, jobSettings),
     running: false,
-    lastStartedAt: nextScheduledAt,
+    lastStartedAt: scheduledAt,
     lastFinishedAt: finishedAt,
     lastStatus: 'skipped',
     lastSummary: null,
@@ -371,7 +407,7 @@ async function recordSkippedScheduleExecution(
     label: jobLabels()[name],
     trigger: 'schedule',
     modelAlias: jobSettings.modelAlias || getDefaultModelAlias(),
-    startedAt: nextScheduledAt,
+    startedAt: scheduledAt,
   });
   if (runRecord) {
     await finishSchedulerRunSafe(runRecord.id, {
@@ -430,9 +466,9 @@ async function runJob(
   name: JobName,
   jobSettings: CronJobSettings,
   trigger: 'schedule' | 'manual',
-  options: { scheduledAt?: string } = {},
+  options: { scheduledAt?: string; lockAlreadyAcquired?: boolean } = {},
 ): Promise<void> {
-  if (trigger === 'schedule') {
+  if (trigger === 'schedule' && !options.lockAlreadyAcquired) {
     const scheduledAt = options.scheduledAt ?? schedulerSlotIso(new Date());
     const acquired = await acquireSchedulerExecutionLock({
       commandKey: schedulerCommandKey(name),
@@ -653,6 +689,27 @@ async function hydrateRuntime(): Promise<void> {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       console.warn('[Scheduler] Failed to read scheduler-state.json:', err);
     }
+  }
+}
+
+async function reconcileAbandonedRuns(): Promise<void> {
+  const finishedAt = new Date().toISOString();
+  const count = await abandonRunningSchedulerRuns({
+    finishedAt,
+    error: 'BFrost stopped before this scheduler run finished.',
+  }).catch((err) => {
+    console.warn('[Scheduler] Failed to reconcile abandoned scheduler runs:', err);
+    return 0;
+  });
+
+  if (count > 0) {
+    await recordEventSafe({
+      category: 'scheduler',
+      action: 'abandoned_runs_reconciled',
+      severity: 'warning',
+      summary: `Marked ${count} abandoned scheduler run(s) as failed after startup.`,
+      metadata: { count, finishedAt },
+    });
   }
 }
 

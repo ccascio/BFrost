@@ -4,7 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { config } from './config';
-import { finishSchedulerRun, listSchedulerRuns, startSchedulerRun } from './scheduler-runs';
+import {
+  abandonRunningSchedulerRuns,
+  finishSchedulerRun,
+  listSchedulerRuns,
+  startSchedulerRun,
+} from './scheduler-runs';
 
 test('scheduler runs persist start and finish records', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-scheduler-runs-'));
@@ -68,6 +73,51 @@ test('scheduler runs list newest first', async () => {
       runs.map((run) => run.job),
       ['personal-research', 'tweet-post'],
     );
+  } finally {
+    config.appDbPath = previousDbPath;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('scheduler runs can reconcile abandoned running records', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-scheduler-runs-'));
+  const previousDbPath = config.appDbPath;
+  config.appDbPath = path.join(dir, 'app.sqlite');
+
+  try {
+    await startSchedulerRun({
+      job: 'news-digest',
+      label: 'News Digest',
+      trigger: 'schedule',
+      modelAlias: 'local-model',
+      startedAt: '2026-04-24T08:00:00.000Z',
+    });
+    const completed = await startSchedulerRun({
+      job: 'tweet-post',
+      label: 'Tweet Post',
+      trigger: 'schedule',
+      modelAlias: 'local-model',
+      startedAt: '2026-04-24T09:00:00.000Z',
+    });
+    await finishSchedulerRun(completed.id, {
+      finishedAt: '2026-04-24T09:00:03.000Z',
+      status: 'success',
+      summary: 'Tweet posted.',
+    });
+
+    const count = await abandonRunningSchedulerRuns({
+      finishedAt: '2026-04-24T10:00:00.000Z',
+      error: 'BFrost stopped before this scheduler run finished.',
+    });
+
+    assert.equal(count, 1);
+    const runs = await listSchedulerRuns();
+    const abandoned = runs.find((run) => run.job === 'news-digest');
+    assert.ok(abandoned);
+    assert.equal(abandoned.status, 'error');
+    assert.equal(abandoned.finishedAt, '2026-04-24T10:00:00.000Z');
+    assert.equal(abandoned.error, 'BFrost stopped before this scheduler run finished.');
+    assert.equal(runs.find((run) => run.job === 'tweet-post')?.status, 'success');
   } finally {
     config.appDbPath = previousDbPath;
     await rm(dir, { recursive: true, force: true });

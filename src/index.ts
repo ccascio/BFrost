@@ -1,6 +1,6 @@
-import { startScheduler } from './scheduler';
+import { startScheduler, stopScheduler } from './scheduler';
 import { startAdminServer, stopAdminServer } from './admin-server';
-import { applyPendingRestoreIfAny, startAutoBackup } from './app-backup';
+import { applyPendingRestoreIfAny, startAutoBackup, stopAutoBackup } from './app-backup';
 import { assertStartupReadiness, getAppHealthSnapshot, logStartupHealthSummary } from './health';
 import { hydrateConversations, flushConversations } from './conversation';
 import {
@@ -19,6 +19,8 @@ import { registerBfrostRuntimeModule } from './sdk-runtime';
 import { ensureActionTable } from './actions';
 import { refreshActiveLocalProviderModels, refreshCloudProviderModels } from './model-discovery';
 import type { ChannelAdapter, ProviderAdapter } from './workers/module';
+import { acquireRuntimeLock, releaseRuntimeLock } from './runtime-lock';
+import { closeDb } from './sqlite';
 
 async function main(): Promise<void> {
   // Apply any pending restore before the DB is opened for the first time.
@@ -30,6 +32,7 @@ async function main(): Promise<void> {
   await hydrateConversations();
   await releaseStaleQueueLockOnBoot();
   await ensureActionTable();
+  await acquireRuntimeLock();
   // Make `import { ... } from 'bfrost'` resolvable inside local worker bundles.
   // Must happen before bootstrapLocalWorkers so the first require() inside a worker
   // entrypoint sees the synthetic module.
@@ -85,8 +88,8 @@ async function main(): Promise<void> {
   void getActiveLocalProvider();
   await refreshActiveLocalProviderModels();
 
-  await startScheduler();
   await startAdminServer();
+  await startScheduler();
   await startAutoBackup();
 
   const channels: ChannelAdapter[] = [];
@@ -101,27 +104,58 @@ async function main(): Promise<void> {
     console.log(`[BFrost] Channel ${registered.manifest.id} started.`);
   }
 
+  let shuttingDown = false;
   const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    let exitCode = 0;
+
+    await stopScheduler().catch((err) => {
+      exitCode = 1;
+      console.warn('[BFrost] Scheduler stop failed:', err);
+    });
+    await stopAutoBackup().catch((err) => {
+      exitCode = 1;
+      console.warn('[BFrost] Auto-backup stop failed:', err);
+    });
     for (const adapter of channels) {
       await adapter.stop(signal).catch((err) => {
+        exitCode = 1;
         console.warn(`[BFrost] Channel ${adapter.channelId} stop failed:`, err);
       });
     }
-    await flushConversations();
-    await stopAdminServer();
+    await flushConversations().catch((err) => {
+      exitCode = 1;
+      console.warn('[BFrost] Conversation flush failed:', err);
+    });
+    await stopAdminServer().catch((err) => {
+      exitCode = 1;
+      console.warn('[BFrost] Admin server stop failed:', err);
+    });
     for (const adapter of startedRuntimes) {
       if (!adapter.stopRuntime) continue;
       await adapter.stopRuntime().catch((err) => {
+        exitCode = 1;
         console.warn(`[BFrost] Provider ${adapter.providerId} runtime stop failed:`, err);
       });
     }
+    await releaseRuntimeLock().catch((err) => {
+      exitCode = 1;
+      console.warn('[BFrost] Runtime lock release failed:', err);
+    });
+    closeDb();
+    process.exit(exitCode);
   };
 
-  process.once('SIGINT', () => shutdown('SIGINT'));
-  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => void shutdown('SIGINT'));
+  process.once('SIGTERM', () => void shutdown('SIGTERM'));
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error('[BFrost] Fatal error:', err);
+  await stopScheduler().catch(() => undefined);
+  await stopAutoBackup().catch(() => undefined);
+  await releaseRuntimeLock().catch(() => undefined);
+  closeDb();
   process.exit(1);
 });

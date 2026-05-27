@@ -215,8 +215,7 @@ let autoBackupTask: ScheduledTask | null = null;
 export async function startAutoBackup(): Promise<void> {
   const settings = await getAutoBackupSettings();
 
-  autoBackupTask?.stop();
-  autoBackupTask = null;
+  await stopAutoBackup();
 
   if (!settings.enabled) {
     return;
@@ -247,6 +246,13 @@ export async function startAutoBackup(): Promise<void> {
   });
 
   console.log(`[Backup] Auto-backup scheduled daily at 03:00 (retention: ${settings.retentionDays} days).`);
+}
+
+export async function stopAutoBackup(): Promise<void> {
+  if (!autoBackupTask) return;
+  autoBackupTask.stop();
+  autoBackupTask.destroy();
+  autoBackupTask = null;
 }
 
 /** Restart the auto-backup scheduler after settings change. */

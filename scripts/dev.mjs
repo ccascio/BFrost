@@ -92,15 +92,22 @@ function freePort(port) {
       try { execFileSync('kill', pids, { stdio: 'ignore' }); } catch { /* already gone */ }
       // Give the process up to 1 s to release the socket before we bind it
       const deadline = Date.now() + 1000;
+      let stillListening = [];
       while (Date.now() < deadline) {
         try {
-          execFileSync('lsof', ['-ti', `:${port}`], { stdio: 'ignore' });
+          stillListening = execFileSync('lsof', ['-ti', `:${port}`], { encoding: 'utf8' })
+            .trim().split('\n').filter(Boolean);
           // Still alive — busy-wait a tick (synchronous sleep via Date)
           const until = Date.now() + 50;
           while (Date.now() < until) { /* spin */ }
         } catch {
+          stillListening = [];
           break; // port is free
         }
+      }
+      if (stillListening.length > 0) {
+        console.log(`[dev] Port ${port} still held; force-stopping PID${stillListening.length > 1 ? 's' : ''}: ${stillListening.join(', ')}...`);
+        try { execFileSync('kill', ['-9', ...stillListening], { stdio: 'ignore' }); } catch { /* already gone */ }
       }
     }
   } catch {

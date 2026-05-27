@@ -43,6 +43,11 @@ export interface SchedulerRunFinishInput {
   itemCount?: number | null;
 }
 
+export interface AbandonSchedulerRunsInput {
+  finishedAt: string;
+  error: string;
+}
+
 export async function startSchedulerRun(input: SchedulerRunStartInput): Promise<SchedulerRunRecord> {
   const run: SchedulerRunRecord = {
     id: randomUUID(),
@@ -91,6 +96,29 @@ export async function finishSchedulerRun(
 
 export async function listSchedulerRuns(limit = 50): Promise<SchedulerRunRecord[]> {
   return (await loadSchedulerRuns(limit)).slice(0, clampLimit(limit));
+}
+
+export async function abandonRunningSchedulerRuns(input: AbandonSchedulerRunsInput): Promise<number> {
+  const runs = await loadSchedulerRuns(RUN_RETENTION);
+  let count = 0;
+  const next = runs.map((run) => {
+    if (run.status !== 'running' || run.finishedAt !== null) return run;
+    count += 1;
+    return {
+      ...run,
+      finishedAt: input.finishedAt,
+      status: 'error' as const,
+      summary: null,
+      error: input.error,
+      itemCount: null,
+    };
+  });
+
+  if (count > 0) {
+    await saveRuns(next);
+  }
+
+  return count;
 }
 
 async function loadSchedulerRuns(limit: number): Promise<SchedulerRunRecord[]> {
