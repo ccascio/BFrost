@@ -16,6 +16,7 @@ import { releaseStaleQueueLockOnBoot } from './jobs/queue';
 import { registerBfrostRuntimeModule } from './sdk-runtime';
 import { ensureActionTable } from './actions';
 import { refreshActiveLocalProviderModels, refreshCloudProviderModels } from './model-discovery';
+import { config, findModel } from './config';
 import type { ChannelAdapter, ProviderAdapter } from './workers/module';
 import { acquireRuntimeLock, releaseRuntimeLock } from './runtime-lock';
 import { closeDb } from './sqlite';
@@ -68,21 +69,37 @@ async function main(): Promise<void> {
     console.warn(`[BFrost] Local worker issue (${issue.sourcePath}): ${issue.message}`);
   }
 
-  // Boot only the active local-runtime provider so chat models are reachable.
-  // Skipped entirely when no local provider is selected — avoids loading LM Studio
-  // (or any local runtime) into memory when the user is running cloud-only providers.
+  // Boot only the active local-runtime provider, and only when the user's default
+  // model actually needs it. Skipped when the default model resolves to a cloud
+  // provider (openai, anthropic, …) so LM Studio (or any local runtime) is not
+  // loaded into memory unnecessarily.
+  //
+  // Decision table for config.ollamaModel:
+  //   resolves to cloud model  → skip (user switched to cloud)
+  //   resolves to local model  → start (user explicitly chose local)
+  //   does not resolve at all  → start (model is likely local, server just isn't up yet)
   const startedRuntimes: ProviderAdapter[] = [];
   const activeLocalAdapter = getActiveLocalProvider();
   if (!activeLocalAdapter) {
-    console.log('[BFrost] No active local-runtime provider selected, skipping runtime start.');
+    console.log('[BFrost] No active local-runtime provider configured, skipping runtime start.');
   } else if (!activeLocalAdapter.startRuntime) {
     console.log(`[BFrost] Provider ${activeLocalAdapter.providerId} selected but has no runtime to start.`);
   } else {
-    const weStarted = await activeLocalAdapter.startRuntime();
-    if (weStarted) {
-      startedRuntimes.push(activeLocalAdapter);
+    const resolvedDefault = findModel(config.ollamaModel);
+    const defaultUsesLocalRuntime =
+      !resolvedDefault || resolvedDefault.provider === activeLocalAdapter.providerId;
+    if (!defaultUsesLocalRuntime) {
+      console.log(
+        `[BFrost] Provider ${activeLocalAdapter.providerId} configured but default model` +
+        ` uses '${resolvedDefault!.provider}' — skipping runtime start.`,
+      );
+    } else {
+      const weStarted = await activeLocalAdapter.startRuntime();
+      if (weStarted) {
+        startedRuntimes.push(activeLocalAdapter);
+      }
+      console.log(`[BFrost] Provider ${activeLocalAdapter.providerId} ready.`);
     }
-    console.log(`[BFrost] Provider ${activeLocalAdapter.providerId} ready.`);
   }
   await refreshActiveLocalProviderModels();
 
