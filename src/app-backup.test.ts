@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, stat } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import Database from 'better-sqlite3';
 import { config } from './config';
-import { createAppBackup, listAppBackups } from './app-backup';
-import { saveKvJson } from './sqlite';
+import { createAppBackup, listAppBackups, scheduleRestoreOnNextBoot, applyPendingRestoreIfAny } from './app-backup';
+import { saveKvJson, closeDb } from './sqlite';
 
 test('app backups create consistent SQLite backup files', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-backup-'));

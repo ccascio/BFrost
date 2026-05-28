@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import cron, { type ScheduledTask } from 'node-cron';
+import Database from 'better-sqlite3';
 import { config } from './config';
 import { createBackup, ensureAppDb } from './sqlite';
 import { loadKvJson, saveKvJson } from './sqlite';
@@ -192,6 +193,42 @@ export async function applyPendingRestoreIfAny(): Promise<void> {
     return;
   }
 
+  // Guard: verify SQLite integrity before touching the live DB.
+  try {
+    const db = new Database(backupPath, { readonly: true, fileMustExist: true });
+    let integrityOk = false;
+    try {
+      const row = db.prepare('PRAGMA integrity_check').get() as { integrity_check?: string } | undefined;
+      integrityOk = row?.integrity_check === 'ok';
+    } finally {
+      db.close();
+    }
+    if (!integrityOk) {
+      console.error(`[Backup] Integrity check failed for backup: ${pendingFile}. Aborting restore.`);
+      await recordEventSafe({
+        category: 'admin',
+        action: 'backup_restore_integrity_failed',
+        severity: 'error',
+        summary: `Backup restore aborted — integrity check failed: ${pendingFile}`,
+        metadata: { file: pendingFile },
+      });
+      await cancelPendingRestore();
+      return;
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[Backup] Could not open backup for integrity check: ${pendingFile} — ${msg}`);
+    await recordEventSafe({
+      category: 'admin',
+      action: 'backup_restore_integrity_failed',
+      severity: 'error',
+      summary: `Backup restore aborted — could not open backup file: ${pendingFile}`,
+      metadata: { file: pendingFile, error: msg },
+    });
+    await cancelPendingRestore();
+    return;
+  }
+
   const dest = config.appDbPath;
   await fs.mkdir(path.dirname(dest), { recursive: true });
 
@@ -205,6 +242,13 @@ export async function applyPendingRestoreIfAny(): Promise<void> {
 
   await fs.copyFile(backupPath, dest);
   await cancelPendingRestore();
+  await recordEventSafe({
+    category: 'admin',
+    action: 'backup_restored',
+    severity: 'info',
+    summary: `Database restored from backup: ${pendingFile}`,
+    metadata: { file: pendingFile },
+  });
   console.log(`[Backup] Restored from backup: ${pendingFile}`);
 }
 
