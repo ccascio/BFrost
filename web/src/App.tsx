@@ -2246,9 +2246,17 @@ export default function App() {
                     <h3>Model providers <HelpTip>A model provider is the AI service BFrost uses to think — OpenAI (GPT-4o), Anthropic (Claude), or a local model via LM Studio. Each provider is a worker you can install separately. Configure your API keys below; BFrost uses the cheapest model that can handle the task unless you specify otherwise.</HelpTip></h3>
                     <span>Local credential configuration</span>
                   </div>
-                  <StatusPill tone={dashboard.integrations.openaiConfigured.ok || dashboard.integrations.anthropicConfigured.ok ? 'good' : 'warning'}>
-                    {dashboard.integrations.openaiConfigured.ok || dashboard.integrations.anthropicConfigured.ok ? 'Configured' : 'Missing'}
-                  </StatusPill>
+                  {(() => {
+                    const localProviderIds = new Set(dashboard.availableLocalProviders.map((p) => p.workerId));
+                    const anyCloudProviderConfigured = dashboard.workers
+                      .filter((w) => w.kind === 'provider' && !localProviderIds.has(w.id))
+                      .some((w) => w.healthState === 'healthy');
+                    return (
+                      <StatusPill tone={anyCloudProviderConfigured ? 'good' : 'warning'}>
+                        {anyCloudProviderConfigured ? 'Configured' : 'Missing'}
+                      </StatusPill>
+                    );
+                  })()}
                 </div>
 
                 <div className="stack-list compact">
