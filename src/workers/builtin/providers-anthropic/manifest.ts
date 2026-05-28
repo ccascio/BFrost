@@ -16,6 +16,25 @@ export const anthropicProviderWorker: WorkerManifest = {
   requiredCredentials: [
     { key: 'anthropicConfigured', label: 'Anthropic API key', settingsTarget: 'system' },
   ],
+  dashboard: {
+    settings: [
+      {
+        id: 'credentials',
+        label: 'API key',
+        description: 'Your Anthropic API key — stored in your local .env file.',
+        path: '/api/workers/providers-anthropic/credentials',
+        fields: [
+          {
+            type: 'secret-reference' as const,
+            key: 'apiKey',
+            label: 'Anthropic API key',
+            defaultValue: '',
+            helpText: 'Starts with sk-ant-. Get one at console.anthropic.com.',
+          },
+        ],
+      },
+    ],
+  },
   jobs: [],
   providers: [
     {

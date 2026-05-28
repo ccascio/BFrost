@@ -1,6 +1,7 @@
 import type { BackendWorkerModule } from '../../module';
 import { anthropicProviderWorker } from './manifest';
 import { createAnthropicProviderAdapter } from './adapter';
+import { anthropicProviderApiRoutes } from './routes';
 
 export const anthropicProviderModule: BackendWorkerModule = {
   manifest: anthropicProviderWorker,
@@ -10,4 +11,5 @@ export const anthropicProviderModule: BackendWorkerModule = {
       create: createAnthropicProviderAdapter,
     },
   ],
+  apiRoutes: anthropicProviderApiRoutes,
 };

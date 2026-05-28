@@ -16,6 +16,25 @@ export const openaiProviderWorker: WorkerManifest = {
   requiredCredentials: [
     { key: 'openaiConfigured', label: 'OpenAI API key', settingsTarget: 'system' },
   ],
+  dashboard: {
+    settings: [
+      {
+        id: 'credentials',
+        label: 'API key',
+        description: 'Your OpenAI API key — stored in your local .env file.',
+        path: '/api/workers/providers-openai/credentials',
+        fields: [
+          {
+            type: 'secret-reference' as const,
+            key: 'apiKey',
+            label: 'OpenAI API key',
+            defaultValue: '',
+            helpText: 'Starts with sk-. Get one at platform.openai.com.',
+          },
+        ],
+      },
+    ],
+  },
   jobs: [],
   providers: [
     {

@@ -56,7 +56,7 @@ function toAppError(raw: unknown): AppError {
 }
 type DashboardTab = CoreDashboardTab | `worker:${string}`;
 type QueueFilter = 'all' | QueueItem['state'] | 'retrying';
-type CoreConfigKey = 'cloud-api-keys' | 'platform-routing' | 'embedding-model';
+type CoreConfigKey = 'platform-routing' | 'embedding-model';
 
 const DASHBOARD_REFRESH_INTERVAL_MS = 30000;
 const JOBS_REFRESH_INTERVAL_MS = 5000;
@@ -662,10 +662,6 @@ export default function App() {
 
   // Auto-backup settings state (system tab)
   const [autoBackupSettings, setAutoBackupSettings] = useState<AutoBackupSettings | null>(null);
-  const [openaiApiKeyDraft, setOpenaiApiKeyDraft] = useState('');
-  const [anthropicApiKeyDraft, setAnthropicApiKeyDraft] = useState('');
-  const [showOpenaiKey, setShowOpenaiKey] = useState(false);
-  const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [activeLocalProviderDraft, setActiveLocalProviderDraft] = useState('');
   const [primaryChannelDraft, setPrimaryChannelDraft] = useState('');
   const [embeddingProviderDraft, setEmbeddingProviderDraft] = useState<'local' | 'openai' | ''>('');
@@ -1471,22 +1467,6 @@ export default function App() {
     setEmbeddingModelDraft('');
   }
 
-  async function saveCloudApiKeys() {
-    await mutate(
-      'save-cloud-api-keys',
-      '/api/cloud-api-keys',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          openaiApiKey: openaiApiKeyDraft.trim() || undefined,
-          anthropicApiKey: anthropicApiKeyDraft.trim() || undefined,
-        }),
-      },
-      'Cloud API keys saved to local .env.',
-    );
-    setOpenaiApiKeyDraft('');
-    setAnthropicApiKeyDraft('');
-  }
 
   async function saveWorkerConfigurationSurface(worker: WorkerSummary, surface: WorkerDashboardSurface) {
     if (!surface.path || surface.path.includes('#')) return;
@@ -2331,23 +2311,6 @@ export default function App() {
                     <StatusPill tone="muted">Setting</StatusPill>
                   </button>
                   <button
-                    className={`run-item run-button job-row-button${selectedCoreConfigKey === 'cloud-api-keys' ? ' selected' : ''}`}
-                    type="button"
-                    aria-pressed={selectedCoreConfigKey === 'cloud-api-keys'}
-                    onClick={() => {
-                      setSelectedCoreConfigKey('cloud-api-keys');
-                      setSelectedConfigSurfaceKey(null);
-                      setSelectedConfigJobName(null);
-                    }}
-                  >
-                    <div>
-                      <strong>Cloud API keys</strong>
-                      <span>OpenAI and Anthropic credentials for cloud model providers.</span>
-                      <span>Stored locally in the environment configuration.</span>
-                    </div>
-                    <StatusPill tone="muted">Setting</StatusPill>
-                  </button>
-                  <button
                     className={`run-item run-button job-row-button${selectedCoreConfigKey === 'embedding-model' ? ' selected' : ''}`}
                     type="button"
                     aria-pressed={selectedCoreConfigKey === 'embedding-model'}
@@ -2442,14 +2405,13 @@ export default function App() {
                 <div className="panel-head">
                   <div>
                     <p className="panel-kicker">Configuration</p>
-                    <h2>{selectedCoreConfigKey === 'cloud-api-keys' ? 'Cloud API keys' : selectedCoreConfigKey === 'platform-routing' ? 'Platform routing' : selectedCoreConfigKey === 'embedding-model' ? 'Embedding model' : selectedConfigJob?.label ?? selectedConfigSurface?.surface.label ?? 'No item selected'}</h2>
+                    <h2>{selectedCoreConfigKey === 'platform-routing' ? 'Platform routing' : selectedCoreConfigKey === 'embedding-model' ? 'Embedding model' : selectedConfigJob?.label ?? selectedConfigSurface?.surface.label ?? 'No item selected'}</h2>
                   </div>
                   {selectedCoreConfigKey ? <StatusPill tone="muted">Platform</StatusPill> : null}
                   {selectedConfigJob ? <StatusPill tone="muted">{selectedConfigJob.workerName}</StatusPill> : null}
                   {selectedConfigSurface ? <StatusPill tone="muted">{selectedConfigSurface.worker.name}</StatusPill> : null}
                 </div>
 
-                {selectedCoreConfigKey === 'cloud-api-keys' ? renderCloudApiKeysConfiguration() : null}
                 {selectedCoreConfigKey === 'platform-routing' ? renderPlatformRoutingConfiguration() : null}
                 {selectedCoreConfigKey === 'embedding-model' ? renderEmbeddingConfiguration() : null}
                 {selectedConfigJob ? renderJobConfiguration(selectedConfigJob) : null}
@@ -3815,70 +3777,6 @@ export default function App() {
             onClick={() => void saveEmbeddingSettings()}
           >
             {busyKey === 'save-embedding-settings' ? 'Saving…' : 'Save embedding settings'}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  function renderCloudApiKeysConfiguration() {
-    return (
-      <div className="detail-body">
-        <div className="stack-list compact">
-          <HealthRow label="OpenAI API" status={dashboard.integrations.openaiConfigured} />
-          <HealthRow label="Anthropic API" status={dashboard.integrations.anthropicConfigured} />
-        </div>
-
-        <div className="form-grid">
-          <div className="field">
-            <span>OpenAI API key</span>
-            <div className="secret-field-row">
-              <input
-                type={showOpenaiKey ? 'text' : 'password'}
-                value={openaiApiKeyDraft}
-                placeholder={dashboard.integrations.openaiConfigured.ok ? 'Configured (enter new key to update)' : 'Not configured'}
-                autoComplete="off"
-                onChange={(event) => setOpenaiApiKeyDraft(event.target.value)}
-              />
-              <button type="button" className="btn-icon" aria-label={showOpenaiKey ? 'Hide OpenAI key' : 'Show OpenAI key'} onClick={() => setShowOpenaiKey((v) => !v)}>
-                {showOpenaiKey ? '🙈' : '👁'}
-              </button>
-              {openaiApiKeyDraft ? (
-                <button type="button" className="btn-icon" aria-label="Copy OpenAI key" onClick={() => { void navigator.clipboard.writeText(openaiApiKeyDraft); setNotice('API key copied.'); }}>
-                  📋
-                </button>
-              ) : null}
-            </div>
-          </div>
-          <div className="field">
-            <span>Anthropic API key</span>
-            <div className="secret-field-row">
-              <input
-                type={showAnthropicKey ? 'text' : 'password'}
-                value={anthropicApiKeyDraft}
-                placeholder={dashboard.integrations.anthropicConfigured.ok ? 'Configured (enter new key to update)' : 'Not configured'}
-                autoComplete="off"
-                onChange={(event) => setAnthropicApiKeyDraft(event.target.value)}
-              />
-              <button type="button" className="btn-icon" aria-label={showAnthropicKey ? 'Hide Anthropic key' : 'Show Anthropic key'} onClick={() => setShowAnthropicKey((v) => !v)}>
-                {showAnthropicKey ? '🙈' : '👁'}
-              </button>
-              {anthropicApiKeyDraft ? (
-                <button type="button" className="btn-icon" aria-label="Copy Anthropic key" onClick={() => { void navigator.clipboard.writeText(anthropicApiKeyDraft); setNotice('API key copied.'); }}>
-                  📋
-                </button>
-              ) : null}
-            </div>
-          </div>
-        </div>
-
-        <div className="panel-actions">
-          <button
-            className="primary"
-            disabled={busyKey === 'save-cloud-api-keys' || (!openaiApiKeyDraft.trim() && !anthropicApiKeyDraft.trim())}
-            onClick={() => void saveCloudApiKeys()}
-          >
-            {busyKey === 'save-cloud-api-keys' ? 'Saving...' : 'Save API keys'}
           </button>
         </div>
       </div>
