@@ -1670,10 +1670,10 @@ export default function App() {
     .map((worker) => ({
       worker,
       surfaces: worker.dashboard.settings.filter((surface) => surface.tab === 'config'),
-      jobs: dashboard.cron.jobs.filter((job) => job.workerId === worker.id),
+      jobs: [],
     }))
-    .filter((group) => group.surfaces.length > 0 || group.jobs.length > 0);
-  const configJobCount = configGroupsByWorker.reduce((count, group) => count + group.jobs.length, 0);
+    .filter((group) => group.surfaces.length > 0);
+  const configJobCount = 0;
   const configSurfaceCount = configGroupsByWorker.reduce((count, group) => count + group.surfaces.length, 0);
   const configCoreCount = 1;
   const selectedConfigJob =
@@ -1729,7 +1729,7 @@ export default function App() {
       icon: tab.definition.menu?.icon ?? 'workers',
       group: tab.definition.menu?.group ?? 'Workers',
       order: tab.definition.menu?.order ?? 1000,
-      count: tab.definition.count(workerViewContext),
+      count: safeWorkerViewCount(tab.definition, workerViewContext),
     })),
   ];
 
@@ -2425,7 +2425,7 @@ export default function App() {
         </section>
       ) : null}
 
-      {activeWorkerTab ? activeWorkerTab.definition.render(workerViewContext) : null}
+      {activeWorkerTab ? renderWorkerDashboardView(activeWorkerTab, workerViewContext) : null}
 
       {activeTab === 'workers' ? (
         <section className="panel tab-page">
@@ -3273,6 +3273,8 @@ export default function App() {
           ) : null}
         </div>
 
+        {(job.dashboardFields.length > 0 || job.promptEditable) ? renderJobConfiguration(job) : null}
+
         {renderJobDetail(job, runs)}
       </div>
     );
@@ -3322,26 +3324,6 @@ export default function App() {
         ) : null}
 
         <div className="job-grid config-field-grid">
-          <label className="field">
-            <span>Model override</span>
-            <select
-              value={draft.modelAlias}
-              onChange={(event) =>
-                setJobDrafts((current) => ({
-                  ...current,
-                  [job.name]: { ...draft, modelAlias: event.target.value },
-                }))
-              }
-            >
-              <option value="">Use default model</option>
-              {dashboard.models.map((model) => (
-                <option key={model.alias} value={model.alias}>
-                  {model.label}
-                </option>
-              ))}
-            </select>
-            <small>Pick a model just for this job. Leave blank to follow the platform default.</small>
-          </label>
           {job.dashboardFields.map((field) => renderJobParamField(job, draft, field))}
         </div>
 
@@ -4774,6 +4756,48 @@ function sectionsForTab(tab: DashboardTab): DashboardSectionName[] {
   return ['queue', 'events', 'workerData'];
 }
 
+function safeWorkerViewCount(definition: WorkerDashboardViewDefinition, ctx: Record<string, any>): number | undefined {
+  if (typeof definition.count !== 'function') return undefined;
+  try {
+    return definition.count(ctx);
+  } catch (err) {
+    console.warn(`[Workers] Count renderer for ${definition.workerId} failed:`, err);
+    return undefined;
+  }
+}
+
+function renderWorkerDashboardView(tab: WorkerTabDefinition, ctx: Record<string, any>): ReactNode {
+  if (typeof tab.definition.render !== 'function') {
+    return (
+      <section className="panel tab-page">
+        <div className="panel-head">
+          <div>
+            <p className="panel-kicker">{tab.worker.name}</p>
+            <h2>Dashboard unavailable</h2>
+          </div>
+        </div>
+        <p className="empty-state">This worker did not register a dashboard renderer.</p>
+      </section>
+    );
+  }
+  try {
+    return tab.definition.render(ctx);
+  } catch (err) {
+    console.warn(`[Workers] Dashboard renderer for ${tab.worker.id} failed:`, err);
+    return (
+      <section className="panel tab-page">
+        <div className="panel-head">
+          <div>
+            <p className="panel-kicker">{tab.worker.name}</p>
+            <h2>Dashboard unavailable</h2>
+          </div>
+        </div>
+        <p className="empty-state">This worker dashboard failed to render. The rest of BFrost is still available.</p>
+      </section>
+    );
+  }
+}
+
 function buildWorkerTabDefinitions(
   workers: WorkerSummary[],
   views: WorkerDashboardViewDefinition[],
@@ -4797,10 +4821,11 @@ function buildWorkerTabDefinitions(
 
 function workerDeclaresView(worker: WorkerSummary, definition: WorkerDashboardViewDefinition): boolean {
   const surfaceIds = new Set([
-    ...worker.dashboard.routes.map((surface) => surface.id),
-    ...worker.dashboard.settings.map((surface) => surface.id),
+    ...(Array.isArray(worker.dashboard?.routes) ? worker.dashboard.routes.map((surface) => surface.id) : []),
+    ...(Array.isArray(worker.dashboard?.settings) ? worker.dashboard.settings.map((surface) => surface.id) : []),
   ]);
-  return definition.surfaceIds.some((surfaceId) => surfaceIds.has(surfaceId));
+  const definitionSurfaceIds = Array.isArray(definition.surfaceIds) ? definition.surfaceIds : [];
+  return definitionSurfaceIds.some((surfaceId) => surfaceIds.has(surfaceId));
 }
 
 function workerTabId(workerId: string): `worker:${string}` {

@@ -4,6 +4,8 @@ import { access } from 'fs/promises';
 import { promisify } from 'util';
 import { config } from './config';
 import { resolveTelegramBotToken } from './workers/builtin/channels-telegram/credentials';
+import { resolveDiscordBotToken, resolveDiscordChannelId } from './workers/builtin/channels-discord/credentials';
+import { getStoredEmailCredentials } from './workers/builtin/channels-email/credentials';
 
 const execFileAsync = promisify(execFile);
 
@@ -90,7 +92,7 @@ async function embeddingModelReachable(): Promise<boolean> {
 }
 
 export async function getAppHealthSnapshot(): Promise<AppHealthSnapshot> {
-  const [lmStudioCliOk, ffmpegOk, whisperCliOk, whisperModelOk, sqliteCliOk, embeddingModelOk, telegramBotToken] = await Promise.all([
+  const [lmStudioCliOk, ffmpegOk, whisperCliOk, whisperModelOk, sqliteCliOk, embeddingModelOk, telegramBotToken, discordBotToken, discordChannelId, emailCreds] = await Promise.all([
     fileExecutable(config.lmStudioBin),
     commandAvailable('ffmpeg', ['-version']),
     commandAvailable('whisper-cli', ['--help']),
@@ -98,6 +100,9 @@ export async function getAppHealthSnapshot(): Promise<AppHealthSnapshot> {
     commandAvailable('sqlite3', ['-version']),
     embeddingModelReachable(),
     resolveTelegramBotToken(),
+    resolveDiscordBotToken(),
+    resolveDiscordChannelId(),
+    getStoredEmailCredentials(),
   ]);
 
   return {
@@ -106,6 +111,16 @@ export async function getAppHealthSnapshot(): Promise<AppHealthSnapshot> {
         Boolean(telegramBotToken),
         'Telegram bot token present.',
         'Configure the Telegram bot token in the dashboard.',
+      ),
+      discordConfigured: configured(
+        Boolean(discordBotToken && discordChannelId),
+        'Discord bot token and channel ID present.',
+        'Configure the Discord bot token and channel ID in the Channels tab.',
+      ),
+      emailConfigured: configured(
+        Boolean(emailCreds.smtpHost && emailCreds.smtpUser && emailCreds.smtpPassword),
+        'Email SMTP credentials present.',
+        'Configure SMTP credentials in the Channels tab.',
       ),
       googleSearchConfigured: configured(
         Boolean(config.googleApiKey && config.googleSearchEngineId),

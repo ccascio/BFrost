@@ -81,7 +81,14 @@ export function listWorkerDashboardViews(): WorkerDashboardViewDefinition[] {
 export function workerQueueItemDetails(item: WorkerQueueItem) {
   return snapshotCache
     .filter((view) => typeof view.queueItemDetail === 'function')
-    .map((view) => ({ workerId: view.workerId, node: view.queueItemDetail!(item) }))
+    .map((view) => {
+      try {
+        return { workerId: view.workerId, node: view.queueItemDetail!(item) };
+      } catch (err) {
+        console.warn(`[Workers] Queue detail renderer for ${view.workerId} failed:`, err);
+        return { workerId: view.workerId, node: null };
+      }
+    })
     .filter((entry) => entry.node !== null && entry.node !== undefined && entry.node !== false);
 }
 

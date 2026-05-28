@@ -48,7 +48,7 @@ Ask the user, in one short message, only what you cannot infer from context:
 - **Producer or consumer?** (or both, or neither — neither = tool/channel/provider worker)
 - **What `itemType` does it produce or subscribe to?** If consuming, default to `news.article` and confirm.
 - **Does it need credentials?** (Google, X, an HTTP API key, etc.)
-- **Does it need a dashboard tab, or only Config-tab settings?**
+- **Does it need a dashboard tab, worker-wide Config settings, or scheduled-job parameters in Jobs?**
 - **Built-in or local?** Default to local. Only choose built-in if the user names a `core.*` ID and explicitly asks for one.
 
 Don't ask the user to invent things `workers/README.md` already specifies (manifest version, API version, lifecycle hooks, storage APIs). Read those from the docs and propose defaults.
@@ -69,7 +69,7 @@ workers/local/<id-without-prefix>/
   worker.json
   src/
     index.ts        ← BackendWorkerModule
-  dashboard.tsx     ← only if dashboard.surfaceIds is declared
+  dashboard.tsx     ← only if dashboard.routes declares a dashboard surface
   README.md         ← what it does, what it produces/consumes, what env vars it reads
 ```
 
@@ -86,17 +86,106 @@ src/workers/builtin/<id>/
 
 Then read `workers/examples/complete-capability/worker.json` and copy the structure — every field is documented inline.
 
+If you author in a registry repo such as `BFrost-Workers/packages/<id>/`, packaging is not installation. Also mirror or install the worker into BFrost's `workers/local/<id>/` (or use the product's worker-store install flow), then rescan/restart before calling it visible in the app.
+
 ### 4. Write the manifest
 
-Required: `manifestVersion: 1`, `bfrostApiVersion: "0.1"`, `id`, `name`, `version: "0.1.0"`, `description` (one sentence).
+Use this checklist before writing code. BFrost has two related manifest shapes:
+
+**Local `worker.json` required fields**
+- `manifestVersion: 1`
+- `bfrostApiVersion: "0.1"`
+- `id` — stable lowercase id matching `[a-z0-9][a-z0-9._-]*`
+- `name`
+- `version`
+- `description`
+
+**Local `worker.json` optional fields**
+- `owner`, `kind`
+- `language`, `backendSource`, `backendEntrypoint`
+- `dashboardSource`, `dashboardEntrypoint`
+- `requiredCredentials`, `optionalCredentials`
+- `requiredDependencies`, `optionalDependencies`
+- `ownedSettings`
+- `dashboard.settings`, `dashboard.routes`
+
+For executable TypeScript workers, set all of these together:
+
+```json
+{
+  "language": "typescript",
+  "backendSource": "src/index.ts",
+  "backendEntrypoint": "dist/index.js"
+}
+```
+
+If the worker ships a React dashboard bundle, set both:
+
+```json
+{
+  "dashboardSource": "dashboard.tsx",
+  "dashboardEntrypoint": "dist/dashboard.js"
+}
+```
+
+**Runtime `WorkerManifest` required fields in `src/index.ts`**
+- `manifestVersion: 1`
+- `bfrostApiVersion: "0.1"`
+- `id`, `name`, `version`, `description`
+- `builtIn: false`
+- `jobs: []` — include an empty array when the worker owns no jobs
+
+**Runtime `WorkerManifest` optional fields**
+- `displayName`, `tagline`, `owner`, `kind`
+- `permissions`
+- `requiredCredentials`, `optionalCredentials`
+- `requiredDependencies`, `optionalDependencies`
+- `ownedSettings`
+- `dashboard`
+- `channels`, `tools`, `providers`
+- `summarizeForAssistant`
+
+**Dashboard settings field requirements**
+- Use `dashboard.settings` only for worker-wide configuration. Scheduled job inputs belong in `jobs[].dashboardFields`.
+- Every field requires `key`, `label`, `type`, and `defaultValue`.
+- `text`, `textarea`, `select`, and `secret-reference` defaults must be strings.
+- `number` defaults must be numbers, not quoted strings.
+- `boolean` defaults must be booleans.
+- `string-list` defaults must be string arrays.
+- `select` fields also require `options: [{ value, label }]`.
+- `seedPath` is optional but recommended so low-code users edit current state, not stale defaults.
+
+**Runtime dashboard view requirements**
+- Register with `window.bfrost.registerDashboardView(...)`.
+- Required to show a tab: `workerId`, `kind`, `surfaceIds`, and `render`.
+- `surfaceIds` must match at least one `dashboard.routes[].id` or `dashboard.settings[].id`.
+- Optional: `menu`, `count`, `queueItemDetail`.
+- If there is no badge count, still provide `count: () => undefined` for compatibility with older hosts.
+- Dashboard code must tolerate missing data from `ctx.dashboard`, `ctx.dashboard.workerData[workerId]`, `ctx.StatusPill`, `ctx.Detail`, and any helper callbacks. Use optional chaining and local fallbacks.
+- Never assume arrays exist. Normalize with `Array.isArray(value) ? value : []`.
+- Never let a missing worker-data slice crash the dashboard; render an empty/configure state instead.
+- If a dashboard is shown to operators, include a folded Guide section below the operational content using `details.panel.tab-page.worker-help-footer`. Keep the top of the dashboard action/status-first, then document:
+  - what the worker does
+  - where to configure it (Jobs vs Config)
+  - inputs and outputs (`itemType`, files, assistant tools, or external API)
+  - one copyable example setup or prompt
+  - the most likely FAQ/troubleshooting case
+
+**Job, cron, and settings placement**
+- Every scheduled worker must declare its schedule through the job manifest: `jobs[].defaultCron`, `defaultEnabled`, `defaultParams`, `paramsSchema`, `dashboardFields`, `prompt`, `approvalRequiredDefault`, and related job fields.
+- Job parameters that affect a run belong on the job: `paramsSchema`, `defaultParams`, and `dashboardFields`. BFrost renders those fields in the Jobs panel for low-code users. Examples: query, filters, max results/items, output folder/template for that job, and include/exclude flags.
+- Worker-wide settings that are not per-run inputs belong in `dashboard.settings` / Config. Examples: API base URL, account/workspace/site id, credential reference, shared folder used by multiple jobs, and webhook secret reference.
+- Do not duplicate a field in both `jobs[].dashboardFields` and `dashboard.settings`. Pick one owner.
+- Do not build custom cron, enable/disable, model, prompt, approval, or job-parameter controls inside the worker dashboard. Those belong in BFrost's dedicated Jobs panel.
+- Worker dashboards may show read-only job status, last-run summaries, recent output, and a `Run now` shortcut that calls the standard cron-job run endpoint.
 
 Decision tree:
 
-- **Worker takes scheduled action** → declare `jobs: [...]` with `defaultCron`, `paramsSchema` (Zod), `defaultParams`, optional `prompt`.
+- **Worker takes scheduled action** → declare `jobs: [...]` with `defaultCron`, `paramsSchema` (Zod), `defaultParams`, `dashboardFields`, optional `prompt`. The fields in `dashboardFields` are what low-code users edit in Jobs.
 - **Worker is callable by the assistant** → declare `tools: [...]` with `inputSchema` and `execute`.
 - **Worker reaches a chat surface** → declare `channels: [...]` with capability flags and lifecycle methods.
 - **Worker provides an inference backend** → declare `providers: [...]` with capability flags and a `ProviderAdapter`.
-- **Worker needs operator config** → declare `dashboard.settings[].fields` with `text` / `textarea` / `number` / `boolean` / `select` / `string-list` / `secret-reference` field types. Use `seedPath` to seed the form from live state.
+- **Worker needs operator config** → declare `dashboard.settings[].fields` with `text` / `textarea` / `number` / `boolean` / `select` / `string-list` / `secret-reference` field types only for worker-wide config. Use `seedPath` to seed the form from live state.
 - **Worker needs credentials** → declare `requiredCredentials` / `optionalCredentials` keyed to the health check the user must satisfy.
 - **Worker needs an external binary** → declare `requiredDependencies` / `optionalDependencies`.
 
@@ -138,7 +227,7 @@ const { text } = await generateText({
 }
 ```
 
-### 8. Tests
+### 7. Tests
 
 Local workers should ship a unit test next to the job/tool that exercises the public manifest contract and any non-trivial parsing or scoring. Built-in workers add a `*.test.ts` next to their `manifest.ts` / `job.ts` — see `news/runs.test.ts` for the pattern.
 
@@ -151,15 +240,30 @@ npm test
 
 before declaring done. Both must pass.
 
-### 9. Verify the worker loads
+### 8. Verify the worker loads and is usable
 
 ```bash
-npm run build && npm start
+npm run build
+npm start
 ```
 
 Then in the dashboard's Workers tab: rescan, find the new worker, enable it, click Run now (if it owns a job), inspect the run, then disable it. If anything fails (manifest validation, compile error, runtime error), the error appears next to the worker row.
 
-### 10. Document
+If the worker owns a dashboard bundle, confirm it loads:
+
+```bash
+curl -s -o /tmp/<id>-dashboard.js -w '%{http_code}\n' http://127.0.0.1:3030/api/workers/<id>/dashboard.js
+```
+
+If the worker owns a scheduled job, confirm the Jobs panel can see its fields:
+
+```bash
+curl -s http://127.0.0.1:3030/api/dashboard | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const d=JSON.parse(s); console.log(d.cron?.jobs?.find(j=>j.id=="<job-id>")?.dashboardFields?.map(f=>f.key) ?? [])})'
+```
+
+After changing backend manifest or job definitions for an already-loaded local worker, restart BFrost or disable/re-enable the worker. Dashboard-only TSX can rebuild on fetch, but server-side manifest and job metadata are loaded at startup/enable time.
+
+### 9. Document
 
 Every worker ships a one-page `README.md` inside its directory covering: what it does, what `itemType` it produces or consumes, which credentials it reads, which env vars it expects, which settings it owns, and any non-obvious operational caveats. Treat this as a hard requirement for the contract — operators rely on it.
 

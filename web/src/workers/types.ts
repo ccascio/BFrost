@@ -12,8 +12,8 @@ export interface WorkerDashboardViewDefinition {
     order?: number;
     label?: string;
   };
-  count: (ctx: Record<string, any>) => number | undefined;
-  render: (ctx: Record<string, any>) => ReactNode;
+  count?: (ctx: Record<string, any>) => number | undefined;
+  render?: (ctx: Record<string, any>) => ReactNode;
   /**
    * Optional renderer for the Queue detail panel. Producers expose the canonical view of
    * an item they emitted; consumers contribute a section with their own metadata
