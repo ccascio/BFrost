@@ -383,6 +383,43 @@ interface AutoBackupSettings {
   retentionDays: number;
 }
 
+// Plain-language labels and descriptions for each store-level permission category.
+// Mirrors PERMISSION_INFO in BFrost-Website (kept in sync by scripts/check-manifest-enums.js).
+const PERMISSION_INFO: Record<string, { label: string; description: string }> = {
+  'network:http': {
+    label: 'HTTP network access',
+    description: 'Can make outbound HTTP requests (unencrypted). Only needed for local or legacy endpoints.',
+  },
+  'network:https': {
+    label: 'HTTPS network access',
+    description: 'Can make outbound HTTPS requests to the internet.',
+  },
+  'storage:worker-kv': {
+    label: 'Worker key-value storage',
+    description: 'Can read and write its own namespaced key-value store inside BFrost.',
+  },
+  'filesystem:scoped-read': {
+    label: 'Scoped filesystem read',
+    description: 'Can read files within a specific folder you approve at install time.',
+  },
+  'filesystem:scoped-write': {
+    label: 'Scoped filesystem write',
+    description: 'Can create or modify files within a specific folder you approve at install time.',
+  },
+  'filesystem:workspace-read': {
+    label: 'Workspace filesystem read',
+    description: 'Can read any file in the configured workspace directory.',
+  },
+  'operator-notify': {
+    label: 'Operator notifications',
+    description: 'Can send you notifications via configured channels (e.g. Telegram).',
+  },
+  'local-process': {
+    label: 'Local process execution',
+    description: 'Can spawn shell commands or subprocesses on this machine.',
+  },
+};
+
 // Community store types (mirrors api.bfrost.net schema)
 interface StoreWorkerListing {
   id: string;
@@ -597,6 +634,8 @@ export default function App() {
   const [sideloadFile, setSideloadFile] = useState<File | null>(null);
   // Map of workerId → latestVersion for workers with available updates
   const [storeUpdates, setStoreUpdates] = useState<Map<string, string>>(new Map());
+  // Install consent dialog: holds the worker pending user approval
+  const [consentTarget, setConsentTarget] = useState<StoreWorkerDetail | null>(null);
   // Factory reset state
   const [resetChecks, setResetChecks] = useState({ wipeWorkerState: false, wipeCredentials: false, wipeBackups: false });
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
@@ -2881,6 +2920,76 @@ export default function App() {
           }}
         />
       ) : null}
+
+      {/* Install permission consent dialog */}
+      {consentTarget ? (
+        <div
+          className="consent-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="consent-title"
+        >
+          <div className="consent-shell">
+            <div className="consent-header">
+              <div>
+                <h2 id="consent-title" className="consent-title">Install "{consentTarget.name}"?</h2>
+                <p className="consent-subtitle">Review the permissions this worker requires before proceeding.</p>
+              </div>
+              <button
+                type="button"
+                className="wizard-close"
+                aria-label="Cancel install"
+                onClick={() => setConsentTarget(null)}
+              >✕</button>
+            </div>
+
+            <div className="consent-body">
+              {consentTarget.permissions.length === 0 ? (
+                <p className="consent-no-perms">This worker declares no special permissions.</p>
+              ) : (
+                <ul className="consent-perm-list">
+                  {consentTarget.permissions.map((perm) => {
+                    const info = PERMISSION_INFO[perm];
+                    return (
+                      <li key={perm} className="consent-perm-item">
+                        <span className="consent-perm-label">{info?.label ?? perm}</span>
+                        {info?.description ? (
+                          <span className="consent-perm-desc">{info.description}</span>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <p className="consent-trust-line">
+                Trust level: <strong>{consentTarget.trust}</strong>
+              </p>
+            </div>
+
+            <div className="consent-footer">
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setConsentTarget(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={busyKey === `store-install-${consentTarget.id}`}
+                onClick={() => {
+                  const target = consentTarget;
+                  setConsentTarget(null);
+                  void installFromStore(target);
+                }}
+              >
+                {busyKey === `store-install-${consentTarget.id}` ? 'Installing…' : 'Approve & Install'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 
@@ -4604,7 +4713,7 @@ export default function App() {
                             window.open(`https://bfrost.net/store/${storeDetail.id}`, '_blank');
                             return;
                           }
-                          void installFromStore(storeDetail);
+                          setConsentTarget(storeDetail);
                         }}
                       >
                         {busyKey === `store-install-${storeDetail.id}`

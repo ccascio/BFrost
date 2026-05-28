@@ -14,12 +14,12 @@
  *      'community' and renders without the intended badge style.
  *   2. Every CSS tone returned by storeTrustTone() has a
  *      .store-trust-badge.<tone> class in web/src/styles.css.
+ *   3. Every canonical WorkerPermission has an entry in the PERMISSION_INFO
+ *      map in web/src/App.tsx. A missing entry means the install consent
+ *      dialog falls back to the raw permission key with no human-readable
+ *      description.
  *
  * Exit codes:  0 = pass,  1 = fail.
- *
- * Categories and permissions are rendered dynamically in the host UI and
- * don't need static declarations — they can't crash from a missing literal.
- * Trust tones DO need static CSS classes, hence the tighter check.
  */
 
 import { readFileSync } from 'fs';
@@ -159,12 +159,42 @@ if (missingCss.length > 0) {
   console.log(`  ✓ styles.css: .store-trust-badge classes present for all ${expectedTones.size} tones`);
 }
 
+// --- Check PERMISSION_INFO covers all canonical permissions -----------------
+// Extract the PERMISSION_INFO block, then collect every object key inside it.
+// The block starts with "const PERMISSION_INFO" and ends at the matching "};".
+const permInfoKeys = new Set();
+const piMatch = appTsx.match(/const PERMISSION_INFO[^=]*=\s*\{([\s\S]*?)\n\};/);
+if (piMatch) {
+  for (const m of piMatch[1].matchAll(/^\s+'([^']+)':\s*\{/gm)) {
+    permInfoKeys.add(m[1]);
+  }
+} else {
+  console.warn('  ⚠ Could not locate PERMISSION_INFO in App.tsx — skipping permission check');
+}
+
+const missingPermInfo = [];
+for (const perm of canonical.permissions) {
+  if (!permInfoKeys.has(perm)) {
+    missingPermInfo.push(perm);
+  }
+}
+if (missingPermInfo.length > 0) {
+  console.error(`  ✗ PERMISSION_INFO: missing entries for ${missingPermInfo.length} canonical permission(s):`);
+  for (const p of missingPermInfo) {
+    console.error(`      - '${p}'`);
+    console.error(`        Add a '${p}': { label: '…', description: '…' } entry to PERMISSION_INFO in web/src/App.tsx`);
+  }
+  allOk = false;
+} else {
+  console.log(`  ✓ PERMISSION_INFO: covers all ${canonical.permissions.length} canonical permission(s)`);
+}
+
 console.log('');
 
 if (!allOk) {
   console.error('✗ Enum mismatch detected.');
-  console.error('  Update web/src/App.tsx (storeTrustTone) and/or web/src/styles.css.');
+  console.error('  Update web/src/App.tsx (storeTrustTone, PERMISSION_INFO) and/or web/src/styles.css.');
   process.exit(1);
 } else {
-  console.log('✓ Trust level handling matches the canonical schema.');
+  console.log('✓ All enum checks pass. BFrost UI is in sync with the canonical schema.');
 }
