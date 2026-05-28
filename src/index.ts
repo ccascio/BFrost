@@ -6,8 +6,6 @@ import { hydrateConversations, flushConversations } from './conversation';
 import {
   getActiveLocalProvider,
   listRegisteredChannels,
-  listRegisteredProviders,
-  getProviderAdapter,
   setHiddenBuiltInIds,
 } from './workers/registry';
 import { bootstrapLocalWorkers } from './workers/bootstrap';
@@ -70,22 +68,22 @@ async function main(): Promise<void> {
     console.warn(`[BFrost] Local worker issue (${issue.sourcePath}): ${issue.message}`);
   }
 
-  // Boot any local-runtime providers (e.g. LM Studio) so chat models are reachable.
+  // Boot only the active local-runtime provider so chat models are reachable.
+  // Skipped entirely when no local provider is selected — avoids loading LM Studio
+  // (or any local runtime) into memory when the user is running cloud-only providers.
   const startedRuntimes: ProviderAdapter[] = [];
-  for (const registered of listRegisteredProviders()) {
-    if (!registered.manifest.capabilities.localRuntime) continue;
-    const adapter = getProviderAdapter(registered.manifest.id);
-    if (!adapter || !adapter.isConfigured() || !adapter.startRuntime) {
-      console.log(`[BFrost] Provider ${registered.manifest.id} not configured for runtime start, skipping.`);
-      continue;
-    }
-    const weStarted = await adapter.startRuntime();
+  const activeLocalAdapter = getActiveLocalProvider();
+  if (!activeLocalAdapter) {
+    console.log('[BFrost] No active local-runtime provider selected, skipping runtime start.');
+  } else if (!activeLocalAdapter.startRuntime) {
+    console.log(`[BFrost] Provider ${activeLocalAdapter.providerId} selected but has no runtime to start.`);
+  } else {
+    const weStarted = await activeLocalAdapter.startRuntime();
     if (weStarted) {
-      startedRuntimes.push(adapter);
+      startedRuntimes.push(activeLocalAdapter);
     }
-    console.log(`[BFrost] Provider ${registered.manifest.id} ready.`);
+    console.log(`[BFrost] Provider ${activeLocalAdapter.providerId} ready.`);
   }
-  void getActiveLocalProvider();
   await refreshActiveLocalProviderModels();
 
   await startAdminServer();
