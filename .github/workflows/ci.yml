@@ -34,3 +34,6 @@ jobs:
 
       - name: Validate example worker manifests
         run: node scripts/validate-manifests.mjs
+
+      - name: Check manifest enum sync (App.tsx vs canonical schema)
+        run: npm run check:manifest
