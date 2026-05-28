@@ -263,7 +263,7 @@ type WorkerKind = 'feature' | 'channel' | 'provider';
 interface PlatformSettings {
   activeLocalProviderId: string;
   primaryChannelId: string;
-  embeddingProvider: 'local' | 'openai';
+  embeddingProvider: string;
   embeddingModel: string;
 }
 
@@ -664,10 +664,6 @@ export default function App() {
   const [autoBackupSettings, setAutoBackupSettings] = useState<AutoBackupSettings | null>(null);
   const [activeLocalProviderDraft, setActiveLocalProviderDraft] = useState('');
   const [primaryChannelDraft, setPrimaryChannelDraft] = useState('');
-  const [embeddingProviderDraft, setEmbeddingProviderDraft] = useState<'local' | 'openai' | ''>('');
-  const [embeddingModelDraft, setEmbeddingModelDraft] = useState('');
-  const [localEmbeddingModels, setLocalEmbeddingModels] = useState<Array<{ id: string; label: string }> | null>(null);
-  const [loadingEmbeddingModels, setLoadingEmbeddingModels] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('bfrost.sidebarCollapsed') === 'true';
@@ -1428,43 +1424,6 @@ export default function App() {
     );
     setActiveLocalProviderDraft('');
     setPrimaryChannelDraft('');
-  }
-
-  async function fetchLocalEmbeddingModels() {
-    if (loadingEmbeddingModels) return;
-    setLoadingEmbeddingModels(true);
-    try {
-      const res = await fetch('/api/dashboard/local-embedding-models');
-      if (res.ok) {
-        const data = await res.json() as { models: Array<{ id: string; label: string }> };
-        setLocalEmbeddingModels(data.models);
-      }
-    } catch {
-      // leave previous list in place
-    } finally {
-      setLoadingEmbeddingModels(false);
-    }
-  }
-
-  async function saveEmbeddingSettings() {
-    const current = dashboard?.platform;
-    if (!current) return;
-    const next: { provider?: 'local' | 'openai'; model?: string } = {};
-    if (embeddingProviderDraft && embeddingProviderDraft !== current.embeddingProvider) {
-      next.provider = embeddingProviderDraft;
-    }
-    if (embeddingModelDraft.trim() && embeddingModelDraft.trim() !== current.embeddingModel) {
-      next.model = embeddingModelDraft.trim();
-    }
-    if (!next.provider && !next.model) return;
-    await mutate(
-      'save-embedding-settings',
-      '/api/embedding-settings',
-      { method: 'POST', body: JSON.stringify(next) },
-      'Embedding settings saved.',
-    );
-    setEmbeddingProviderDraft('');
-    setEmbeddingModelDraft('');
   }
 
 
@@ -2318,7 +2277,6 @@ export default function App() {
                       setSelectedCoreConfigKey('embedding-model');
                       setSelectedConfigSurfaceKey(null);
                       setSelectedConfigJobName(null);
-                      void fetchLocalEmbeddingModels();
                     }}
                   >
                     <div>
@@ -2413,7 +2371,9 @@ export default function App() {
                 </div>
 
                 {selectedCoreConfigKey === 'platform-routing' ? renderPlatformRoutingConfiguration() : null}
-                {selectedCoreConfigKey === 'embedding-model' ? renderEmbeddingConfiguration() : null}
+                {selectedCoreConfigKey === 'embedding-model'
+                  ? (dashboardViews.find((v) => v.kind === 'embedding-config')?.render?.(workerViewContext) ?? null)
+                  : null}
                 {selectedConfigJob ? renderJobConfiguration(selectedConfigJob) : null}
                 {selectedConfigSurface ? renderWorkerConfigurationSurface(selectedConfigSurface) : null}
                 {!selectedCoreConfigKey && !selectedConfigJob && !selectedConfigSurface ? (
@@ -3654,111 +3614,6 @@ export default function App() {
             onClick={() => void savePlatformRouting()}
           >
             {busyKey === 'save-platform-routing' ? 'Saving...' : 'Save routing'}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  function renderEmbeddingConfiguration() {
-    const OPENAI_EMBEDDING_MODELS = [
-      'text-embedding-3-large',
-      'text-embedding-3-small',
-      'text-embedding-ada-002',
-    ];
-
-    const current = dashboard?.platform;
-    const providerValue = embeddingProviderDraft || current?.embeddingProvider || 'local';
-    const modelValue = embeddingModelDraft || current?.embeddingModel || '';
-
-    const dirty =
-      (embeddingProviderDraft && embeddingProviderDraft !== current?.embeddingProvider) ||
-      (embeddingModelDraft.trim() && embeddingModelDraft.trim() !== current?.embeddingModel);
-
-    return (
-      <div className="detail-body">
-        <div className="stack-list compact">
-          <HealthRow label="Embedding model reachable" status={dashboard?.dependencies.embeddingModelReachable ?? { ok: false, detail: 'Loading…' }} />
-        </div>
-
-        <p className="footnote">
-          Choose the provider and model for long-term memory embeddings. Local models are served by your active LM Studio or Ollama instance and must support the embeddings endpoint.
-        </p>
-
-        <div className="form-grid">
-          <label className="field">
-            <span>Embedding provider</span>
-            <select
-              value={providerValue}
-              onChange={(event) => {
-                const p = event.target.value as 'local' | 'openai';
-                setEmbeddingProviderDraft(p);
-                setEmbeddingModelDraft('');
-                if (p === 'local') void fetchLocalEmbeddingModels();
-              }}
-            >
-              <option value="local">Local (LM Studio / Ollama)</option>
-              <option value="openai">OpenAI</option>
-            </select>
-          </label>
-
-          <label className="field">
-            <span>Embedding model</span>
-            {providerValue === 'openai' ? (
-              <select
-                value={modelValue}
-                onChange={(event) => setEmbeddingModelDraft(event.target.value)}
-              >
-                {OPENAI_EMBEDDING_MODELS.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-            ) : (
-              <>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <select
-                    value={modelValue}
-                    onChange={(event) => setEmbeddingModelDraft(event.target.value)}
-                    disabled={loadingEmbeddingModels}
-                    style={{ flex: 1 }}
-                  >
-                    {loadingEmbeddingModels ? (
-                      <option value="">Loading…</option>
-                    ) : localEmbeddingModels === null || localEmbeddingModels.length === 0 ? (
-                      <option value={modelValue}>{modelValue || '(no embedding models found)'}</option>
-                    ) : null}
-                    {!loadingEmbeddingModels && localEmbeddingModels?.map((m) => (
-                      <option key={m.id} value={m.id}>{m.label !== m.id ? `${m.label} (${m.id})` : m.id}</option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    disabled={loadingEmbeddingModels}
-                    onClick={() => void fetchLocalEmbeddingModels()}
-                    title="Refresh model list from local provider"
-                  >
-                    {loadingEmbeddingModels ? '…' : '↻'}
-                  </button>
-                </div>
-                <span className="footnote">
-                  {localEmbeddingModels !== null && localEmbeddingModels.length > 0
-                    ? `${localEmbeddingModels.length} embedding model${localEmbeddingModels.length === 1 ? '' : 's'} found. LM Studio: models with type "embedding"; Ollama: models with "embed" in the name.`
-                    : localEmbeddingModels !== null && localEmbeddingModels.length === 0
-                      ? 'No embedding models found. Make sure your local provider is running and has an embedding model installed, then click ↻.'
-                      : 'Click ↻ to load available models from your local provider.'}
-                </span>
-              </>
-            )}
-          </label>
-        </div>
-
-        <div className="panel-actions">
-          <button
-            className="primary"
-            disabled={busyKey === 'save-embedding-settings' || !dirty}
-            onClick={() => void saveEmbeddingSettings()}
-          >
-            {busyKey === 'save-embedding-settings' ? 'Saving…' : 'Save embedding settings'}
           </button>
         </div>
       </div>
