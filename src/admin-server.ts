@@ -6,7 +6,18 @@ import { randomBytes, timingSafeEqual } from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { z } from 'zod';
-import { config, availableModels, getDefaultModel, setCloudApiKeys, setDefaultModel, setEmbeddingSettings } from './config';
+import {
+  config,
+  availableModels,
+  getDefaultModel,
+  setCloudApiKeys,
+  setDefaultModel,
+  setEmbeddingSettings,
+  setAdminPassword,
+  setLocalWorkerCodeEnabled,
+  setAdminSessionTtlHours,
+  setJobLlmTimeoutMs,
+} from './config';
 import { refreshActiveLocalProviderModels, refreshCloudProviderModels } from './model-discovery';
 import { upsertEnvValue } from './env-file';
 import {
@@ -56,6 +67,7 @@ import {
   BackupsSectionSchema,
   ChatMessageBodySchema,
   CloudApiKeysBodySchema,
+  CoreSettingsBodySchema,
   EmbeddingSettingsBodySchema,
   FactoryResetBodySchema,
   PlatformSettingsBodySchema,
@@ -423,6 +435,63 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         action: 'embedding_settings_updated',
         summary: 'Embedding model settings updated.',
         metadata: updates,
+      });
+      return sendJson(res, 200, { ok: true });
+    }
+
+    if (url.pathname === '/api/core-settings' && req.method === 'POST') {
+      const body = await readJsonBody(req, CoreSettingsBodySchema);
+      const envPath = path.join(process.cwd(), '.env');
+      // Audit metadata records which fields changed — never the password value itself.
+      const changed: string[] = [];
+      let passwordChanged = false;
+
+      if (body.adminPassword !== undefined) {
+        const next = body.adminPassword;
+        // Reject whitespace-only or trivially short passwords; the empty string is allowed and
+        // intentionally disables auth (documented localhost-only default).
+        if (next.length > 0 && next.trim().length < 4) {
+          throw new BadRequestError('Admin password must be at least 4 characters, or empty to disable auth.');
+        }
+        await upsertEnvValue(envPath, 'ADMIN_PASSWORD', next);
+        setAdminPassword(next);
+        passwordChanged = true;
+        changed.push('adminPassword');
+      }
+
+      if (body.localWorkerCodeEnabled !== undefined) {
+        await upsertEnvValue(envPath, 'BFROST_ENABLE_LOCAL_WORKER_CODE', body.localWorkerCodeEnabled ? 'true' : 'false');
+        setLocalWorkerCodeEnabled(body.localWorkerCodeEnabled);
+        changed.push('localWorkerCodeEnabled');
+      }
+
+      if (body.adminSessionTtlHours !== undefined) {
+        await upsertEnvValue(envPath, 'ADMIN_SESSION_TTL_HOURS', String(body.adminSessionTtlHours));
+        setAdminSessionTtlHours(body.adminSessionTtlHours);
+        changed.push('adminSessionTtlHours');
+      }
+
+      if (body.jobLlmTimeoutMs !== undefined) {
+        await upsertEnvValue(envPath, 'JOB_LLM_TIMEOUT_MS', String(body.jobLlmTimeoutMs));
+        setJobLlmTimeoutMs(body.jobLlmTimeoutMs);
+        changed.push('jobLlmTimeoutMs');
+      }
+
+      if (changed.length === 0) {
+        throw new BadRequestError('Provide at least one platform setting to update.');
+      }
+
+      // Changing the password invalidates every existing session so a stale cookie cannot
+      // outlive a credential rotation. The operator (and any other client) must re-authenticate.
+      if (passwordChanged) {
+        sessions.clear();
+      }
+
+      await recordEventSafe({
+        category: 'admin',
+        action: 'core_settings_updated',
+        summary: `Platform & security settings updated: ${changed.join(', ')}.`,
+        metadata: { changed },
       });
       return sendJson(res, 200, { ok: true });
     }
@@ -889,6 +958,12 @@ async function buildDashboardState(): Promise<DashboardState> {
       primaryChannelId: config.primaryChannelId,
       embeddingProvider: config.embeddingProvider,
       embeddingModel: config.embeddingModel,
+      adminPasswordSet: config.adminPassword.trim().length > 0,
+      localWorkerCodeEnabled: config.localWorkerCodeEnabled,
+      adminSessionTtlHours: config.adminSessionTtlHours,
+      jobLlmTimeoutMs: config.jobLlmTimeoutMs,
+      adminHost: config.adminHost,
+      adminPort: config.adminPort,
     },
     availableLocalProviders: listRegisteredProviders()
       .filter((p) => p.manifest.capabilities.localRuntime)
@@ -1246,7 +1321,7 @@ async function uploadLocalWorkerZip(req: IncomingMessage): Promise<DiscoveredLoc
   try {
     await fs.writeFile(zipPath, body);
     await fs.mkdir(extractDir, { recursive: true });
-    await execFileAsync('unzip', ['-q', zipPath, '-d', extractDir]);
+    await safeExtractZip(zipPath, extractDir);
 
     const result = await discoverLocalWorkerResult([extractDir]);
     if (result.workers.length !== 1) {
@@ -1339,10 +1414,11 @@ async function installWorkerFromStore(
     await fs.writeFile(archivePath, body);
     await fs.mkdir(extractDir, { recursive: true });
 
-    // Extract with system tar.
+    // Extract with system tar, rejecting traversal and symlink entries first.
     try {
-      await execFileAsync('tar', ['-xzf', archivePath, '-C', extractDir]);
+      await safeExtractTarGz(archivePath, extractDir);
     } catch (err) {
+      if (err instanceof BadRequestError) throw err;
       throw new BadRequestError(`Failed to extract bundle: ${err instanceof Error ? (err as any).stderr || err.message : String(err)}`);
     }
 
@@ -1462,6 +1538,73 @@ async function deleteLocalWorkerFiles(sourcePath: string): Promise<void> {
   }
 
   await fs.rm(workerDir, { recursive: true, force: true });
+}
+
+/**
+ * Reject archive entry names that could escape the extraction directory: absolute paths
+ * (`/etc/...`, `C:\...`) and parent-directory traversal (`../`). Run on the archive *listing*
+ * before extraction so nothing dangerous is ever written to disk (zip-slip / tar-slip).
+ */
+export function assertSafeArchiveNames(names: string[]): void {
+  for (const raw of names) {
+    const name = raw.trim();
+    if (!name) continue;
+    const normalized = name.replace(/\\/g, '/');
+    if (path.isAbsolute(normalized) || /^[a-zA-Z]:\//.test(normalized)) {
+      throw new BadRequestError(`Archive contains an absolute path, which is not allowed: ${name}`);
+    }
+    if (normalized.split('/').some((segment) => segment === '..')) {
+      throw new BadRequestError(`Archive contains a path-traversal entry, which is not allowed: ${name}`);
+    }
+  }
+}
+
+/**
+ * Reject symlink entries in a verbose archive listing. A symlink whose target is absolute or
+ * traverses upward lets a *later* entry be written through it to land outside the temp dir —
+ * a name-only scan misses this because the symlink's own name is innocuous. Worker payloads
+ * never legitimately contain symlinks. Both `tar -tvzf` and `unzip -Z` start each entry line
+ * with a type/permission string whose first character is `l` for a symlink.
+ */
+export function assertNoSymlinkEntries(verboseListingLines: string[]): void {
+  for (const line of verboseListingLines) {
+    if (/^l/.test(line.trimStart())) {
+      throw new BadRequestError('Archive contains a symbolic link, which is not allowed.');
+    }
+  }
+}
+
+/** Belt-and-suspenders: walk the extracted tree and reject if any entry is a symlink. */
+async function assertNoSymlinksOnDisk(dir: string): Promise<void> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) {
+      throw new BadRequestError(`Extracted archive contains a symbolic link, which is not allowed: ${entry.name}`);
+    }
+    if (entry.isDirectory()) {
+      await assertNoSymlinksOnDisk(path.join(dir, entry.name));
+    }
+  }
+}
+
+/** Safely extract a zip into `destDir`: vet entry names + symlinks before writing, walk after. */
+async function safeExtractZip(zipPath: string, destDir: string): Promise<void> {
+  const { stdout: names } = await execFileAsync('unzip', ['-Z1', zipPath]);
+  assertSafeArchiveNames(names.split('\n'));
+  const { stdout: verbose } = await execFileAsync('unzip', ['-Z', zipPath]);
+  assertNoSymlinkEntries(verbose.split('\n'));
+  await execFileAsync('unzip', ['-q', zipPath, '-d', destDir]);
+  await assertNoSymlinksOnDisk(destDir);
+}
+
+/** Safely extract a .tar.gz into `destDir`: vet entry names + symlinks before writing, walk after. */
+async function safeExtractTarGz(archivePath: string, destDir: string): Promise<void> {
+  const { stdout: names } = await execFileAsync('tar', ['-tzf', archivePath]);
+  assertSafeArchiveNames(names.split('\n'));
+  const { stdout: verbose } = await execFileAsync('tar', ['-tvzf', archivePath]);
+  assertNoSymlinkEntries(verbose.split('\n'));
+  await execFileAsync('tar', ['-xzf', archivePath, '-C', destDir]);
+  await assertNoSymlinksOnDisk(destDir);
 }
 
 async function moveDirectory(source: string, target: string): Promise<void> {

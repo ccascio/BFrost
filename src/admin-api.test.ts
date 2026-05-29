@@ -302,6 +302,12 @@ test('dashboard response schema accepts the control-room payload shape', () => {
       primaryChannelId: 'telegram',
       embeddingProvider: 'local',
       embeddingModel: 'text-embedding-nomic-embed-text-v1.5',
+      adminPasswordSet: true,
+      localWorkerCodeEnabled: false,
+      adminSessionTtlHours: 24,
+      jobLlmTimeoutMs: 600000,
+      adminHost: '127.0.0.1',
+      adminPort: 3030,
     },
     availableLocalProviders: [
       { id: 'lmstudio', label: 'LM Studio', workerId: 'core.providers.lmstudio', workerName: 'LM Studio Provider' },

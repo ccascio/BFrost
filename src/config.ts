@@ -233,6 +233,22 @@ export function setEmbeddingSettings(values: { provider?: 'local' | 'openai'; mo
   if (values.model !== undefined) config.embeddingModel = values.model;
 }
 
+export function setAdminPassword(value: string): void {
+  config.adminPassword = value;
+}
+
+export function setLocalWorkerCodeEnabled(enabled: boolean): void {
+  config.localWorkerCodeEnabled = enabled;
+}
+
+export function setAdminSessionTtlHours(hours: number): void {
+  config.adminSessionTtlHours = hours;
+}
+
+export function setJobLlmTimeoutMs(ms: number): void {
+  config.jobLlmTimeoutMs = ms;
+}
+
 export function setXCredentials(values: {
   xConsumerKey?: string;
   xConsumerSecret?: string;

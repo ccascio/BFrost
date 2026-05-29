@@ -24,11 +24,32 @@ export const EmbeddingSettingsBodySchema = z.object({
   model: z.string().min(1).optional(),
 }).strict();
 
+/**
+ * Body for `POST /api/core-settings` (Platform & Security panel). Every field is optional;
+ * only the provided ones are written. `adminPassword` accepts the empty string to disable
+ * auth. `adminHost`/`adminPort` are intentionally absent — changing the bind address needs a
+ * restart, so the panel shows them read-only.
+ */
+export const CoreSettingsBodySchema = z.object({
+  adminPassword: z.string().max(256).optional(),
+  localWorkerCodeEnabled: z.boolean().optional(),
+  adminSessionTtlHours: z.number().int().positive().max(8760).optional(),
+  jobLlmTimeoutMs: z.number().int().positive().max(3_600_000).optional(),
+}).strict();
+
 export const PlatformSettingsSchema = z.object({
   activeLocalProviderId: z.string(),
   primaryChannelId: z.string(),
   embeddingProvider: z.enum(['local', 'openai']),
   embeddingModel: z.string(),
+  // Core platform & security settings surfaced read-mostly to the dashboard. `adminPasswordSet`
+  // is a boolean presence flag — the password itself is never sent to the client.
+  adminPasswordSet: z.boolean(),
+  localWorkerCodeEnabled: z.boolean(),
+  adminSessionTtlHours: z.number(),
+  jobLlmTimeoutMs: z.number(),
+  adminHost: z.string(),
+  adminPort: z.number(),
 }).strict();
 
 export const RegisteredPlatformEntrySchema = z.object({

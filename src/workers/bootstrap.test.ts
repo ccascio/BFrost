@@ -101,17 +101,44 @@ async function withBootstrapSetup(moduleJs: string, fn: TestFn): Promise<void> {
   const workerDir = await setupWorkerDir(parentDir, moduleJs);
   const prevDbPath = config.appDbPath;
   const prevWorkerPaths = config.workerPaths;
+  const prevCodeEnabled = config.localWorkerCodeEnabled;
   config.appDbPath = path.join(parentDir, 'app.sqlite');
   config.workerPaths = [parentDir];
+  // These fixtures ship executable code; enable the gate so the lifecycle tests can load them.
+  // The gate itself is covered by the dedicated test below.
+  config.localWorkerCodeEnabled = true;
   try {
     await fn(workerDir);
   } finally {
     unregisterLocalWorkerModule(WORKER_ID);
     config.appDbPath = prevDbPath;
     config.workerPaths = prevWorkerPaths;
+    config.localWorkerCodeEnabled = prevCodeEnabled;
     await rm(parentDir, { recursive: true, force: true });
   }
 }
+
+test('bootstrap — code-bearing local worker is gated behind localWorkerCodeEnabled', async () => {
+  // Disable the flag for this case only; withBootstrapSetup enables it by default.
+  await withBootstrapSetup(WORKER_MODULE_JS, async (workerDir) => {
+    await saveWorkerState({ workers: { [WORKER_ID]: { builtIn: false, enabled: true } } });
+
+    // Gate OFF: the worker must not load, and its onEnable must never run.
+    config.localWorkerCodeEnabled = false;
+    const blocked = await bootstrapLocalWorkers();
+    assert.equal(blocked.loaded.includes(WORKER_ID), false, 'worker must not load when code execution is disabled');
+    assert.ok(
+      blocked.issues.some((issue) => /code execution is disabled/i.test(issue.message)),
+      'a clear issue explains why the worker did not load',
+    );
+    assert.deepEqual(await readLifecycleCalls(workerDir), [], 'no lifecycle hooks ran while gated');
+
+    // Gate ON: the same worker now loads.
+    config.localWorkerCodeEnabled = true;
+    const allowed = await bootstrapLocalWorkers();
+    assert.ok(allowed.loaded.includes(WORKER_ID), 'worker loads once code execution is enabled');
+  });
+});
 
 test('bootstrap — freshly discovered local workers stay disabled until explicitly enabled', async () => {
   await withBootstrapSetup(WORKER_MODULE_JS, async (workerDir) => {

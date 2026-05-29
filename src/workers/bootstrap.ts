@@ -14,6 +14,7 @@ import {
   type DiscoveredLocalWorker,
   type LocalWorkerLoadIssue,
 } from './local';
+import { config } from '../config';
 import { loadLocalWorkerModule, WorkerLoadError } from './loader';
 import { listLocalWorkerModules, registerLoadedLocalModule, unregisterLocalWorkerModule } from './registry';
 import {
@@ -26,6 +27,25 @@ export interface BootstrapLocalWorkersResult {
   loaded: string[];
   skipped: string[];
   issues: LocalWorkerLoadIssue[];
+}
+
+/**
+ * Thrown when a local worker ships executable code but the operator has not enabled
+ * local-worker code execution (`config.localWorkerCodeEnabled`, surfaced in the dashboard
+ * as the "Allow local worker code" toggle in Platform & Security).
+ *
+ * Built-in workers are statically imported and never reach this path; only local workers
+ * loaded through the runtime are gated. The message is intentionally actionable so it reads
+ * well both as a boot-time issue row and as a 400 on a hot enable.
+ */
+export class LocalWorkerCodeDisabledError extends Error {
+  constructor(public readonly workerId: string) {
+    super(
+      `Local worker "${workerId}" ships executable code, but local worker code execution is disabled. ` +
+        `Enable "Allow local worker code" in Platform & Security (or set BFROST_ENABLE_LOCAL_WORKER_CODE=true) to load it.`,
+    );
+    this.name = 'LocalWorkerCodeDisabledError';
+  }
 }
 
 /**
@@ -43,11 +63,16 @@ export async function activateLocalWorker(
   options: { previousVersion?: string | null } = {},
 ): Promise<{ loaded: boolean; migrationFailed: boolean }> {
   if (!worker.backendEntrypoint && worker.language !== 'typescript') {
-    // Manifest-only worker — nothing to load.
+    // Manifest-only worker — nothing to load. Always allowed: no code runs.
     return { loaded: false, migrationFailed: false };
   }
   if (listLocalWorkerModules().some((module) => module.manifest.id === worker.manifest.id)) {
     return { loaded: true, migrationFailed: false };
+  }
+  // Gate executable local worker code behind the platform flag. Reached only when the worker
+  // has code to run (the manifest-only case returned above). Built-ins never get here.
+  if (!config.localWorkerCodeEnabled) {
+    throw new LocalWorkerCodeDisabledError(worker.manifest.id);
   }
 
   const loaded = await loadLocalWorkerModule(worker);
