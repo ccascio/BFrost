@@ -54,7 +54,7 @@ function toAppError(raw: unknown): AppError {
   }
   return { friendly: msg };
 }
-type DashboardTab = CoreDashboardTab | `worker:${string}`;
+type DashboardTab = CoreDashboardTab | `worker:${string}` | `worker-config:${string}`;
 type QueueFilter = 'all' | QueueItem['state'] | 'retrying';
 type CoreConfigKey = 'platform-routing' | 'embedding-model' | 'platform-security';
 
@@ -1669,12 +1669,12 @@ export default function App() {
     .map((worker) => ({
       worker,
       surfaces: worker.dashboard.settings.filter((surface) => surface.tab === 'config'),
-      jobs: [],
+      jobs: dashboard.cron.jobs.filter((job) => job.workerId === worker.id),
     }))
-    .filter((group) => group.surfaces.length > 0);
+    .filter((group) => group.surfaces.length > 0 || group.jobs.length > 0);
   const configJobCount = 0;
-  const configSurfaceCount = configGroupsByWorker.reduce((count, group) => count + group.surfaces.length, 0);
-  const configCoreCount = 2;
+  const configSurfaceCount = 0; // worker surfaces now live in per-worker Config tabs
+  const configCoreCount = 3; // platform routing + embedding + security
   const selectedConfigJob =
     selectedConfigJobName ? dashboard.cron.jobs.find((job) => job.name === selectedConfigJobName) ?? null : null;
   const selectedConfigSurface = selectedConfigSurfaceKey
@@ -1730,6 +1730,32 @@ export default function App() {
       order: tab.definition.menu?.order ?? 1000,
       count: safeWorkerViewCount(tab.definition, workerViewContext),
     })),
+    // Per-worker Config entries.
+    // Workers WITH a dashboard tab → "Config" child under the parent.
+    // Workers WITHOUT a dashboard tab → standalone entry with the worker's name (no orphan "Config").
+    ...configGroupsByWorker.flatMap(({ worker }) => {
+      const workerTab = workerTabDefinitions.find((t) => t.worker.id === worker.id);
+      const baseOrder = workerTab ? (workerTab.definition.menu?.order ?? 1000) : 900;
+      const group = workerTab ? (workerTab.definition.menu?.group ?? 'Workers') : 'Workers';
+      if (workerTab) {
+        return [{
+          id: `worker-config:${worker.id}` as DashboardTab,
+          label: 'Config',
+          icon: 'config',
+          group,
+          order: baseOrder + 0.5,
+          parentId: workerTab.id as DashboardTab,
+        }];
+      }
+      // No dashboard tab: use the worker's display name, no parent indentation.
+      return [{
+        id: `worker-config:${worker.id}` as DashboardTab,
+        label: worker.displayName ?? worker.name,
+        icon: 'config',
+        group,
+        order: baseOrder,
+      }];
+    }),
   ];
 
   function updateJobDraftParam(jobName: string, draft: JobDraft, key: string, value: JobParamDraftValue) {
@@ -2271,10 +2297,10 @@ export default function App() {
         <section className="panel tab-page">
           <div className="panel-head">
             <div>
-              <p className="panel-kicker">Worker configuration</p>
-              <h2>Manifest settings <HelpTip>Configuration surfaces declared by each worker — news source rules, API keys, prompt templates, and more. Select a worker on the left; its settings panels appear on the right. Changes take effect the next time the worker runs.</HelpTip></h2>
+              <p className="panel-kicker">Platform</p>
+              <h2>Platform settings <HelpTip>Core platform configuration — how BFrost routes model calls, which embedding model it uses for memory, and access-control settings. Worker-specific settings (API keys, job parameters, prompts) live in each worker's Config subtab in the left panel.</HelpTip></h2>
             </div>
-            <StatusPill tone="muted">{configJobCount + configSurfaceCount + configCoreCount} configurable</StatusPill>
+            <StatusPill tone="muted">{configCoreCount} settings</StatusPill>
           </div>
 
           <div className="jobs-workspace">
@@ -2375,71 +2401,6 @@ export default function App() {
                 </div>
               </section>
 
-              {configGroupsByWorker.map(({ worker, surfaces, jobs }) => (
-                <section className="job-worker-group" key={`${worker.id}-config`}>
-                  <div className="job-worker-head">
-                    <div>
-                      <p className="panel-kicker">{worker.builtIn ? 'Built-in worker' : 'Local worker'}</p>
-                      <h3>{worker.displayName ?? worker.name}</h3>
-                      <span>{worker.id}</span>
-                    </div>
-                    <StatusPill tone={workerHealthTone(worker.healthState)}>
-                      {workerHealthLabel(worker.healthState)}
-                    </StatusPill>
-                  </div>
-
-                  <div className="stack-list compact">
-                    {surfaces.map((surface) => {
-                      const key = configSurfaceKey(worker.id, surface.id);
-                      return (
-                        <button
-                          className={`run-item run-button job-row-button${selectedConfigSurfaceKey === key ? ' selected' : ''}`}
-                          key={key}
-                          type="button"
-                          aria-pressed={selectedConfigSurfaceKey === key}
-                          onClick={() => {
-                            setSelectedCoreConfigKey(null);
-                            setSelectedConfigSurfaceKey(key);
-                            setSelectedConfigJobName(null);
-                          }}
-                        >
-                          <div>
-                            <strong>{surface.label}</strong>
-                            <span>{surface.description}</span>
-                            <span>{surface.path ?? 'dashboard setting'}</span>
-                          </div>
-                          <StatusPill tone="muted">Setting</StatusPill>
-                        </button>
-                      );
-                    })}
-
-                    {jobs.map((job) => (
-                      <button
-                        className={`run-item run-button job-row-button${selectedConfigJob?.name === job.name ? ' selected' : ''}`}
-                        key={`${job.name}-config`}
-                        type="button"
-                        aria-pressed={selectedConfigJob?.name === job.name}
-                        onClick={() => {
-                          setSelectedCoreConfigKey(null);
-                          setSelectedConfigJobName(job.name);
-                          setSelectedConfigSurfaceKey(null);
-                        }}
-                      >
-                        <div>
-                          <strong>{job.label}</strong>
-                          <span>{job.description}</span>
-                          <span>{jobConfigSummary(job)}</span>
-                        </div>
-                        <StatusPill tone="muted">Job</StatusPill>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              ))}
-
-              {configGroupsByWorker.length === 0 ? (
-                <p className="empty-state">No worker-provided custom job settings are currently declared.</p>
-              ) : null}
             </div>
 
             <aside className="queue-detail-column config-detail-column">
@@ -2447,11 +2408,9 @@ export default function App() {
                 <div className="panel-head">
                   <div>
                     <p className="panel-kicker">Configuration</p>
-                    <h2>{selectedCoreConfigKey === 'platform-routing' ? 'Platform routing' : selectedCoreConfigKey === 'embedding-model' ? 'Embedding model' : selectedCoreConfigKey === 'platform-security' ? 'Platform & security' : selectedConfigJob?.label ?? selectedConfigSurface?.surface.label ?? 'No item selected'}</h2>
+                    <h2>{selectedCoreConfigKey === 'platform-routing' ? 'Platform routing' : selectedCoreConfigKey === 'embedding-model' ? 'Embedding model' : selectedCoreConfigKey === 'platform-security' ? 'Platform & security' : 'Platform settings'}</h2>
                   </div>
                   {selectedCoreConfigKey ? <StatusPill tone="muted">Platform</StatusPill> : null}
-                  {selectedConfigJob ? <StatusPill tone="muted">{selectedConfigJob.workerName}</StatusPill> : null}
-                  {selectedConfigSurface ? <StatusPill tone="muted">{selectedConfigSurface.worker.name}</StatusPill> : null}
                 </div>
 
                 {selectedCoreConfigKey === 'platform-routing' ? renderPlatformRoutingConfiguration() : null}
@@ -2459,10 +2418,8 @@ export default function App() {
                   ? (dashboardViews.find((v) => v.kind === 'embedding-config')?.render?.(workerViewContext) ?? null)
                   : null}
                 {selectedCoreConfigKey === 'platform-security' ? renderPlatformSecurityConfiguration() : null}
-                {selectedConfigJob ? renderJobConfiguration(selectedConfigJob) : null}
-                {selectedConfigSurface ? renderWorkerConfigurationSurface(selectedConfigSurface) : null}
-                {!selectedCoreConfigKey && !selectedConfigJob && !selectedConfigSurface ? (
-                  <p className="empty-state">Select a platform setting, worker setting, or configurable job row to edit settings.</p>
+                {!selectedCoreConfigKey ? (
+                  <p className="empty-state">Select a platform setting on the left to configure it. Worker settings are in each worker's Config subtab.</p>
                 ) : null}
               </section>
             </aside>
@@ -2470,7 +2427,112 @@ export default function App() {
         </section>
       ) : null}
 
+      {activeTab === 'config' ? (() => {
+        const hasModel = dashboard.workers.some(
+          (w) => w.kind === 'provider' && w.enabled && w.healthState === 'healthy',
+        ) || dashboard.lmStudio?.running;
+        const hasChannel = dashboard.workers.some((w) => w.kind === 'channel' && w.healthState === 'healthy');
+        const hasEnabledWorker = dashboard.workers.some((w) => w.enabled && w.healthState === 'healthy');
+        const hasRun = dashboard.cron.jobs.some((j) => j.lastStartedAt !== null && j.lastStartedAt !== undefined);
+        const allDone = hasModel && hasChannel && hasEnabledWorker && hasRun;
+        const steps = [
+          { done: hasModel, label: 'Connect a model', detail: 'Configure a model provider — add a cloud API key or start your local AI runtime.', action: () => setActiveTab('config') },
+          { done: hasChannel, label: 'Connect a channel', detail: 'Set up Telegram or Discord so BFrost can reach you.', action: () => setActiveTab('channels') },
+          { done: hasEnabledWorker, label: 'Enable a worker', detail: 'Turn on a worker from the Workers tab — try the News Digest.', action: () => setActiveTab('workers') },
+          { done: hasRun, label: 'Let a job run', detail: 'Trigger a job manually from the Jobs tab, or wait for the scheduler.', action: () => setActiveTab('jobs') },
+        ];
+        return (
+          <section className="panel tab-page">
+            <div className="panel-head">
+              <div>
+                <p className="panel-kicker">Setup</p>
+                <h2>Getting started</h2>
+              </div>
+              {allDone ? <StatusPill tone="good">All done ✓</StatusPill> : <StatusPill tone="info">{steps.filter((s) => s.done).length}/{steps.length} complete</StatusPill>}
+            </div>
+            <div className="detail-body">
+              <ol className="getting-started-list">
+                {steps.map((step, i) => (
+                  <li key={i} className={`getting-started-step ${step.done ? 'done' : ''}`}>
+                    <span className="step-check">{step.done ? '✓' : (i + 1)}</span>
+                    <div>
+                      <strong>{step.label}</strong>
+                      <span className="footnote">{step.detail}</span>
+                    </div>
+                    {!step.done ? (
+                      <button type="button" onClick={step.action}>Go →</button>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+              <div className="panel-actions" style={{ marginTop: '0.75rem' }}>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => setWizardOpen(true)}
+                >
+                  Open setup wizard
+                </button>
+              </div>
+            </div>
+          </section>
+        );
+      })() : null}
+
       {activeWorkerTab ? renderWorkerDashboardView(activeWorkerTab, workerViewContext) : null}
+
+      {activeTab.startsWith('worker-config:') ? (() => {
+        const workerId = activeTab.slice('worker-config:'.length);
+        const group = configGroupsByWorker.find((g) => g.worker.id === workerId);
+        if (!group) return null;
+        const { worker, surfaces, jobs } = group;
+        return (
+          <section className="panel tab-page">
+            <div className="panel-head">
+              <div>
+                <p className="panel-kicker">{worker.builtIn ? 'Built-in worker' : 'Local worker'}</p>
+                <h2>{worker.displayName ?? worker.name} — Config</h2>
+              </div>
+              <StatusPill tone={workerHealthTone(worker.healthState)}>
+                {workerHealthLabel(worker.healthState)}
+              </StatusPill>
+            </div>
+
+            {surfaces.length === 0 && jobs.length === 0 ? (
+              <p className="empty-state">No configurable settings declared for this worker.</p>
+            ) : null}
+
+            {surfaces.map((surface) => (
+              <div key={surface.id} className="detail-panel config-detail-panel" style={{ marginTop: '1rem' }}>
+                <div className="panel-head section-break">
+                  <div>
+                    <p className="panel-kicker">Worker setting</p>
+                    <h2>{surface.label}</h2>
+                    {surface.description ? <p className="footnote">{surface.description}</p> : null}
+                  </div>
+                </div>
+                {renderWorkerConfigurationSurface({ worker, surface })}
+              </div>
+            ))}
+
+            {jobs.map((job) => (
+              <div key={job.name} className="detail-panel config-detail-panel" style={{ marginTop: '1rem' }}>
+                <div className="panel-head section-break">
+                  <div>
+                    <p className="panel-kicker">Job settings</p>
+                    <h2>{job.label}</h2>
+                    {job.description ? <p className="footnote">{job.description}</p> : null}
+                  </div>
+                  <StatusPill tone={job.running ? 'info' : job.lastStatus === 'success' ? 'good' : job.lastStatus === 'error' ? 'error' : 'muted'}>
+                    {job.running ? 'Running' : job.lastStatus === 'idle' ? 'Never run' : job.lastStatus}
+                  </StatusPill>
+                </div>
+                {renderJobConfiguration(job)}
+              </div>
+            ))}
+          </section>
+        );
+      })() : null}
 
       {activeTab === 'workers' ? (
         <section className="panel tab-page">
@@ -2576,67 +2638,13 @@ export default function App() {
         </section>
       ) : null}
 
-      {activeTab === 'system' ? (() => {
-        const hasModel = dashboard.workers.some(
-          (w) => w.kind === 'provider' && w.enabled && w.healthState === 'healthy',
-        ) || dashboard.lmStudio?.running;
-        const hasChannel = dashboard.workers.some((w) => w.kind === 'channel' && w.healthState === 'healthy');
-        const hasEnabledWorker = dashboard.workers.some((w) => w.enabled && w.healthState === 'healthy');
-        const hasRun = dashboard.cron.jobs.some((j) => j.lastStartedAt !== null && j.lastStartedAt !== undefined);
-        const allDone = hasModel && hasChannel && hasEnabledWorker && hasRun;
-        const steps = [
-          { done: hasModel, label: 'Connect a model', detail: 'Configure a model provider — add a cloud API key or start your local AI runtime.', action: () => setActiveTab('config') },
-          { done: hasChannel, label: 'Connect a channel', detail: 'Set up Telegram or Discord so BFrost can reach you.', action: () => setActiveTab('channels') },
-          { done: hasEnabledWorker, label: 'Enable a worker', detail: 'Turn on a worker from the Workers tab — try the News Digest.', action: () => setActiveTab('workers') },
-          { done: hasRun, label: 'Let a job run', detail: 'Trigger a job manually from the Jobs tab, or wait for the scheduler.', action: () => setActiveTab('jobs') },
-        ];
-        return (
-          <section className="panel tab-page">
-            <div className="panel-head">
-              <div>
-                <p className="panel-kicker">Setup</p>
-                <h2>Getting started</h2>
-              </div>
-              {allDone ? <StatusPill tone="good">All done ✓</StatusPill> : <StatusPill tone="info">{steps.filter((s) => s.done).length}/{steps.length} complete</StatusPill>}
-            </div>
-            <div className="detail-body">
-              <ol className="getting-started-list">
-                {steps.map((step, i) => (
-                  <li key={i} className={`getting-started-step ${step.done ? 'done' : ''}`}>
-                    <span className="step-check">{step.done ? '✓' : (i + 1)}</span>
-                    <div>
-                      <strong>{step.label}</strong>
-                      <span className="footnote">{step.detail}</span>
-                    </div>
-                    {!step.done ? (
-                      <button type="button" onClick={step.action}>Go →</button>
-                    ) : null}
-                  </li>
-                ))}
-              </ol>
-              <p className="footnote" style={{ marginTop: '0.75rem' }}>
-                You can return to this checklist any time from the System tab. Nothing is permanent — enable or disable workers freely.
-              </p>
-              <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={() => setWizardOpen(true)}
-                >
-                  Open setup wizard
-                </button>
-              </div>
-            </div>
-          </section>
-        );
-      })() : null}
 
       {activeTab === 'system' ? (
         <section className="panel tab-page">
           <div className="panel-head">
             <div>
               <p className="panel-kicker">System</p>
-              <h2>Runtime readiness <HelpTip>Shows whether BFrost's required services are running and configured — the AI model, any connected channels (Telegram, Discord), and the local database. A yellow "missing" pill means a credential or dependency is not yet set up; click the Config tab to fix it.</HelpTip></h2>
+              <h2>Runtime readiness <HelpTip>Shows whether BFrost's required services are running and configured — the AI model, any connected channels (Telegram, Discord), and the local database. A yellow "missing" pill means a credential or dependency is not yet set up; use the worker's Config subtab in the left panel to fix it.</HelpTip></h2>
             </div>
           </div>
 
@@ -4817,6 +4825,7 @@ function sectionsForTab(tab: DashboardTab): DashboardSectionName[] {
   if (tab === 'chat') return [];
   if (tab === 'config') return ['queue', 'workerData'];
   if (tab === 'workers') return [];
+  if (tab.startsWith('worker-config:')) return ['queue', 'workerData'];
   // Worker-provided tabs may render queue items, events, or worker dashboard slices.
   return ['queue', 'events', 'workerData'];
 }
