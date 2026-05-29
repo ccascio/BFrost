@@ -28,7 +28,39 @@ import { loadQueue, saveQueue, withQueueLock } from './jobs/queue';
 import { recordEventSafe } from './event-log';
 import { getChatModel, isModelProviderConfigured } from './llm';
 import { findModel, getDefaultModel } from './config';
+import { embedText } from './embeddings';
 import { BadRequestError } from './admin-route';
+import { loadKvJson } from './sqlite';
+
+const ADMIN_SETTINGS_STORE_KEY = 'admin.settings';
+
+interface StoredAdminSettings {
+  jobs?: Record<string, { prompt?: string }>;
+}
+
+/**
+ * Read the operator-edited prompt for a job from the Jobs panel. This exposes
+ * the generic job settings contract to local workers without exposing admin
+ * internals or any worker-specific ids.
+ */
+export async function getJobPrompt(jobId: string, fallback = ''): Promise<string> {
+  const stored = await loadKvJson<StoredAdminSettings>(ADMIN_SETTINGS_STORE_KEY);
+  const prompt = stored?.jobs?.[jobId]?.prompt;
+  return typeof prompt === 'string' && prompt.trim() ? prompt : fallback;
+}
+
+/**
+ * Broadcast a message to every configured operator-notification channel
+ * (Telegram / Discord / email / …). This is a *generic* core capability — it
+ * iterates the registered channels and references no specific worker — so it is
+ * safe to expose. Lazily resolved to avoid importing the registry module (a
+ * live-mutator surface) at SDK load; only this one broadcast helper is exposed,
+ * not the registry itself.
+ */
+export function notifyOperatorChannels(text: string): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return (require('./workers/registry') as typeof import('./workers/registry')).notifyOperatorChannels(text);
+}
 
 export const bfrostSdk = {
   // Per-worker private storage
@@ -58,6 +90,10 @@ export const bfrostSdk = {
   getDefaultModel,
   getChatModel,
   isModelProviderConfigured,
+  embedText,
+  getJobPrompt,
+  // Operator notifications (broadcast to all configured channels)
+  notifyOperatorChannels,
   // Errors that admin routes can throw to produce a 400
   BadRequestError,
   // Observability
@@ -87,10 +123,12 @@ export {
   getDefaultModel,
   getChatModel,
   isModelProviderConfigured,
+  embedText,
   recordEventSafe,
 };
 
 export type { ActionClass, ActionState, ActionRequest, ActionResult } from './actions/types';
+export type { EmbeddingResult } from './embeddings';
 export type { ModelOption } from './config';
 export type { QueueItem, QueueItemState } from './jobs/queue';
 export type { WorkerKvStore } from './workers/storage';

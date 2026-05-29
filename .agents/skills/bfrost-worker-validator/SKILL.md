@@ -14,7 +14,7 @@ Accept a worker id, path, package folder, git diff, or repo. If the user is vagu
 - BFrost-Workers package: `packages/<id>/`
 - BFrost-Workers registry entry: `workers/<id>.json`
 - Installed local copy: `../BFrost/workers/local/<id>/` or `workers/local/<id>/`
-- Claude authoring skill: `BFrost/.claude/skills/bfrost-worker-author/SKILL.md`
+- Codex authoring skill: `BFrost/.Codex/skills/bfrost-worker-author/SKILL.md`
 - Codex authoring skill: `~/.codex/skills/bfrost-worker-author/SKILL.md`
 
 Read the relevant authoring skill before judging rules that may have changed.

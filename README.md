@@ -10,7 +10,7 @@ BFrost is a local scheduler and orchestration runtime for AI-driven automations.
 
 Run it on your own machine: model inference, scheduler state, queue state, and the dashboard all stay local. There is no hosted service, no remote loading, no usage tracking. Workers load from directories you control, and your data stays in a SQLite file you own.
 
-**What comes in the box:** The bundled reference workers give you a news-harvesting → research-notes → multi-channel-publishing pipeline out of the box (Telegram two-way chat, Discord notifications, X / WordPress publishing, LM Studio / Ollama / OpenAI / Anthropic model providers). These workers are normal contributors — they use the same contract you use — and you can swap, disable, or replace any of them without touching the core.
+**What comes in the box:** The bundled reference workers give you a news-harvesting → research-notes → multi-channel-publishing pipeline out of the box (Telegram two-way chat, Discord and email notifications, X / WordPress publishing, LM Studio / Ollama / OpenAI / Anthropic model providers). These workers are normal contributors — they use the same contract you use — and you can swap, disable, or replace any of them without touching the core.
 
 ## Dashboard preview
 
@@ -56,7 +56,8 @@ BFrost is published as a **public preview**. The worker-first contract is in pla
 - Core decoupled from built-in worker names (Workstream 1 ✅).
 - Tools, channels, and providers are worker types (Workstream 2 ✅).
 - Shared Item Bus and per-worker storage (Workstream 3 ✅).
-- Local worker execution runtime with TypeScript compile-on-load, lifecycle hooks, dashboard bundles, and a typed `bfrost` SDK (Workstream 4 ✅, minus the sandbox/permission model below).
+- Local worker execution runtime with TypeScript compile-on-load, lifecycle hooks, dashboard bundles, and a typed `bfrost` SDK (Workstream 4 ✅, minus the sandbox scopes below).
+- Permissioned action runtime: file and shell action requests are scope-checked, queued for operator approval with a diff preview, executed, and audited (Workstream 5 ✅, minus the deferred network/credential scopes).
 
 What's new since `v0.1.0`:
 
@@ -71,9 +72,9 @@ What's new since `v0.1.0`:
 
 What still gates a `v1.0.0` tag:
 
-- **Permissioned action runtime** (Workstream 5). Workers can already produce items, run jobs, and surface UIs, but the formal approval queue + per-worker filesystem/network/credential scopes are not yet wired up. Use the existing approval gates on the queue, and keep destructive workers narrow until this lands.
-- **Frontend smoke tests, per-worker metrics, accessibility pass, and guarded SQLite restore tooling** (Workstream 6).
-- **Hosted docs site, scripted demo, Worker Gallery in the dashboard, and a `CONTRIBUTING.md` expansion** (Workstream 7). The browsable documentation at <https://bfrost.net/> already covers getting started, architecture, example workers, and authoring with Claude Code.
+- **Sandbox scopes for worker code** (Workstreams 4–5). The action runtime already enforces filesystem and shell scopes with an approval queue and audit log, but network-domain and credential-scope allowlists are still deferred — and once you enable local worker code it runs with full Node privileges, unsandboxed. Enable only code you trust, and keep destructive workers narrow.
+- **Frontend smoke test for the schema-rendered job form** (Workstream 6) — the last open quality item now that per-worker metrics, the accessibility pass, and guarded SQLite backup/restore have all landed.
+- **Hosted docs site, scripted demo, and a Worker Gallery in the dashboard** (Workstream 7). The browsable documentation at <https://bfrost.net/> already covers getting started, architecture, example workers, and authoring with Claude Code.
 
 The full punch list lives in [`ROADMAP.md`](./ROADMAP.md). Issues, worker proposals, and PRs are welcome.
 
@@ -82,7 +83,7 @@ The full punch list lives in [`ROADMAP.md`](./ROADMAP.md). Issues, worker propos
 - **Worker-first core.** `src/` outside `src/workers/` ships with zero domain knowledge. Even the bundled news, X publisher, and research automations are workers under `src/workers/builtin/`, shipped in the same shape a contributor would author.
 - **Item Bus for cross-worker work.** A producer publishes typed items; one or more consumers subscribe. Adding "publish to Mastodon" is a new consumer worker, not a core change. See [`docs/item-bus.md`](./docs/item-bus.md).
 - **Local-first.** Your data, models, credentials, and run history stay on your machine.
-- **Approval-gated.** Risky actions (posting, file writes, shell commands) are designed to be reviewed before they run.
+- **Approval-gated actions.** File writes and shell commands a worker requests are checked against its declared scopes, queued in the dashboard's Actions tab for you to approve or reject with a diff preview, then audited. (Network and credential scopes are still on the roadmap; enabled worker code itself runs unsandboxed, so only enable code you trust.)
 - **Inspectable.** Every job, queue item, event, and run is durable, attributable, and visible in the dashboard.
 - **Extensible without forks.** New jobs, tools, channels, providers, and publishers ship as workers. Authoring a worker is a manifest, a job runner, a README, and a test. See [`docs/worker-authoring.md`](./docs/worker-authoring.md).
 
@@ -91,11 +92,14 @@ The full punch list lives in [`ROADMAP.md`](./ROADMAP.md). Issues, worker propos
 These workers ship with BFrost and double as worked examples. They use the same contract a contributor uses.
 
 - **`core.news`** — scheduled harvesting with source-quality scoring and near-duplicate detection. Produces `news.article` items.
+- **`core.finance-news`** — scans the web for developments on a watchlist of tickers/companies, optionally AI-filters for relevance, and can alert your channel. Produces `finance.news` items. Informational only — not trading advice.
+- **`core.finance-analyst`** — consumes `finance.news` items and attaches a structured, informational read of likely market impact (direction, magnitude, horizon, confidence, priced-in), optionally delivered to your channel. Not trading advice.
 - **`core.publisher.x`** — consumes `news.article` items and posts to X with approval gating.
 - **`core.research`** — scheduled Markdown research notes synthesised with a local model.
 - **`core.memory`**, **`core.search.google`**, **`core.article-fetch`**, **`core.items.query`** — assistant-tool workers (memory, web search, article reader, bus/run-history inspector).
 - **`core.channels.telegram`** — Telegram channel worker, two-way, with a guided BotFather setup flow.
 - **`core.channels.discord`** — Discord channel worker for operator notifications (send-only in this version), with a guided Developer Portal walkthrough.
+- **`core.channels.email`** — emails you when a job runs, fails, or needs attention, over SMTP with any provider (send-only in this version).
 - **`core.providers.lmstudio`**, **`core.providers.openai`**, **`core.providers.anthropic`** — model provider workers. Local via LM Studio, or cloud via OpenAI / Anthropic API key.
 
 Each has a one-page README in `src/workers/builtin/<id>/README.md` covering what it produces/consumes, which credentials it reads, and operational caveats.
@@ -168,9 +172,10 @@ Open the dashboard at `http://127.0.0.1:3030`.
 
 ### With Claude Code
 
-Two worker-authoring skills ship with the repo under `.claude/skills/`:
+Two worker skills ship with the repo under `.claude/skills/`:
 
-- [`.claude/skills/bfrost-worker-author/`](./.claude/skills/bfrost-worker-author/SKILL.md) — for BFrost installs. Ask Claude to "create a new BFrost worker".
+- [`.claude/skills/bfrost-worker-author/`](./.claude/skills/bfrost-worker-author/SKILL.md) — scaffolds a new worker without touching the core. Ask Claude to "create a new BFrost worker".
+- [`.claude/skills/bfrost-worker-validator/`](./.claude/skills/bfrost-worker-validator/SKILL.md) — reviews a worker against the worker-first contract, manifest/job/dashboard rules, and store-release readiness. Ask Claude to "validate my BFrost worker".
 
 Claude Code loads skills from `.claude/skills/` automatically when you open the repo. Both skills enforce the worker-first contract — core files are off-limits, and a violation surfaces as an explicit contract gap rather than a silent core edit.
 
@@ -196,14 +201,17 @@ Reach for the Item Bus when workers need to talk to each other; reach for worker
 
 From the dashboard you can:
 
+- run the guided first-run setup wizard (model → embeddings → channels → workers → first run → security)
 - enable/disable workers and inspect their health, credentials, and dependencies
-- configure and monitor scheduled jobs
+- configure and monitor scheduled jobs, with one-click recipe presets and preview-before-save schedule edits
 - trigger jobs manually
-- inspect queue pressure and recent digest runs
-- inspect recent operational events
-- manage LM Studio runtime actions
-- switch the default model
-- review configuration and local dependency health
+- review queued worker actions and approve or reject them with a diff preview and audit history
+- track per-worker job metrics — success rate, p50/p95 run duration, last failure — in the Health tab
+- browse and install workers from the Worker Store, or side-load a worker zip
+- create and restore guarded SQLite backups (integrity-checked, with a pre-restore safety copy)
+- inspect queue pressure, recent digest runs, and recent operational events
+- manage LM Studio runtime actions and switch the default model
+- configure model providers, embeddings, and Platform & Security settings (dashboard password, session length, local-code execution, job timeout)
 
 ## Environment notes
 

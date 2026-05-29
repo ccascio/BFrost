@@ -1,13 +1,15 @@
 /**
  * First-run Setup Wizard (LOWCODE_ROADMAP Workstream A).
  *
- * A full-screen overlay that guides first-time users through 6 steps:
+ * A full-screen overlay that guides first-time users through 8 steps:
  *   0  Welcome
  *   1  Pick a model provider (Local / OpenAI / Anthropic)
- *   2  Pick channels (enable channel workers)
- *   3  Pick starter workers
- *   4  Credentials review (unhealthy workers → go to Config)
- *   5  First run (trigger a job, see output)
+ *   2  Embedding model (long-term memory provider/model)
+ *   3  Pick channels (enable channel workers)
+ *   4  Pick starter workers
+ *   5  Credentials review (unhealthy workers → go to Config)
+ *   6  First run (trigger a job, see output)
+ *   7  Platform & security (password, session, local code, job timeout)
  *
  * State is persisted via POST /api/wizard/state so the user can quit and
  * resume.  The wizard auto-opens when wizard.completed === false; it can be
@@ -57,11 +59,22 @@ interface IntegrationStatus {
   label?: string;
 }
 
+interface PlatformSettings {
+  embeddingProvider: string;
+  embeddingModel: string;
+  adminPasswordSet: boolean;
+  localWorkerCodeEnabled: boolean;
+  adminSessionTtlHours: number;
+  jobLlmTimeoutMs: number;
+}
+
 interface DashboardSnapshot {
   workers: WorkerSummary[];
   cron: { jobs: SchedulerJobState[] };
   integrations: Record<string, IntegrationStatus>;
   lmStudio: { running: boolean; loadedModels: string[]; loadedCount: number };
+  platform: PlatformSettings;
+  dependencies?: { embeddingModelReachable?: { ok: boolean } };
 }
 
 export interface WizardProps {
@@ -74,16 +87,18 @@ export interface WizardProps {
   onNavigate: (tab: string) => void;
 }
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 8;
 
 // ── Step labels for the progress bar
 const STEP_LABELS = [
   'Welcome',
   'Model',
+  'Embedding',
   'Channels',
   'Workers',
   'Credentials',
   'First run',
+  'Security',
 ];
 
 // ── Utility: save step progress
@@ -298,6 +313,127 @@ function StepModel({ dashboard, onRefresh }: { dashboard: DashboardSnapshot; onR
       </div>
 
       {error ? <p className="wizard-error">{error}</p> : null}
+    </div>
+  );
+}
+
+function StepEmbedding({ dashboard, onRefresh }: { dashboard: DashboardSnapshot; onRefresh: () => Promise<void> }) {
+  const platform = dashboard.platform;
+  const reachable = dashboard.dependencies?.embeddingModelReachable?.ok ?? false;
+  const [provider, setProvider] = useState<'local' | 'openai'>(
+    platform?.embeddingProvider === 'openai' ? 'openai' : 'local',
+  );
+  const [model, setModel] = useState(platform?.embeddingModel ?? '');
+  const [localModels, setLocalModels] = useState<Array<{ id: string; label: string }>>([]);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Local embedding models are served by the active LM Studio / Ollama runtime. Fetched from
+  // the core endpoint so the wizard never hard-codes a model list (the memory worker owns that).
+  useEffect(() => {
+    if (provider !== 'local') return;
+    let cancelled = false;
+    fetch('/api/dashboard/local-embedding-models', { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : { models: [] }))
+      .then((d: { models?: Array<{ id: string; label: string }> }) => {
+        if (!cancelled) setLocalModels(d.models ?? []);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [provider]);
+
+  const canSave = !!model.trim();
+
+  async function save() {
+    if (!model.trim()) return;
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const res = await fetch('/api/embedding-settings', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, model: model.trim() }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setSaved(true);
+      await onRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="wizard-step-body">
+      <h2>Long-term memory embeddings</h2>
+      <p className="wizard-lead">
+        Workers that remember things turn text into vectors with an embedding model. Pick where those
+        embeddings come from — a local model keeps everything on your machine; OpenAI is faster to set up.
+      </p>
+      {reachable ? (
+        <p className="wizard-status-ok">✓ Current embedding model is reachable ({platform?.embeddingProvider} · {platform?.embeddingModel}).</p>
+      ) : null}
+
+      <label className="wizard-field-label" htmlFor="wizard-embedding-provider">Provider</label>
+      <select
+        id="wizard-embedding-provider"
+        value={provider}
+        onChange={(e) => {
+          setProvider(e.target.value as 'local' | 'openai');
+          setModel('');
+          setSaved(false);
+        }}
+      >
+        <option value="local">Local (LM Studio / Ollama)</option>
+        <option value="openai">OpenAI</option>
+      </select>
+
+      <label className="wizard-field-label" htmlFor="wizard-embedding-model">Model</label>
+      {provider === 'local' ? (
+        localModels.length > 0 ? (
+          <select id="wizard-embedding-model" value={model} onChange={(e) => setModel(e.target.value)}>
+            <option value="">Select a model…</option>
+            {localModels.map((m) => (
+              <option key={m.id} value={m.id}>{m.label}</option>
+            ))}
+          </select>
+        ) : (
+          <>
+            <input
+              id="wizard-embedding-model"
+              type="text"
+              placeholder="e.g. nomic-embed-text"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+            />
+            <p className="wizard-footnote">No local embedding models detected. Load one in LM Studio / Ollama, or type its id.</p>
+          </>
+        )
+      ) : (
+        <>
+          <input
+            id="wizard-embedding-model"
+            type="text"
+            placeholder="e.g. text-embedding-3-small"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+          />
+          <p className="wizard-footnote">Uses your OpenAI API key from the Model step. Requires the embeddings endpoint.</p>
+        </>
+      )}
+
+      <div className="wizard-key-row" style={{ marginTop: '0.75rem' }}>
+        <button type="button" className="primary" disabled={saving || !canSave} onClick={() => void save()}>
+          {saving ? 'Saving…' : 'Save embedding model'}
+        </button>
+      </div>
+      {saved ? <p className="wizard-status-ok">✓ Saved successfully.</p> : null}
+      {error ? <p className="wizard-error">{error}</p> : null}
+      <p className="wizard-footnote">Optional — skip to keep the default. You can change this later from the Config tab.</p>
     </div>
   );
 }
@@ -574,6 +710,154 @@ function StepFirstRun({
   );
 }
 
+function StepSecurity({ dashboard, onRefresh }: { dashboard: DashboardSnapshot; onRefresh: () => Promise<void> }) {
+  const platform = dashboard.platform;
+  const [password, setPassword] = useState('');
+  const [ttl, setTtl] = useState(String(platform?.adminSessionTtlHours ?? 12));
+  const [jobTimeout, setJobTimeout] = useState(String(platform?.jobLlmTimeoutMs ?? 120000));
+  const [localCode, setLocalCode] = useState(platform?.localWorkerCodeEnabled ?? false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [savedSettings, setSavedSettings] = useState(false);
+  const [passwordSet, setPasswordSet] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const ttlNum = Number(ttl);
+  const timeoutNum = Number(jobTimeout);
+
+  async function saveSettings() {
+    setSavingSettings(true);
+    setError(null);
+    setSavedSettings(false);
+    try {
+      const body: Record<string, unknown> = { localWorkerCodeEnabled: localCode };
+      if (Number.isFinite(ttlNum) && ttlNum > 0) body.adminSessionTtlHours = ttlNum;
+      if (Number.isFinite(timeoutNum) && timeoutNum > 0) body.jobLlmTimeoutMs = timeoutNum;
+      const res = await fetch('/api/core-settings', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setSavedSettings(true);
+      await onRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
+  async function savePassword() {
+    if (password.trim().length < 4) return;
+    setSavingPassword(true);
+    setError(null);
+    try {
+      // Setting a password clears every session, so the next request needs a fresh login.
+      // Persist wizard completion FIRST (while still authenticated) so the wizard doesn't
+      // reopen after the operator logs back in.
+      await fetch('/api/wizard/state', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completed: true }),
+      }).catch(() => undefined);
+      const res = await fetch('/api/core-settings', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminPassword: password.trim() }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setPasswordSet(true);
+      setPassword('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSavingPassword(false);
+    }
+  }
+
+  return (
+    <div className="wizard-step-body">
+      <h2>Platform &amp; security</h2>
+      <p className="wizard-lead">
+        BFrost runs locally and binds to <code>127.0.0.1</code> by default. These controls protect the
+        dashboard and govern how workers run. All are optional — sensible defaults already apply.
+      </p>
+
+      <label className="wizard-field-label" htmlFor="wizard-admin-password">
+        Dashboard password {platform?.adminPasswordSet ? '(currently set)' : '(not set — dashboard is open)'}
+      </label>
+      <div className="wizard-key-row">
+        <input
+          id="wizard-admin-password"
+          type="password"
+          placeholder={platform?.adminPasswordSet ? 'Enter a new password to change it' : 'Set a password to require login'}
+          value={password}
+          autoComplete="new-password"
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        <button
+          type="button"
+          className="primary"
+          disabled={savingPassword || password.trim().length < 4}
+          onClick={() => void savePassword()}
+        >
+          {savingPassword ? 'Saving…' : 'Set password'}
+        </button>
+      </div>
+      {passwordSet ? (
+        <p className="wizard-status-ok">✓ Password set. You'll be asked to log in again when you close the wizard.</p>
+      ) : (
+        <p className="wizard-footnote">Minimum 4 characters. Setting it logs out all sessions — do this last.</p>
+      )}
+
+      <label className="wizard-field-label" htmlFor="wizard-session-ttl">Login session length (hours)</label>
+      <input
+        id="wizard-session-ttl"
+        type="number"
+        min={1}
+        value={ttl}
+        onChange={(e) => setTtl(e.target.value)}
+      />
+
+      <label className="wizard-field-label" htmlFor="wizard-job-timeout">Job model timeout (ms)</label>
+      <input
+        id="wizard-job-timeout"
+        type="number"
+        min={1}
+        value={jobTimeout}
+        onChange={(e) => setJobTimeout(e.target.value)}
+      />
+      <p className="wizard-footnote">Maximum time a scheduled job's model call may run before it is aborted.</p>
+
+      <label className="checkbox-row" htmlFor="wizard-local-code" style={{ marginTop: '0.75rem' }}>
+        <input
+          id="wizard-local-code"
+          type="checkbox"
+          checked={localCode}
+          onChange={(e) => setLocalCode(e.target.checked)}
+        />
+        Allow local worker code execution
+      </label>
+      <p className="wizard-footnote">
+        Leave off (recommended) unless you run local workers that ship executable code you trust. Built-in
+        and manifest-only workers always load.
+      </p>
+
+      <div className="wizard-key-row" style={{ marginTop: '0.75rem' }}>
+        <button type="button" className="primary" disabled={savingSettings} onClick={() => void saveSettings()}>
+          {savingSettings ? 'Saving…' : 'Save settings'}
+        </button>
+      </div>
+      {savedSettings ? <p className="wizard-status-ok">✓ Settings saved.</p> : null}
+      {error ? <p className="wizard-error">{error}</p> : null}
+    </div>
+  );
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Main Wizard component
 // ────────────────────────────────────────────────────────────────────────────
@@ -712,10 +996,12 @@ export function Wizard({ dashboard, onDismiss, onComplete, onRefreshDashboard, o
         <div className="wizard-content" aria-live="polite" aria-atomic="false">
           {step === 0 && <StepWelcome />}
           {step === 1 && <StepModel dashboard={dashboard} onRefresh={onRefreshDashboard} />}
-          {step === 2 && <StepChannels dashboard={dashboard} onRefresh={onRefreshDashboard} />}
-          {step === 3 && <StepWorkers dashboard={dashboard} onRefresh={onRefreshDashboard} />}
-          {step === 4 && <StepCredentials dashboard={dashboard} onNavigate={handleNavigate} />}
-          {step === 5 && <StepFirstRun dashboard={dashboard} onRefresh={onRefreshDashboard} />}
+          {step === 2 && <StepEmbedding dashboard={dashboard} onRefresh={onRefreshDashboard} />}
+          {step === 3 && <StepChannels dashboard={dashboard} onRefresh={onRefreshDashboard} />}
+          {step === 4 && <StepWorkers dashboard={dashboard} onRefresh={onRefreshDashboard} />}
+          {step === 5 && <StepCredentials dashboard={dashboard} onNavigate={handleNavigate} />}
+          {step === 6 && <StepFirstRun dashboard={dashboard} onRefresh={onRefreshDashboard} />}
+          {step === 7 && <StepSecurity dashboard={dashboard} onRefresh={onRefreshDashboard} />}
         </div>
 
         {/* Footer navigation */}
