@@ -1697,13 +1697,14 @@ export default function App() {
     ? dashboard.cron.runs.filter((run) => run.job === selectedJob.name)
     : [];
   const jobsByWorker = dashboard.workers
+    .filter((worker) => worker.enabled)
     .map((worker) => ({
       worker,
       jobs: dashboard.cron.jobs.filter((job) => job.workerId === worker.id),
     }))
     .filter((group) => group.jobs.length > 0);
   const configGroupsByWorker = dashboard.workers
-    .filter((worker) => worker.kind !== 'channel') // channel workers have their own Channels tab
+    .filter((worker) => worker.enabled && worker.kind !== 'channel')
     .map((worker) => ({
       worker,
       surfaces: worker.dashboard.settings.filter((surface) => surface.tab === 'config'),
@@ -2118,7 +2119,7 @@ export default function App() {
                 </StatusPill>
               </div>
               <div className="stack-list compact">
-                {dashboard.workers.map((worker) => (
+                {dashboard.workers.filter((w) => w.enabled).map((worker) => (
                   <div className="summary-row" key={`${worker.id}-overview`}>
                     <div>
                       <strong>{worker.displayName ?? worker.name}</strong>
@@ -3550,7 +3551,7 @@ export default function App() {
   }
 
   function renderChannelsTab() {
-    const channelWorkers = dashboard!.workers.filter((w) => w.kind === 'channel');
+    const channelWorkers = dashboard!.workers.filter((w) => w.kind === 'channel' && w.enabled);
 
     if (channelWorkers.length === 0) {
       return (

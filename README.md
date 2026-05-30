@@ -24,6 +24,14 @@ BFrost ships with a local dashboard for the whole worker lifecycle: pick models,
   <em>The overview keeps model selection, runtime controls, worker health, and recent operational events in one place.</em>
 </p>
 
+<p align="center">
+  <img src="assets/screenshots/chat-dashboard.jpeg" alt="BFrost dashboard chat showing natural-language assistant prompts, worker-specific prompt cards, and the message composer" />
+</p>
+
+<p align="center">
+  <em>Dashboard chat lets you ask about jobs, queue items, models, and worker actions in plain language.</em>
+</p>
+
 <table>
   <tr>
     <td width="50%">
