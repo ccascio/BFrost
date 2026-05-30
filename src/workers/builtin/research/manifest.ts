@@ -15,6 +15,18 @@ export const researchWorker: WorkerManifest = {
   version: '0.1.0',
   description: 'Creates durable Markdown research notes from configured topics.',
   tagline: 'Writes a Markdown research note on each topic you care about, on a schedule. Notes are saved locally so you can read, edit, and keep them.',
+  chatPrompts: [
+    {
+      label: 'Run research',
+      description: 'Start the personal research job now.',
+      prompt: 'Run my personal research job now and summarize the note when it finishes.',
+    },
+    {
+      label: 'Recent notes',
+      description: 'Review generated research output.',
+      prompt: 'What research notes were generated recently?',
+    },
+  ],
   builtIn: true,
   deletable: true,
   requiredDependencies: [

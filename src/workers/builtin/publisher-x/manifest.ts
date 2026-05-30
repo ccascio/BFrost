@@ -15,6 +15,18 @@ export const xPublisherWorker: WorkerManifest = {
   version: '0.1.0',
   description: 'Selects approved queue items and drafts or publishes X posts.',
   tagline: 'Turns digest items you have approved into X posts. Drafts go out only after you say yes — nothing is published behind your back.',
+  chatPrompts: [
+    {
+      label: 'Ready for X',
+      description: 'Find approved items that could become posts.',
+      prompt: 'Show me approved queue items that are ready for the X publisher.',
+    },
+    {
+      label: 'Draft post',
+      description: 'Run the publisher job with approval still in place.',
+      prompt: 'Run the X publisher now and show me the draft before anything posts.',
+    },
+  ],
   builtIn: true,
   deletable: true,
   requiredCredentials: [

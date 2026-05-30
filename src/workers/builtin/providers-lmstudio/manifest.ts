@@ -10,6 +10,13 @@ export const lmStudioProviderWorker: WorkerManifest = {
   description:
     'Runs and serves local OpenAI-compatible chat models through the LM Studio CLI and HTTP server.',
   tagline: 'Runs AI models on your own computer through LM Studio — no API keys, no monthly bill, your data never leaves the machine.',
+  chatPrompts: [
+    {
+      label: 'Model status',
+      description: 'Check the local runtime and loaded models.',
+      prompt: 'Is LM Studio running, and what local models are loaded?',
+    },
+  ],
   builtIn: true,
   kind: 'provider',
   requiredDependencies: [

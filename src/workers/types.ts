@@ -38,6 +38,12 @@ export interface WorkerManifest {
    * worker does for them, not how it works internally.
    */
   tagline?: string;
+  /**
+   * Natural-language requests this worker contributes to dashboard chat's welcome screen.
+   * The core UI treats these as opaque examples: clicking one fills the chat composer,
+   * and the assistant/tool registry decides how to handle the request.
+   */
+  chatPrompts?: WorkerChatPromptExample[];
   owner?: string;
   builtIn: boolean;
   /**
@@ -87,6 +93,12 @@ export interface WorkerManifest {
    * titled, readable results instead of raw field dumps.
    */
   summarizeForAssistant?: (item: Record<string, unknown>) => string;
+}
+
+export interface WorkerChatPromptExample {
+  label: string;
+  description: string;
+  prompt: string;
 }
 
 /**

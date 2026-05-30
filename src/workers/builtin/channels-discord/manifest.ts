@@ -11,6 +11,13 @@ export const discordChannelWorker: WorkerManifest = {
     'Operator notifications to a Discord channel. Send-only in this version — receives messages is not yet implemented.',
   tagline:
     'Have BFrost ping a Discord channel when a job runs, fails, or needs your attention.',
+  chatPrompts: [
+    {
+      label: 'Discord setup',
+      description: 'Check whether Discord notifications are ready.',
+      prompt: 'Is Discord configured for BFrost notifications?',
+    },
+  ],
   builtIn: true,
   kind: 'channel',
   requiredCredentials: [

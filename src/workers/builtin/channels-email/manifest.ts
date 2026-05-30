@@ -9,6 +9,13 @@ export const emailChannelWorker: WorkerManifest = {
   version: '0.1.0',
   description: 'Send operator notifications via SMTP. Connect-flow auto-detects Gmail, Fastmail, iCloud, and Outlook settings.',
   tagline: 'Have BFrost email you when a job runs, fails, or needs your attention — works with any email provider.',
+  chatPrompts: [
+    {
+      label: 'Email setup',
+      description: 'Check whether email notifications are ready.',
+      prompt: 'Is email configured for BFrost notifications?',
+    },
+  ],
   builtIn: true,
   kind: 'channel',
   requiredCredentials: [

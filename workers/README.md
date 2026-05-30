@@ -39,6 +39,7 @@ Optional fields:
 - `backendEntrypoint`: experimental relative path to a future backend module file
 - `requiredCredentials`, `optionalCredentials`: health requirements keyed to BFrost health checks
 - `requiredDependencies`, `optionalDependencies`: local tool requirements keyed to BFrost health checks
+- `chatPrompts`: natural-language example requests shown as buttons on the dashboard chat welcome screen
 - `ownedSettings`: persisted settings or state the worker owns
 - `dashboard.settings`: dashboard settings surfaces the worker owns
 - `dashboard.routes`: dashboard/API routes or dashboard tabs the worker uses

@@ -295,6 +295,12 @@ export const WorkerDashboardManifestSchema = z.object({
   routes: z.array(WorkerDashboardSurfaceSchema),
 }).strict();
 
+export const WorkerChatPromptExampleSchema = z.object({
+  label: z.string(),
+  description: z.string(),
+  prompt: z.string(),
+}).strict();
+
 export const WorkerSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -302,6 +308,7 @@ export const WorkerSummarySchema = z.object({
   version: z.string(),
   description: z.string(),
   tagline: z.string().optional(),
+  chatPrompts: z.array(WorkerChatPromptExampleSchema),
   bfrostEngineRange: z.string().optional(),
   builtIn: z.boolean(),
   /** True when the built-in worker can be soft-deleted and restored from the store. */

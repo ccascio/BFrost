@@ -11,6 +11,13 @@ export const openaiProviderWorker: WorkerManifest = {
     'Serves OpenAI chat models (GPT family) through the OpenAI HTTP API. Requires an API key.',
   tagline:
     'Use your OpenAI account to power BFrost. Bring an API key and pick any GPT model — no local install required.',
+  chatPrompts: [
+    {
+      label: 'OpenAI health',
+      description: 'Check whether the cloud provider is configured.',
+      prompt: 'Is the OpenAI provider configured and available for chat?',
+    },
+  ],
   builtIn: true,
   kind: 'provider',
   requiredCredentials: [

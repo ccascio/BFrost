@@ -22,6 +22,12 @@ const OwnedSettingSchema = z.object({
   dashboardTarget: z.string().optional(),
 }).strict();
 
+const ChatPromptSchema = z.object({
+  label: z.string().min(1),
+  description: z.string().min(1),
+  prompt: z.string().min(1),
+}).strict();
+
 const DashboardFieldSchema = z.discriminatedUnion('type', [
   z.object({
     key: z.string().min(1),
@@ -116,6 +122,7 @@ const LocalWorkerManifestSchema = z.object({
   name: z.string().min(1),
   version: z.string().min(1),
   description: z.string().min(1),
+  chatPrompts: z.array(ChatPromptSchema).optional(),
   owner: z.string().optional(),
   kind: z.enum(['feature', 'channel', 'provider']).optional(),
   /** Language the backend is authored in. Defaults to "javascript". */

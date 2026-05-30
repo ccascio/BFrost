@@ -11,6 +11,18 @@ export const searchGoogleWorker: WorkerManifest = {
   description:
     'Provides Google Custom Search to the assistant and to other workers that need web search.',
   tagline: 'Gives the assistant and other workers a way to look things up on the web using your Google Custom Search account.',
+  chatPrompts: [
+    {
+      label: 'Web lookup',
+      description: 'Ask the assistant to search for current information.',
+      prompt: 'Search the web for the latest BFrost-related AI operations patterns and summarize the useful results.',
+    },
+    {
+      label: 'Source check',
+      description: 'Find sources before acting on a topic.',
+      prompt: 'Search for reliable sources about local-first AI dashboards and list the best links.',
+    },
+  ],
   builtIn: true,
   requiredCredentials: [
     { key: 'googleSearchConfigured', label: 'Google Search credentials', settingsTarget: 'health-google' },

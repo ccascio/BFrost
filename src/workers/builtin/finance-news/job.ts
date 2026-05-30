@@ -27,7 +27,7 @@ const ADMIN_SETTINGS_STORE_KEY = 'admin.settings';
 const JOB_ID = 'finance-news-scan';
 
 const ARTICLE_FETCH_CONCURRENCY = 4;
-const LLM_EXCERPT_CHARS = 1_000; // per the authoring guide: cap excerpts so the prompt fits the context window
+const LLM_EXCERPT_CHARS = 2_000; // cap excerpts so prompts fit while preserving enough article body for relevance
 const ARTICLE_FETCH_CHARS = 4_000; // full text kept in payload for downstream consumers
 
 /** News categories. Each maps to a group of search keywords OR'd into the query. */
@@ -269,7 +269,9 @@ export async function runFinanceNewsScan(
     let fullText = result.snippet ?? '';
     try {
       const article = await fetchArticle(result.link, { maxExtractedTextChars: ARTICLE_FETCH_CHARS });
-      if (article?.fetched && article.content) fullText = article.content;
+      if (article?.fetched && article.content) {
+        fullText = buildFinanceArticleText(result, article.title, article.description, article.content);
+      }
     } catch {
       // keep the snippet on fetch failure
     }
@@ -343,6 +345,22 @@ export async function runFinanceNewsScan(
     summary: `Finance news: published ${kept.length} item(s) for ${params.watchlist.length} name(s)${filtered}.`,
     itemCount: kept.length,
   };
+}
+
+function buildFinanceArticleText(
+  result: SearchResult,
+  articleTitle: string,
+  articleDescription: string,
+  articleContent: string,
+): string {
+  const parts = [
+    articleTitle && articleTitle !== result.title ? articleTitle : result.title,
+    articleDescription || result.snippet || '',
+    articleContent,
+  ]
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return [...new Set(parts)].join('\n\n').slice(0, ARTICLE_FETCH_CHARS);
 }
 
 async function notifyRelevant(

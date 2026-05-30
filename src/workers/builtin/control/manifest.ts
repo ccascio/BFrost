@@ -20,6 +20,23 @@ export const controlWorker: WorkerManifest = {
   description: 'Assistant tools that map natural-language commands to BFrost dashboard actions.',
   tagline:
     'Tell the assistant to enable the news digest at 8 am, run the research job now, or disable a worker — and it just works.',
+  chatPrompts: [
+    {
+      label: 'Active jobs',
+      description: 'List what is scheduled and enabled.',
+      prompt: 'Which jobs are enabled right now, and when will they run next?',
+    },
+    {
+      label: 'Run a job',
+      description: 'Kick off a scheduler job immediately.',
+      prompt: 'Run the news digest job now.',
+    },
+    {
+      label: 'Change schedule',
+      description: 'Update a job schedule from natural language.',
+      prompt: 'Schedule the personal research job for Mondays at 7 AM.',
+    },
+  ],
   builtIn: true,
   jobs: [],
   tools: [

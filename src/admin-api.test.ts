@@ -229,6 +229,13 @@ test('dashboard response schema accepts the control-room payload shape', () => {
         name: 'X Publisher',
         version: '0.1.0',
         description: 'Selects approved queue items and drafts or publishes X posts.',
+        chatPrompts: [
+          {
+            label: 'Ready for X',
+            description: 'Find approved items that could become posts.',
+            prompt: 'Show me approved queue items that are ready for the X publisher.',
+          },
+        ],
         builtIn: true,
         kind: 'feature',
         enabled: true,

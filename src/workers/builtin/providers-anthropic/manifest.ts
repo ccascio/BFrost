@@ -11,6 +11,13 @@ export const anthropicProviderWorker: WorkerManifest = {
     'Serves Anthropic Claude chat models through the Anthropic HTTP API. Requires an API key.',
   tagline:
     'Use your Anthropic account to power BFrost. Bring an API key and pick any Claude model — no local install required.',
+  chatPrompts: [
+    {
+      label: 'Anthropic health',
+      description: 'Check whether the cloud provider is configured.',
+      prompt: 'Is the Anthropic provider configured and available for chat?',
+    },
+  ],
   builtIn: true,
   kind: 'provider',
   requiredCredentials: [

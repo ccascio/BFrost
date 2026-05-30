@@ -22,7 +22,7 @@ const CONSUMER_ID = 'core.finance-analyst';
 const SUBSCRIBES_TO = 'finance.news';
 const JOB_ID = 'finance-analysis';
 const ADMIN_SETTINGS_STORE_KEY = 'admin.settings';
-const LLM_EXCERPT_CHARS = 1_000;
+const LLM_EXCERPT_CHARS = 2_500;
 
 export const INVESTOR_LENSES = [
   { value: 'none', label: 'No lens (balanced)' },

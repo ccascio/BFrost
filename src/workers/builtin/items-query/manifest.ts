@@ -12,6 +12,23 @@ export const itemsQueryWorker: WorkerManifest = {
     'Read-only assistant tools that query the Item Bus and recent scheduler runs so the assistant can answer questions like "what are the latest news?" or "did the research job run today?".',
   tagline:
     'Lets the assistant look up what is in your queue and what your workers have done recently — so chat questions about news, runs, and progress actually get answered.',
+  chatPrompts: [
+    {
+      label: 'Queue summary',
+      description: 'Summarize recent Item Bus activity.',
+      prompt: 'Show me the newest items in the queue and group them by state.',
+    },
+    {
+      label: 'Needs attention',
+      description: 'Find failed, rejected, or stuck work.',
+      prompt: 'What queue items or recent runs need my attention?',
+    },
+    {
+      label: 'Run history',
+      description: 'Review recent scheduler outcomes.',
+      prompt: 'What were the last 10 job runs and did any of them fail?',
+    },
+  ],
   builtIn: true,
   jobs: [],
   tools: [

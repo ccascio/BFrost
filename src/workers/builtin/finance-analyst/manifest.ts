@@ -15,6 +15,18 @@ export const financeAnalystWorker: WorkerManifest = {
   description: 'Reads finance.news items and attaches a structured, informational read of the likely market impact.',
   tagline:
     'Reads the finance news collected for your watchlist and writes a short, sober take on each — likely direction, size, horizon, confidence, and whether it is already priced in. Informational only, never buy/sell advice.',
+  chatPrompts: [
+    {
+      label: 'Analyze finance news',
+      description: 'Run analysis for pending finance.news items.',
+      prompt: 'Analyze pending finance news now and summarize the reads.',
+    },
+    {
+      label: 'Latest reads',
+      description: 'Review recent finance analysis output.',
+      prompt: 'Show me the latest finance analyst reads with confidence and direction.',
+    },
+  ],
   builtIn: true,
   deletable: true,
   dashboard: {

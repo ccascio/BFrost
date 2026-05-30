@@ -33,6 +33,18 @@ export const newsWorker: WorkerManifest = {
   version: '0.1.0',
   description: 'Collects, evaluates, deduplicates, and queues news digest items.',
   tagline: 'Pulls articles from sources you choose, scores them for quality, and queues a short digest you can review before anything else uses it.',
+  chatPrompts: [
+    {
+      label: 'Run news',
+      description: 'Start the digest job now.',
+      prompt: 'Run the news digest now and tell me what gets queued.',
+    },
+    {
+      label: 'Digest status',
+      description: 'Check recent digest runs and queue output.',
+      prompt: 'How did the last news digest run go, and what articles did it add?',
+    },
+  ],
   builtIn: true,
   deletable: true,
   requiredDependencies: [

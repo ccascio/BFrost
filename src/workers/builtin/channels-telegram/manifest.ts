@@ -9,6 +9,13 @@ export const telegramChannelWorker: WorkerManifest = {
   version: '0.1.0',
   description: 'Reach the BFrost assistant from a Telegram bot.',
   tagline: 'Chat with your BFrost assistant from Telegram — text, voice notes, and photos all work.',
+  chatPrompts: [
+    {
+      label: 'Telegram setup',
+      description: 'Check whether Telegram is ready.',
+      prompt: 'Is Telegram configured, and what do I need to do to finish setup?',
+    },
+  ],
   builtIn: true,
   kind: 'channel',
   requiredCredentials: [

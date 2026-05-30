@@ -131,7 +131,9 @@ export function Sidebar<T extends string>({
                     <span className="sidebar-item-end">
                       {typeof entry.count === 'number' ? <strong>{entry.count}</strong> : null}
                       {isParent && !collapsed ? (
-                        <span className={`sidebar-chevron${isExpanded ? ' open' : ''}`} aria-hidden="true">›</span>
+                        <span className={`sidebar-chevron${isExpanded ? ' open' : ''}`} aria-hidden="true">
+                          <Icon name="chevron-right" />
+                        </span>
                       ) : null}
                     </span>
                   </button>
@@ -152,6 +154,16 @@ export function Sidebar<T extends string>({
         <Icon name={collapsed ? 'chevron-right' : 'chevron-left'} />
         <span>{collapsed ? 'Expand' : 'Collapse'}</span>
       </button>
+
+      {/* Rail: thin right-edge strip that toggles the sidebar on click */}
+      <button
+        className="sidebar-rail"
+        type="button"
+        tabIndex={-1}
+        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        onClick={onToggleCollapsed}
+      />
     </aside>
   );
 }

@@ -10,6 +10,18 @@ export const memoryWorker: WorkerManifest = {
   version: '0.1.0',
   description: 'Long-term assistant memory backed by local embeddings.',
   tagline: 'Lets the assistant remember things you tell it across conversations. Memories stay on your machine.',
+  chatPrompts: [
+    {
+      label: 'Remember preference',
+      description: 'Save an operating preference.',
+      prompt: 'Remember that I prefer short daily digests with sources grouped at the end.',
+    },
+    {
+      label: 'Recall memory',
+      description: 'Search saved assistant memory.',
+      prompt: 'What do you remember about how I like BFrost reports formatted?',
+    },
+  ],
   builtIn: true,
   // The embedding endpoint is *needed* when saveMemory / recallMemory actually run, but it
   // does not have to be reachable for the worker to be enabled and the assistant tools to

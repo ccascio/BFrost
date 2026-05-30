@@ -1284,7 +1284,11 @@ function workerCatalog(localWorkers: DiscoveredLocalWorker[]): Map<string, Catal
     catalog.set(
       worker.manifest.id,
       loaded
-        ? { ...loaded, sourcePath: worker.sourcePath }
+        ? {
+            ...loaded,
+            chatPrompts: loaded.chatPrompts ?? worker.manifest.chatPrompts,
+            sourcePath: worker.sourcePath,
+          }
         : { ...worker.manifest, sourcePath: worker.sourcePath },
     );
   }
@@ -1708,6 +1712,7 @@ function listWorkerSummaries(
       version: worker.version,
       description: worker.description,
       tagline: worker.tagline,
+      chatPrompts: worker.chatPrompts ?? [],
       bfrostEngineRange: worker.bfrostEngineRange,
       builtIn: worker.builtIn,
       deletable: worker.deletable ?? false,

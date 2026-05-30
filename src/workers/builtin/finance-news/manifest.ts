@@ -19,6 +19,18 @@ export const financeNewsWorker: WorkerManifest = {
   description: 'Scans the web for developments on a watchlist of tickers/companies and queues finance.news items.',
   tagline:
     'Follows the companies and themes you care about, optionally has the AI keep only what is materially relevant, and can ping your channel when something matters. Informational only — never trading advice.',
+  chatPrompts: [
+    {
+      label: 'Scan watchlist',
+      description: 'Run the finance news intake job now.',
+      prompt: 'Run the finance news scan now and summarize any new watchlist items.',
+    },
+    {
+      label: 'Latest finance news',
+      description: 'Review queued finance.news items.',
+      prompt: 'Show me the latest finance news items in the queue.',
+    },
+  ],
   builtIn: true,
   deletable: true,
   requiredDependencies: [
