@@ -236,6 +236,7 @@ Before publishing or sharing a branch, check that `data/`, `logs/`, `models/`, `
 - [`workers/README.md`](./workers/README.md) — manifest contract reference.
 - [`ROADMAP.md`](./ROADMAP.md) — evolution plan and current workstreams.
 - [`CONTRIBUTING.md`](./CONTRIBUTING.md) — contributor setup and code style.
+- [`GUI_ANIMATION_ROADMAP.md`](./GUI_ANIMATION_ROADMAP.md) — dashboard and website polish plan inspired by Animate UI patterns.
 - [`SECURITY.md`](./SECURITY.md), [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) — project policies.
 
 ## License

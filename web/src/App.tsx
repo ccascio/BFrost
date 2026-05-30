@@ -3178,7 +3178,7 @@ export default function App() {
         ))}
 
         <div className="panel-actions wrap">
-          {(item.state === 'queued' || item.state === 'failed') ? (
+          {(item.state === 'queued' || item.state === 'failed' || item.state === 'rejected') ? (
             <button
               className="primary"
               disabled={busyKey === `approve-${item.id}`}

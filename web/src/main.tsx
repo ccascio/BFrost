@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import * as jsxRuntime from 'react/jsx-runtime';
 import App from './App';
+import { UiDemo } from './ui';
 import { registerDashboardView, unregisterDashboardViewsForWorker } from './workers/registry';
 import './styles.css';
 
@@ -31,6 +32,6 @@ window.bfrost = {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    {new URLSearchParams(window.location.search).has('ui-demo') ? <UiDemo /> : <App />}
   </React.StrictMode>,
 );

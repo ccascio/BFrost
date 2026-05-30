@@ -124,7 +124,7 @@ export function createQueueItemId(item: Pick<z.infer<typeof RawQueueItemSchema>,
 
 export function approveQueueItem(queue: QueueItem[], id: string, nowIso = new Date().toISOString()): QueueItem {
   const target = findQueueItem(queue, id);
-  if (target.state !== 'queued' && target.state !== 'failed') {
+  if (target.state !== 'queued' && target.state !== 'failed' && target.state !== 'rejected') {
     throw new Error(`Cannot approve an item in ${target.state} state.`);
   }
 

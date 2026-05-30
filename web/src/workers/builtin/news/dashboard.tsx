@@ -242,22 +242,22 @@ export const dashboardView: WorkerDashboardViewDefinition = {
                       >
                         Details
                       </button>
+                      {item.state === 'queued' || item.state === 'failed' || item.state === 'rejected' ? (
+                        <button
+                          className="primary"
+                          disabled={busyKey === `approve-${item.id}`}
+                          onClick={() => void updateQueueItem(item.id, 'approve')}
+                        >
+                          Approve
+                        </button>
+                      ) : null}
                       {item.state === 'queued' || item.state === 'failed' ? (
-                        <>
-                          <button
-                            className="primary"
-                            disabled={busyKey === `approve-${item.id}`}
-                            onClick={() => void updateQueueItem(item.id, 'approve')}
-                          >
-                            Approve
-                          </button>
-                          <button
-                            disabled={busyKey === `reject-${item.id}`}
-                            onClick={() => void updateQueueItem(item.id, 'reject')}
-                          >
-                            Reject
-                          </button>
-                        </>
+                        <button
+                          disabled={busyKey === `reject-${item.id}`}
+                          onClick={() => void updateQueueItem(item.id, 'reject')}
+                        >
+                          Reject
+                        </button>
                       ) : null}
                       {item.state === 'approved' ? (
                         <button
