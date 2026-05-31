@@ -7,4 +7,5 @@ export { Sheet } from './Sheet';
 export { NotificationStack, type NotificationItem, type NotificationTone } from './NotificationStack';
 export { ManagementBar } from './ManagementBar';
 export { CodeTabs, type CodeTab } from './CodeTabs';
+export { PreviewLinkCard } from './PreviewLinkCard';
 export { UiDemo } from './UiDemo';

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import type { ChangeEventHandler } from 'react';
+import { Icon } from './icons';
+import { CopyButton, NotificationStack, Progress } from './ui';
 
 interface AppError {
   friendly: string;
@@ -20,6 +22,7 @@ interface TopBarProps {
   pinBusy: boolean;
   authEnabled: boolean;
   logoutBusy: boolean;
+  onOpenNavigation: () => void;
   onModelChange: ChangeEventHandler<HTMLSelectElement>;
   onSaveModel: () => void;
   onTogglePin: () => void;
@@ -41,6 +44,7 @@ export function TopBar({
   pinBusy,
   authEnabled,
   logoutBusy,
+  onOpenNavigation,
   onModelChange,
   onSaveModel,
   onTogglePin,
@@ -48,13 +52,14 @@ export function TopBar({
   onLogout,
 }: TopBarProps) {
   const [showDetail, setShowDetail] = useState(false);
+  const [dismissedNotice, setDismissedNotice] = useState<string | null>(null);
 
   // Reset detail panel when error changes
   const errorKey = error?.friendly ?? '';
 
-  function copyDiagnostic() {
+  function diagnosticBundle() {
     if (!error) return;
-    const bundle = JSON.stringify({
+    return JSON.stringify({
       timestamp: new Date().toISOString(),
       error: {
         friendly: error.friendly,
@@ -63,11 +68,59 @@ export function TopBar({
       bfrost: { adminUrl, pid },
       browser: navigator.userAgent,
     }, null, 2);
-    void navigator.clipboard.writeText(bundle);
   }
+
+  const busyLabel =
+    modelBusy ? 'Saving model preference' :
+    pinBusy ? selectedModelIsPinned ? 'Unloading local model' : 'Loading local model' :
+    logoutBusy ? 'Signing out' :
+    null;
+  const promotedNoticeTone = promotedNoticeFor(notice);
+  const notificationItems = [
+    promotedNoticeTone && dismissedNotice !== notice ? {
+      id: 'topbar-notice',
+      tone: promotedNoticeTone,
+      title: notice,
+    } : null,
+    error ? {
+      id: 'topbar-error',
+      tone: 'error' as const,
+      title: error.friendly,
+      description: error.detail && showDetail ? (
+        <pre className="error-toast-detail">{error.detail}</pre>
+      ) : null,
+      action: error.detail ? (
+        <div className="error-toast-meta">
+          <button
+            type="button"
+            className="error-toast-toggle"
+            aria-expanded={showDetail}
+            onClick={() => setShowDetail((v) => !v)}
+          >
+            {showDetail ? 'Hide details' : 'Show details'}
+          </button>
+          <CopyButton
+            value={diagnosticBundle() ?? ''}
+            label="Copy diagnostic"
+            copiedLabel="Copied"
+            variant="ghost"
+            size="sm"
+          />
+        </div>
+      ) : null,
+    } : null,
+  ].filter((item): item is NonNullable<typeof item> => item !== null);
 
   return (
     <header className="topbar">
+      <button
+        className="topbar-menu-button"
+        type="button"
+        aria-label="Open dashboard navigation"
+        onClick={onOpenNavigation}
+      >
+        <Icon name="overview" />
+      </button>
       <div className="topbar-title">
         <strong>BFrost</strong>
         <span>Worker-first local AI operations</span>
@@ -94,12 +147,12 @@ export function TopBar({
           </select>
         </label>
         <button
-          className="compact-button primary"
-          type="button"
-          disabled={modelBusy}
-          onClick={onSaveModel}
-        >
-          {modelBusy ? 'Saving...' : 'Save'}
+            className="compact-button primary"
+            type="button"
+            disabled={modelBusy}
+            onClick={onSaveModel}
+          >
+          Save
         </button>
         {selectedModelIsLocal ? (
           <button
@@ -113,51 +166,63 @@ export function TopBar({
                 : 'Load this model now and keep it resident across chats/jobs'
             }
           >
-            {pinBusy
-              ? selectedModelIsPinned ? 'Unloading...' : 'Loading...'
-              : selectedModelIsPinned ? 'Unload' : 'Load'}
+            {selectedModelIsPinned ? 'Unload' : 'Load'}
           </button>
         ) : null}
         {authEnabled ? (
           <button className="compact-button" type="button" disabled={logoutBusy} onClick={onLogout}>
-            {logoutBusy ? 'Signing out...' : 'Sign out'}
+            Sign out
           </button>
+        ) : null}
+        {busyLabel ? (
+          <div className="topbar-progress" role="status" aria-live="polite">
+            <Progress label={busyLabel} />
+          </div>
         ) : null}
       </div>
 
-      {error ? (
-        <div className="toast error-toast" role="alert" key={errorKey}>
-          <div className="error-toast-body">
-            <span className="error-toast-message">{error.friendly}</span>
-            {error.detail ? (
-              <div className="error-toast-meta">
-                <button
-                  type="button"
-                  className="error-toast-toggle"
-                  aria-expanded={showDetail}
-                  onClick={() => setShowDetail((v) => !v)}
-                >
-                  {showDetail ? 'Hide details' : 'Show details'}
-                </button>
-                <button
-                  type="button"
-                  className="error-toast-toggle"
-                  title="Copy diagnostic bundle to clipboard"
-                  onClick={copyDiagnostic}
-                >
-                  Copy
-                </button>
-              </div>
-            ) : null}
-            {showDetail && error.detail ? (
-              <pre className="error-toast-detail">{error.detail}</pre>
-            ) : null}
-          </div>
-          <button type="button" className="error-toast-dismiss" aria-label="Dismiss error" onClick={onDismissError}>
-            ✕
-          </button>
-        </div>
+      {notificationItems.length > 0 ? (
+        <NotificationStack
+          key={errorKey}
+          label="Dashboard notifications"
+          items={notificationItems}
+          onDismiss={(id) => {
+            if (id === 'topbar-error') {
+              onDismissError();
+              return;
+            }
+            setDismissedNotice(notice);
+          }}
+        />
       ) : null}
     </header>
   );
+}
+
+function promotedNoticeFor(notice: string): 'info' | 'success' | 'warning' | null {
+  const normalized = notice.trim().toLowerCase();
+  if (!normalized || normalized.startsWith('loading') || normalized.startsWith('updated ')) return null;
+  if (
+    normalized.includes('failed') ||
+    normalized.includes('offline') ||
+    normalized.includes('safe mode') ||
+    normalized.includes('restart')
+  ) {
+    return 'warning';
+  }
+  if (
+    normalized.includes('installed') ||
+    normalized.includes('uploaded') ||
+    normalized.includes('deleted') ||
+    normalized.includes('updated') ||
+    normalized.includes('authenticated') ||
+    normalized.includes('signed out') ||
+    normalized.includes('loaded') ||
+    normalized.includes('unloaded') ||
+    normalized.includes('answered') ||
+    normalized.includes('sample data')
+  ) {
+    return 'success';
+  }
+  return 'info';
 }

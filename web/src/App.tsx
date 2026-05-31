@@ -5,6 +5,7 @@ import { Markdown } from './Markdown';
 import { loadRuntimeWorkerBundle, workerQueueItemDetails, useWorkerDashboardViews } from './workers/registry';
 import type { WorkerDashboardViewDefinition } from './workers/types';
 import { Wizard } from './Wizard';
+import { AlertDialog, Button, CopyButton, Dialog, ManagementBar, PreviewLinkCard, Progress, Sheet } from './ui';
 
 type RunStatus = 'idle' | 'success' | 'error' | 'skipped';
 type CoreDashboardTab = 'overview' | 'channels' | 'workers' | 'jobs' | 'config' | 'chat' | 'system' | 'store' | 'actions' | 'health';
@@ -697,10 +698,24 @@ export default function App() {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('bfrost.sidebarCollapsed') === 'true';
   });
+  const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
 
   useEffect(() => {
     window.localStorage.setItem('bfrost.sidebarCollapsed', String(sidebarCollapsed));
   }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    if (!sidebarMobileOpen) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setSidebarMobileOpen(false);
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [sidebarMobileOpen]);
 
   useEffect(() => {
     void initialize();
@@ -2015,7 +2030,7 @@ export default function App() {
   }
 
   return (
-    <div className={`dashboard-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
+    <div className={`dashboard-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}${sidebarMobileOpen ? ' sidebar-mobile-open' : ''}`}>
       <TopBar
         notice={notice}
         error={error}
@@ -2037,6 +2052,7 @@ export default function App() {
         pinBusy={busyKey === 'toggle-pin'}
         authEnabled={session.authEnabled}
         logoutBusy={busyKey === 'logout'}
+        onOpenNavigation={() => setSidebarMobileOpen(true)}
         onModelChange={(event) => setSelectedModelAlias(event.target.value)}
         onSaveModel={() =>
           void mutate(
@@ -2073,8 +2089,17 @@ export default function App() {
         entries={sidebarEntries}
         activeTab={activeTab}
         collapsed={sidebarCollapsed}
-        onSelect={setActiveTab}
+        onSelect={(tab) => {
+          setActiveTab(tab);
+          setSidebarMobileOpen(false);
+        }}
         onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
+      />
+      <button
+        className="sidebar-mobile-backdrop"
+        type="button"
+        aria-label="Close navigation"
+        onClick={() => setSidebarMobileOpen(false)}
       />
       <main className="shell dashboard-main">
 
@@ -2951,6 +2976,10 @@ export default function App() {
             <StatusPill tone="good">Local-only</StatusPill>
           </div>
           <div className="detail-body">
+            <div className="system-copy-row">
+              <Detail label="Admin URL" value={dashboard.app.adminUrl} />
+              <CopyButton value={dashboard.app.adminUrl} label="Copy URL" size="sm" />
+            </div>
             <p className="footnote">
               BFrost collects <strong>no telemetry, no usage data, and no analytics</strong> — not even
               crash reports. All data (workers, queue, events, conversations, credentials) stays on your
@@ -2993,74 +3022,57 @@ export default function App() {
       ) : null}
 
       {/* Install permission consent dialog */}
-      {consentTarget ? (
-        <div
-          className="consent-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="consent-title"
-        >
-          <div className="consent-shell">
-            <div className="consent-header">
-              <div>
-                <h2 id="consent-title" className="consent-title">Install "{consentTarget.name}"?</h2>
-                <p className="consent-subtitle">Review the permissions this worker requires before proceeding.</p>
-              </div>
-              <button
-                type="button"
-                className="wizard-close"
-                aria-label="Cancel install"
-                onClick={() => setConsentTarget(null)}
-              >✕</button>
-            </div>
-
-            <div className="consent-body">
-              {consentTarget.permissions.length === 0 ? (
-                <p className="consent-no-perms">This worker declares no special permissions.</p>
-              ) : (
-                <ul className="consent-perm-list">
-                  {consentTarget.permissions.map((perm) => {
-                    const info = PERMISSION_INFO[perm];
-                    return (
-                      <li key={perm} className="consent-perm-item">
-                        <span className="consent-perm-label">{info?.label ?? perm}</span>
-                        {info?.description ? (
-                          <span className="consent-perm-desc">{info.description}</span>
-                        ) : null}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              <p className="consent-trust-line">
-                Trust level: <strong>{consentTarget.trust}</strong>
-              </p>
-            </div>
-
-            <div className="consent-footer">
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setConsentTarget(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="primary"
-                disabled={busyKey === `store-install-${consentTarget.id}`}
-                onClick={() => {
-                  const target = consentTarget;
-                  setConsentTarget(null);
-                  void installFromStore(target);
-                }}
-              >
-                {busyKey === `store-install-${consentTarget.id}` ? 'Installing…' : 'Approve & Install'}
-              </button>
-            </div>
+      <Dialog
+        open={!!consentTarget}
+        onOpenChange={(open) => {
+          if (!open) setConsentTarget(null);
+        }}
+        title={consentTarget ? `Install "${consentTarget.name}"?` : 'Install worker?'}
+        description="Review the permissions this worker requires before proceeding."
+        footer={consentTarget ? (
+          <>
+            <Button variant="ghost" onClick={() => setConsentTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={busyKey === `store-install-${consentTarget.id}`}
+              onClick={() => {
+                const target = consentTarget;
+                setConsentTarget(null);
+                void installFromStore(target);
+              }}
+            >
+              Approve and install
+            </Button>
+          </>
+        ) : null}
+      >
+        {consentTarget ? (
+          <div className="consent-body">
+            {consentTarget.permissions.length === 0 ? (
+              <p className="consent-no-perms">This worker declares no special permissions.</p>
+            ) : (
+              <ul className="consent-perm-list">
+                {consentTarget.permissions.map((perm) => {
+                  const info = PERMISSION_INFO[perm];
+                  return (
+                    <li key={perm} className="consent-perm-item">
+                      <span className="consent-perm-label">{info?.label ?? perm}</span>
+                      {info?.description ? (
+                        <span className="consent-perm-desc">{info.description}</span>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <p className="consent-trust-line">
+              Trust level: <strong>{consentTarget.trust}</strong>
+            </p>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </Dialog>
     </div>
   );
 
@@ -3209,10 +3221,23 @@ export default function App() {
       prompt: job.prompt,
       params: buildJobParamsDraft(job),
     };
+    const changes = jobScheduleChanges(job, draft);
+    const runningRun = job.running
+      ? runs.find((run) => run.status === 'running' || run.finishedAt === null)
+      : null;
 
     return (
       <div className="detail-body">
         {!job.workerEnabled ? <p className="error-box">Worker disabled. Enable it from Workers to run this job.</p> : null}
+        {job.running ? (
+          <div className="job-running-progress">
+            <Progress
+              value={null}
+              label={runningRun?.startedAt ? `Running since ${formatDate(runningRun.startedAt)}` : 'Job running'}
+              tone="warning"
+            />
+          </div>
+        ) : null}
 
         <div className="job-grid standard-job-grid">
           <label className="field checkbox">
@@ -3280,71 +3305,6 @@ export default function App() {
           ) : null}
         </div>
 
-        {/* Preview-before-save confirmation panel */}
-        {confirmSaveJobName === job.name ? (() => {
-          const changes: Array<{ field: string; from: string; to: string }> = [];
-          if (draft.enabled !== job.enabled)
-            changes.push({ field: 'Enabled', from: job.enabled ? 'Yes' : 'No', to: draft.enabled ? 'Yes' : 'No' });
-          if (draft.cron !== job.cron)
-            changes.push({ field: 'Schedule', from: job.cron, to: draft.cron });
-          if (draft.modelAlias !== job.modelAlias)
-            changes.push({ field: 'Model', from: job.modelAlias || '(platform default)', to: draft.modelAlias || '(platform default)' });
-          if (draft.approvalRequired !== job.approvalRequired)
-            changes.push({ field: 'Require approval', from: job.approvalRequired ? 'Yes' : 'No', to: draft.approvalRequired ? 'Yes' : 'No' });
-          return (
-            <div className="schedule-preview-box" role="region" aria-label="Review changes before saving" aria-live="polite">
-              <p className="schedule-preview-title">Review changes before saving</p>
-              {changes.length === 0 ? (
-                <p className="schedule-preview-no-changes">No changes to save.</p>
-              ) : (
-                <table className="schedule-preview-table">
-                  <thead>
-                    <tr><th>Field</th><th>Current</th><th>New value</th></tr>
-                  </thead>
-                  <tbody>
-                    {changes.map((c) => (
-                      <tr key={c.field}>
-                        <td>{c.field}</td>
-                        <td className="schedule-preview-old">{c.from}</td>
-                        <td className="schedule-preview-new">{c.to}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-              <div className="panel-actions wrap" style={{ marginTop: '0.5rem' }}>
-                <button
-                  className="primary"
-                  disabled={busyKey === `save-${job.name}` || changes.length === 0}
-                  onClick={() => {
-                    setConfirmSaveJobName(null);
-                    void mutate(
-                      `save-${job.name}`,
-                      `/api/cron-jobs/${job.name}`,
-                      {
-                        method: 'POST',
-                        body: JSON.stringify({
-                          enabled: draft.enabled,
-                          cron: draft.cron,
-                          modelAlias: draft.modelAlias,
-                          approvalRequired: draft.approvalRequired,
-                        }),
-                      },
-                      `${job.label} schedule saved.`,
-                    );
-                  }}
-                >
-                  {busyKey === `save-${job.name}` ? 'Saving…' : 'Confirm save'}
-                </button>
-                {/* autoFocus moves keyboard focus to this panel when it mounts */}
-                <button type="button" autoFocus onClick={() => setConfirmSaveJobName(null)}>
-                  Cancel
-                </button>
-              </div>
-            </div>
-          );
-        })() : null}
-
         <div className="panel-actions wrap">
           <button
             className="primary"
@@ -3385,6 +3345,64 @@ export default function App() {
         {(job.dashboardFields.length > 0 || job.promptEditable) ? renderJobConfiguration(job) : null}
 
         {renderJobDetail(job, runs)}
+
+        <AlertDialog
+          open={confirmSaveJobName === job.name}
+          onOpenChange={(open) => {
+            if (!open) setConfirmSaveJobName(null);
+          }}
+          title={`Save schedule for ${job.label}?`}
+          description="Review the operational changes before they affect future runs."
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setConfirmSaveJobName(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                disabled={busyKey === `save-${job.name}` || changes.length === 0}
+                onClick={() => {
+                  setConfirmSaveJobName(null);
+                  void mutate(
+                    `save-${job.name}`,
+                    `/api/cron-jobs/${job.name}`,
+                    {
+                      method: 'POST',
+                      body: JSON.stringify({
+                        enabled: draft.enabled,
+                        cron: draft.cron,
+                        modelAlias: draft.modelAlias,
+                        approvalRequired: draft.approvalRequired,
+                      }),
+                    },
+                    `${job.label} schedule saved.`,
+                  );
+                }}
+              >
+                Confirm save
+              </Button>
+            </>
+          }
+        >
+          {changes.length === 0 ? (
+            <p className="schedule-preview-no-changes">No changes to save.</p>
+          ) : (
+            <table className="schedule-preview-table">
+              <thead>
+                <tr><th>Field</th><th>Current</th><th>New value</th></tr>
+              </thead>
+              <tbody>
+                {changes.map((change) => (
+                  <tr key={change.field}>
+                    <td>{change.field}</td>
+                    <td className="schedule-preview-old">{change.from}</td>
+                    <td className="schedule-preview-new">{change.to}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </AlertDialog>
       </div>
     );
   }
@@ -3416,16 +3434,23 @@ export default function App() {
         {job.presets.length > 0 ? (
           <div className="panel-actions wrap" style={{ marginBottom: '0.75rem' }}>
             <span className="footnote" style={{ marginRight: '0.25rem' }}>Recipes:</span>
-            {job.presets.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                title={preset.description}
-                onClick={() => applyPreset(preset)}
-              >
-                {preset.label}
-              </button>
-            ))}
+            {job.presets.map((preset) => {
+              const presetApplied =
+                (preset.cron === undefined || preset.cron === draft.cron) &&
+                Object.entries(preset.params ?? {}).every(([key, value]) => draft.params[key] === value);
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={`preset-chip${presetApplied ? ' active' : ''}`}
+                  aria-pressed={presetApplied}
+                  title={preset.description}
+                  onClick={() => applyPreset(preset)}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
             <span className="footnote" style={{ flexBasis: '100%', marginTop: '0.25rem' }}>
               Click a recipe to fill the form. Nothing saves until you press Save below.
             </span>
@@ -4323,6 +4348,40 @@ export default function App() {
             </h2>
           </div>
 
+          <ManagementBar
+            label="Action requests"
+            selectedCount={selectedAction ? 1 : 0}
+            totalCount={pendingActions.length}
+            filters={<StatusPill tone={actionsLoading ? 'warning' : 'muted'}>{actionsLoading ? 'Refreshing' : 'Pending only'}</StatusPill>}
+            actions={
+              <>
+                {selectedAction ? (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={busyKey === `action-${selectedAction.id}`}
+                    onClick={() => void decideAction(selectedAction.id, true)}
+                  >
+                    Approve selected
+                  </Button>
+                ) : null}
+                {selectedAction ? (
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    disabled={busyKey === `action-${selectedAction.id}`}
+                    onClick={() => void decideAction(selectedAction.id, false)}
+                  >
+                    Reject selected
+                  </Button>
+                ) : null}
+                <Button variant="ghost" size="sm" onClick={() => void fetchPendingActions()}>
+                  Refresh
+                </Button>
+              </>
+            }
+          />
+
           {actionsLoading && pendingActions.length === 0 ? (
             <div className="empty-state"><p>Loading…</p></div>
           ) : pendingActions.length === 0 ? (
@@ -4356,22 +4415,30 @@ export default function App() {
                     <div className="actions-item-rationale footnote">{action.rationale}</div>
                   </button>
                   <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
+                    <Button
+                      variant="primary"
+                      size="sm"
                       disabled={busyKey === `action-${action.id}`}
                       onClick={() => void decideAction(action.id, true)}
                     >
                       Approve
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-danger"
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
                       disabled={busyKey === `action-${action.id}`}
                       onClick={() => void decideAction(action.id, false)}
                     >
                       Reject
-                    </button>
+                    </Button>
+                    {action.preview ? (
+                      <Button
+                        size="sm"
+                        onClick={() => setSelectedActionId(action.id)}
+                      >
+                        Review diff
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -4379,14 +4446,42 @@ export default function App() {
           )}
         </div>
 
-        {selectedAction?.preview ? (
-          <div className="panel">
-            <div className="panel-header">
-              <h2>Diff preview — {selectedAction.label}</h2>
+        <Sheet
+          open={!!selectedAction?.preview}
+          onOpenChange={(open) => {
+            if (!open) setSelectedActionId(null);
+          }}
+          title={selectedAction ? `Review action: ${selectedAction.label}` : 'Review action'}
+          description={selectedAction ? `${selectedAction.workerId} requested ${selectedAction.actionClass}.` : undefined}
+          side="right"
+          footer={selectedAction ? (
+            <>
+              <CopyButton value={selectedAction.preview ?? ''} label="Copy diff" size="sm" />
+              <Button
+                variant="danger"
+                disabled={busyKey === `action-${selectedAction.id}`}
+                onClick={() => void decideAction(selectedAction.id, false)}
+              >
+                Reject
+              </Button>
+              <Button
+                variant="primary"
+                disabled={busyKey === `action-${selectedAction.id}`}
+                onClick={() => void decideAction(selectedAction.id, true)}
+              >
+                Approve
+              </Button>
+            </>
+          ) : null}
+        >
+          {selectedAction ? (
+            <div className="action-review-sheet">
+              <Detail label="Rationale" value={selectedAction.rationale} />
+              <Detail label="Created" value={formatDate(selectedAction.createdAt)} />
+              <pre className="actions-diff">{selectedAction.preview}</pre>
             </div>
-            <pre className="actions-diff">{selectedAction.preview}</pre>
-          </div>
-        ) : null}
+          ) : null}
+        </Sheet>
 
         {/* ── Action history ─────────────────────────────────────────── */}
         {actionHistory.length > 0 ? (
@@ -4482,9 +4577,13 @@ export default function App() {
             <p className="panel-kicker">Community</p>
             <h2>Worker Store <HelpTip>Browse community-built workers from bfrost.net. Search by name or category, click a card to read the details and declared permissions, then click Install to add it — no terminal needed. Installed workers appear in the Workers tab immediately.</HelpTip></h2>
           </div>
-          <a href={STORE_URL} target="_blank" rel="noopener noreferrer" className="store-external-link">
-            bfrost.net/store
-          </a>
+          <PreviewLinkCard
+            className="store-header-link-card"
+            href={STORE_URL}
+            external
+            title="bfrost.net/store"
+            description="Open the public catalog"
+          />
         </div>
 
         {/* Search */}
@@ -4572,14 +4671,12 @@ export default function App() {
               <button type="button" className="store-back-button" onClick={() => { setStoreSelectedId(null); setStoreDetail(null); }}>
                 Back to catalog
               </button>
-              <a
+              <PreviewLinkCard
                 href={`https://bfrost.net/store/${storeSelectedId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="store-external-link"
-              >
-                View on bfrost.net
-              </a>
+                external
+                title="View on bfrost.net"
+                description="Shareable public listing"
+              />
             </div>
 
             {selectedWorker ? (
@@ -4677,6 +4774,13 @@ export default function App() {
                   ) : null}
 
                   <div className="store-detail-actions">
+                    {busyKey === `store-install-${storeDetail.id}` ? (
+                      <Progress
+                        value={null}
+                        label={storeDetail.builtIn ? 'Restoring worker' : 'Installing worker'}
+                        tone="warning"
+                      />
+                    ) : null}
                     {installedIds.has(storeDetail.id) ? (() => {
                       const installedWorker = dashboard.workers.find((w) => w.id === storeDetail.id);
                       // Infrastructure built-ins (builtIn=true, not deletable) are always
@@ -4847,6 +4951,31 @@ function sectionEndpoint(name: DashboardSectionName): string {
     case 'workerData': return '/api/dashboard/worker-data';
     case 'lmStudioModels': return '/api/dashboard/lmstudio-models';
   }
+}
+
+function jobScheduleChanges(job: SchedulerJobState, draft: JobDraft): Array<{ field: string; from: string; to: string }> {
+  const changes: Array<{ field: string; from: string; to: string }> = [];
+  if (draft.enabled !== job.enabled) {
+    changes.push({ field: 'Enabled', from: job.enabled ? 'Yes' : 'No', to: draft.enabled ? 'Yes' : 'No' });
+  }
+  if (draft.cron !== job.cron) {
+    changes.push({ field: 'Schedule', from: job.cron, to: draft.cron });
+  }
+  if (draft.modelAlias !== job.modelAlias) {
+    changes.push({
+      field: 'Model',
+      from: job.modelAlias || '(platform default)',
+      to: draft.modelAlias || '(platform default)',
+    });
+  }
+  if (draft.approvalRequired !== job.approvalRequired) {
+    changes.push({
+      field: 'Require approval',
+      from: job.approvalRequired ? 'Yes' : 'No',
+      to: draft.approvalRequired ? 'Yes' : 'No',
+    });
+  }
+  return changes;
 }
 
 function mergeSection(

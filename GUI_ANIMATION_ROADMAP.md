@@ -63,6 +63,8 @@ Animate UI is useful here as a pattern library: animated primitives, operational
 
 **Goal:** make navigation and global feedback smoother without redesigning the app.
 
+**Status:** Done for the local dashboard shell and mirrored in the website shell. The dashboard now uses collapsed-entry tooltips, animated child disclosure, mobile drawer state, notification-stack errors with copyable diagnostics, and inline progress for model operations. The website now has animated mobile navigation, a global notification stack, share feedback, and Playwright coverage for the shell behavior.
+
 - Refine `web/src/Sidebar.tsx`:
   - animate parent/child disclosure with reduced-motion support
   - preserve current grouped entries and counts
@@ -81,6 +83,8 @@ Animate UI is useful here as a pattern library: animated primitives, operational
 ### Phase A2 - Operations Controls
 
 **Goal:** apply the Management Bar, Progress, Dialog, and Copy Button patterns to the screens users operate repeatedly.
+
+**Status:** Done for the local dashboard surfaces and applied to the website where the same operational patterns exist. The dashboard now uses management/action controls, a diff-review sheet, schedule-save alert dialog, job running progress, stable preset chips, dialog-based worker install consent, store preview links, install progress, and a copyable admin URL. The website store now uses a management bar for catalog controls, and worker detail pages expose install-review progress, release/source preview cards, and a copyable curl command.
 
 - Queue and Actions:
   - add `ManagementBar` for selection, filtering, approve/reject, pagination, and bulk action affordances

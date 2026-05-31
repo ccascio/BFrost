@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Icon } from './icons';
+import { Tooltip } from './ui';
 
 export interface SidebarEntry<T extends string = string> {
   id: T;
@@ -88,21 +89,21 @@ export function Sidebar<T extends string>({
           <section className="sidebar-group" key={group.name}>
             <h2>{group.name}</h2>
             <div className="sidebar-group-items">
-              {group.entries.map((entry) => {
+              {group.entries.map((entry, entryIndex) => {
                 const selected = entry.id === activeTab;
                 const isChild = !!entry.parentId;
                 const isParent = parentIds.has(entry.id);
                 const isExpanded = isParent && expandedParents.has(entry.id);
 
-                return (
+                const item = (
                   <button
                     className={`sidebar-item${selected ? ' active' : ''}${isChild ? ' sidebar-child' : ''}${isParent ? ' sidebar-parent' : ''}`}
                     type="button"
                     aria-current={selected ? 'page' : undefined}
                     aria-expanded={isParent ? isExpanded : undefined}
                     aria-label={collapsed ? entry.label : undefined}
-                    title={collapsed ? entry.label : undefined}
                     key={entry.id}
+                    style={isChild ? { animationDelay: `${Math.min(entryIndex, 6) * 24}ms` } : undefined}
                     onClick={(e) => {
                       if (isParent) {
                         // Toggle subtree; navigate to the parent tab too.
@@ -138,6 +139,12 @@ export function Sidebar<T extends string>({
                     </span>
                   </button>
                 );
+
+                return collapsed ? (
+                  <Tooltip key={entry.id} content={entry.label} side="right">
+                    {item}
+                  </Tooltip>
+                ) : item;
               })}
             </div>
           </section>
