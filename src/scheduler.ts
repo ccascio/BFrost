@@ -346,8 +346,17 @@ async function recordSkippedScheduleExecution(
   }
 
   const registered = getRegisteredWorkerJob(name);
+  const slotAgeMs = reason === 'missed' ? now.getTime() - slotTime.getTime() : 0;
+  const slotAgeMin = Math.round(slotAgeMs / 60000);
+
+  // Distinguish brief event-loop delay (seconds) from machine-sleep recovery (minutes/hours).
+  const missedCause = reason === 'missed'
+    ? slotAgeMs > 90_000
+      ? `BFrost was offline or the machine was asleep (slot is ${slotAgeMin} min old)`
+      : 'the Node event loop was briefly unavailable'
+    : null;
   const reasonText = reason === 'missed'
-    ? 'missed its scheduled execution because the Node event loop was unavailable'
+    ? `missed its scheduled execution because ${missedCause}`
     : 'was skipped because a previous execution was still running';
   const message = `${jobLabels()[name]} ${reasonText}.`;
 
@@ -366,6 +375,7 @@ async function recordSkippedScheduleExecution(
       contextDate: ctx.date.toISOString(),
       recordedAt: finishedAt,
       reason,
+      ...(reason === 'missed' && { slotAgeMs, slotAgeMin }),
     },
   });
 
@@ -373,11 +383,9 @@ async function recordSkippedScheduleExecution(
   // Misses are typically caused by macOS sleep freezing setTimeout timers; on wake-up
   // the heartbeat fires late and node-cron emits execution:missed for each skipped slot.
   if (reason === 'missed') {
-    const ageMs = now.getTime() - slotTime.getTime();
-
-    if (ageMs >= 0 && ageMs <= MISSED_CATCHUP_WINDOW_MS) {
+    if (slotAgeMs >= 0 && slotAgeMs <= MISSED_CATCHUP_WINDOW_MS) {
       console.log(
-        `[Scheduler] Missed ${name} execution (age: ${Math.round(ageMs / 1000)}s) — catching up now.`,
+        `[Scheduler] Missed ${name} execution (age: ${Math.round(slotAgeMs / 1000)}s) — catching up now.`,
       );
       // Reuse the slot lock acquired above so the catch-up run and skipped-run
       // bookkeeping stay mutually exclusive for this scheduled minute.
@@ -386,7 +394,7 @@ async function recordSkippedScheduleExecution(
     }
 
     console.warn(
-      `[Scheduler] Missed ${name} execution is ${Math.round(ageMs / 60000)}min old — skipping catch-up (window: ${MISSED_CATCHUP_WINDOW_MS / 60000}min).`,
+      `[Scheduler] Missed ${name} execution is ${slotAgeMin}min old — skipping catch-up (window: ${MISSED_CATCHUP_WINDOW_MS / 60000}min). Cause: ${missedCause}.`,
     );
   }
 
@@ -694,21 +702,25 @@ async function hydrateRuntime(): Promise<void> {
 
 async function reconcileAbandonedRuns(): Promise<void> {
   const finishedAt = new Date().toISOString();
-  const count = await abandonRunningSchedulerRuns({
+  const result = await abandonRunningSchedulerRuns({
     finishedAt,
     error: 'BFrost stopped before this scheduler run finished.',
   }).catch((err) => {
     console.warn('[Scheduler] Failed to reconcile abandoned scheduler runs:', err);
-    return 0;
+    return { count: 0, abandoned: [] as { job: string; label: string; startedAt: string }[] };
   });
 
-  if (count > 0) {
+  if (result.count > 0) {
+    const jobsSummary = result.abandoned
+      .map((r) => `${r.label} (started ${r.startedAt})`)
+      .join(', ');
+    console.warn(`[Scheduler] Marked ${result.count} abandoned run(s) as failed: ${jobsSummary}`);
     await recordEventSafe({
       category: 'scheduler',
       action: 'abandoned_runs_reconciled',
       severity: 'warning',
-      summary: `Marked ${count} abandoned scheduler run(s) as failed after startup.`,
-      metadata: { count, finishedAt },
+      summary: `Marked ${result.count} abandoned scheduler run(s) as failed after startup: ${jobsSummary}`,
+      metadata: { count: result.count, finishedAt, jobs: result.abandoned },
     });
   }
 }

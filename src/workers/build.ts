@@ -28,22 +28,25 @@ export interface CompileLocalWorkerResult {
 /**
  * Compile a local worker's TypeScript source into a bundled JS file the runtime can require().
  *
- * Idempotent: skips work when the output file's mtime is newer than the source's mtime.
+ * Idempotent: skips work when the output file's mtime is newer than the newest source file's mtime.
+ * Walks the worker source directory rather than checking only the entry point, so changes to
+ * any imported module (e.g. job.ts) trigger a rebuild without requiring a touch on index.ts.
  */
 export async function compileLocalWorker(input: CompileLocalWorkerInput): Promise<CompileLocalWorkerResult> {
   const sourcePath = path.resolve(input.workerDir, input.source);
   const outputPath = path.resolve(input.workerDir, input.output);
 
-  let sourceStat;
   try {
-    sourceStat = await fs.stat(sourcePath);
+    await fs.stat(sourcePath);
   } catch {
     return { outputPath, compiled: false, reason: 'no-source' };
   }
 
+  const newestSourceMs = await newestMtimeMs(path.dirname(sourcePath));
+
   try {
     const outStat = await fs.stat(outputPath);
-    if (outStat.mtimeMs >= sourceStat.mtimeMs) {
+    if (outStat.mtimeMs >= newestSourceMs) {
       return { outputPath, compiled: false, reason: 'cached' };
     }
   } catch {
@@ -88,16 +91,18 @@ export async function compileLocalWorkerDashboard(input: CompileLocalWorkerDashb
   const sourcePath = path.resolve(input.workerDir, input.source);
   const outputPath = path.resolve(input.workerDir, input.output);
 
-  let sourceStat;
   try {
-    sourceStat = await fs.stat(sourcePath);
+    await fs.stat(sourcePath);
   } catch {
     return { outputPath, compiled: false, reason: 'no-source' };
   }
 
+  // Dashboard source is typically a single file; check the worker root dir to catch co-located helpers.
+  const newestSourceMs = await newestMtimeMs(path.dirname(sourcePath));
+
   try {
     const outStat = await fs.stat(outputPath);
-    if (outStat.mtimeMs >= sourceStat.mtimeMs) {
+    if (outStat.mtimeMs >= newestSourceMs) {
       return { outputPath, compiled: false, reason: 'cached' };
     }
   } catch {
@@ -144,4 +149,24 @@ function reactGlobalsWorker(): EsbuildWorker {
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Return the newest mtime (ms) across all files directly inside `dir` (non-recursive). */
+async function newestMtimeMs(dir: string): Promise<number> {
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    let newest = 0;
+    for (const e of entries) {
+      if (!e.isFile()) continue;
+      try {
+        const s = await fs.stat(path.join(dir, e.name));
+        if (s.mtimeMs > newest) newest = s.mtimeMs;
+      } catch {
+        // ignore unreadable entries
+      }
+    }
+    return newest;
+  } catch {
+    return 0;
+  }
 }

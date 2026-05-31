@@ -9,3 +9,4 @@ export { ManagementBar } from './ManagementBar';
 export { CodeTabs, type CodeTab } from './CodeTabs';
 export { PreviewLinkCard } from './PreviewLinkCard';
 export { UiDemo } from './UiDemo';
+export { CronBuilder, type CronBuilderProps } from './CronBuilder';

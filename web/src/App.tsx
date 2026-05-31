@@ -5,7 +5,7 @@ import { Markdown } from './Markdown';
 import { loadRuntimeWorkerBundle, workerQueueItemDetails, useWorkerDashboardViews } from './workers/registry';
 import type { WorkerDashboardViewDefinition } from './workers/types';
 import { Wizard } from './Wizard';
-import { AlertDialog, Button, CopyButton, Dialog, ManagementBar, PreviewLinkCard, Progress, Sheet } from './ui';
+import { AlertDialog, Button, CopyButton, CronBuilder, Dialog, ManagementBar, PreviewLinkCard, Progress, Sheet } from './ui';
 
 type RunStatus = 'idle' | 'success' | 'error' | 'skipped';
 type CoreDashboardTab = 'overview' | 'channels' | 'workers' | 'jobs' | 'config' | 'chat' | 'system' | 'store' | 'actions' | 'health';
@@ -2367,10 +2367,6 @@ export default function App() {
             </aside>
           </div>
 
-          <p className="footnote">
-            Cron format uses standard five-field expressions, for example <code>*/30 * * * *</code>{' '}
-            for every 30 minutes.
-          </p>
         </section>
       ) : null}
 
@@ -3254,19 +3250,18 @@ export default function App() {
             />
           </label>
 
-          <label className="field">
-            <span>Cron expression</span>
-            <input
-              type="text"
+          <div className="field cron-builder-field">
+            <span>Schedule</span>
+            <CronBuilder
               value={draft.cron}
-              onChange={(event) =>
+              onChange={(cron) =>
                 setJobDrafts((current) => ({
                   ...current,
-                  [job.name]: { ...draft, cron: event.target.value },
+                  [job.name]: { ...draft, cron },
                 }))
               }
             />
-          </label>
+          </div>
 
           <label className="field">
             <span>Model override</span>

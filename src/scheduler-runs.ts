@@ -98,12 +98,14 @@ export async function listSchedulerRuns(limit = 50): Promise<SchedulerRunRecord[
   return (await loadSchedulerRuns(limit)).slice(0, clampLimit(limit));
 }
 
-export async function abandonRunningSchedulerRuns(input: AbandonSchedulerRunsInput): Promise<number> {
+export async function abandonRunningSchedulerRuns(
+  input: AbandonSchedulerRunsInput,
+): Promise<{ count: number; abandoned: Pick<SchedulerRunRecord, 'job' | 'label' | 'startedAt'>[] }> {
   const runs = await loadSchedulerRuns(RUN_RETENTION);
-  let count = 0;
+  const abandoned: Pick<SchedulerRunRecord, 'job' | 'label' | 'startedAt'>[] = [];
   const next = runs.map((run) => {
     if (run.status !== 'running' || run.finishedAt !== null) return run;
-    count += 1;
+    abandoned.push({ job: run.job, label: run.label, startedAt: run.startedAt });
     return {
       ...run,
       finishedAt: input.finishedAt,
@@ -114,11 +116,11 @@ export async function abandonRunningSchedulerRuns(input: AbandonSchedulerRunsInp
     };
   });
 
-  if (count > 0) {
+  if (abandoned.length > 0) {
     await saveRuns(next);
   }
 
-  return count;
+  return { count: abandoned.length, abandoned };
 }
 
 async function loadSchedulerRuns(limit: number): Promise<SchedulerRunRecord[]> {
