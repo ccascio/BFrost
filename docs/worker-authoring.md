@@ -143,6 +143,32 @@ dashboard: {
 
 `seedPath` lets a field initialise from live state instead of the manifest default — see the news worker's `source-quality-rules` surface for a complete example.
 
+### Dashboard UI contract
+
+If a worker ships `dashboardSource` or `dashboardEntrypoint`, it registers React views through `window.bfrost.registerDashboardView`. The dashboard bundle must not import from `web/src` or bundle a second React. The host already provides React and a small UI contract:
+
+```tsx
+function WorkerPanel() {
+  const ui = window.bfrost.ui;
+  return (
+    <section className={ui.classes.panel}>
+      <div className={ui.classes.panelHead}>
+        <div>
+          <p className={ui.classes.panelKicker}>Worker status</p>
+          <h2>Import queue</h2>
+        </div>
+        <span className={ui.statusTone('good')}>ready</span>
+      </div>
+      <div className={ui.classes.detailBody}>
+        <p className={ui.classes.emptyState}>No queued items yet.</p>
+      </div>
+    </section>
+  );
+}
+```
+
+Use `ui.classes.surface`, `grid`, `panel`, `panelHead`, `field`, `actions`, `statusPill`, `emptyState`, `timeline`, and `stepHeader` before adding worker-specific CSS. Use `ui.cx(...)` to join optional classes. This keeps local dashboards visually aligned with BFrost while preserving the worker-first rule: workers own their views; core only provides the host contract.
+
 ### Credentials and dependencies
 
 ```ts

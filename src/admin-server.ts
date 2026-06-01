@@ -849,7 +849,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     // ── Wizard state ─────────────────────────────────────────────────────────
     if (url.pathname === '/api/wizard/state' && req.method === 'GET') {
       const state = await loadKvJson<{ step?: number; completed?: boolean }>('wizard.state') ?? {};
-      return sendJson(res, 200, { step: state.step ?? 0, completed: state.completed ?? false });
+      const envExists = await fs.access(path.join(process.cwd(), '.env')).then(() => true, () => false);
+      const completed = envExists ? (state.completed ?? false) : false;
+      return sendJson(res, 200, { step: state.step ?? 0, completed });
     }
 
     if (url.pathname === '/api/wizard/state' && req.method === 'POST') {

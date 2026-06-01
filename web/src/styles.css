@@ -648,6 +648,52 @@ textarea {
   line-height: 1.5;
 }
 
+/* Stable host contract for worker-provided dashboard bundles. These aliases are
+   intentionally generic so local workers can match BFrost without importing app code. */
+.bfrost-worker-surface {
+  display: grid;
+  gap: 1rem;
+}
+
+.bfrost-worker-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+}
+
+.bfrost-worker-panel {
+  min-width: 0;
+}
+
+.bfrost-worker-button {
+  min-height: 2.3rem;
+  padding: 0.45rem 0.75rem;
+}
+
+.bfrost-worker-step-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.bfrost-worker-step-marker {
+  min-width: 1.5rem;
+  text-align: center;
+}
+
+.bfrost-worker-muted {
+  color: var(--muted);
+}
+
+.bfrost-worker-step {
+  margin-bottom: 1.25rem;
+}
+
+.bfrost-worker-step[data-disabled="true"] {
+  opacity: 0.55;
+}
+
 .ui-demo-shell {
   width: min(1200px, calc(100% - 2rem));
   margin: 0 auto;

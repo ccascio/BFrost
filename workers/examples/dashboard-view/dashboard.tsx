@@ -8,13 +8,22 @@ import { useState } from 'react';
  */
 function ExampleView() {
   const [count, setCount] = useState(0);
+  const ui = window.bfrost.ui;
   return (
-    <section style={{ padding: '1rem' }}>
-      <h2>Example View (runtime-loaded worker)</h2>
-      <p>This UI lives in <code>workers/examples/dashboard-view/dashboard.tsx</code>.</p>
-      <button type="button" onClick={() => setCount((value) => value + 1)}>
-        Clicked {count} time{count === 1 ? '' : 's'}
-      </button>
+    <section className={ui.classes.panel}>
+      <div className={ui.classes.panelHead}>
+        <div>
+          <p className={ui.classes.panelKicker}>Runtime loaded</p>
+          <h2>Example View</h2>
+        </div>
+        <span className={ui.statusTone('info')}>{count}</span>
+      </div>
+      <div className={ui.classes.detailBody}>
+        <p>This UI lives in <code>workers/examples/dashboard-view/dashboard.tsx</code>.</p>
+        <button className={ui.classes.primaryButton} type="button" onClick={() => setCount((value) => value + 1)}>
+          Clicked {count} time{count === 1 ? '' : 's'}
+        </button>
+      </div>
     </section>
   );
 }
@@ -31,6 +40,11 @@ declare global {
   interface Window {
     bfrost: {
       registerDashboardView: (view: any) => void;
+      ui: {
+        classes: Record<string, string>;
+        cx: (...parts: Array<string | false | null | undefined>) => string;
+        statusTone: (tone: 'good' | 'warning' | 'info' | 'muted' | 'error') => string;
+      };
       [key: string]: any;
     };
   }

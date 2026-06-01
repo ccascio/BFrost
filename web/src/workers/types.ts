@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { WorkerDashboardUiContract } from './ui-contract';
 
 export type WorkerDashboardViewKind = string;
 
@@ -21,6 +22,16 @@ export interface WorkerDashboardViewDefinition {
    * renders renderers that produce content for the given item.
    */
   queueItemDetail?: (item: WorkerQueueItem) => ReactNode;
+}
+
+export interface WorkerDashboardRenderContext {
+  activeWorkerTab?: Record<string, any>;
+  dashboard?: Record<string, any>;
+  busyKey?: string | null;
+  ui?: WorkerDashboardUiContract;
+  refreshDashboard?: () => void | Promise<void>;
+  triggerRun?: (key: string, url: string, successMessage: string) => void | Promise<void>;
+  [key: string]: any;
 }
 
 /**

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { WorkerDashboardViewDefinition } from '../../types';
+import type { WorkerDashboardUiContract } from '../../ui-contract';
 
 interface TelegramStatus {
   tokenConfigured: boolean;
@@ -9,18 +10,29 @@ interface TelegramStatus {
   errorMessage: string | null;
 }
 
-function StepHeader({ n, label, state }: { n: number; label: string; state: 'open' | 'done' | 'error' | 'pending' }) {
+function StepHeader({
+  n,
+  label,
+  state,
+  ui,
+}: {
+  n: number;
+  label: string;
+  state: 'open' | 'done' | 'error' | 'pending';
+  ui?: WorkerDashboardUiContract;
+}) {
   const tone = state === 'done' ? 'good' : state === 'error' ? 'warning' : 'muted';
   const mark = state === 'done' ? '✓' : state === 'error' ? '!' : String(n);
+  const classes = ui?.classes;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-      <span className={`status-pill ${tone}`} style={{ minWidth: '1.5rem', textAlign: 'center' }}>{mark}</span>
+    <div className={classes?.stepHeader ?? 'bfrost-worker-step-header'}>
+      <span className={ui?.cx(ui.statusTone(tone), 'bfrost-worker-step-marker') ?? `status-pill ${tone} bfrost-worker-step-marker`}>{mark}</span>
       <strong>{label}</strong>
     </div>
   );
 }
 
-function TelegramConnectPanel({ onSaved }: { onSaved?: () => void }) {
+function TelegramConnectPanel({ onSaved, ui }: { onSaved?: () => void; ui?: WorkerDashboardUiContract }) {
   const [status, setStatus] = useState<TelegramStatus | null>(null);
   const [tokenDraft, setTokenDraft] = useState('');
   const [userIdDraft, setUserIdDraft] = useState('');
@@ -147,7 +159,7 @@ function TelegramConnectPanel({ onSaved }: { onSaved?: () => void }) {
   const allDone = status.bot && status.allowedUserConfigured;
 
   return (
-    <div className="detail-body">
+    <div className={ui?.classes.detailBody ?? 'detail-body'}>
       <div style={{ marginBottom: '1rem' }}>
         <span className={`status-pill ${allDone ? 'good' : 'warning'}`}>
           {allDone ? 'Connected' : 'Setup needed'}
@@ -160,15 +172,15 @@ function TelegramConnectPanel({ onSaved }: { onSaved?: () => void }) {
         ) : null}
       </div>
 
-      <section style={{ marginBottom: '1.25rem' }}>
-        <StepHeader n={1} label="Create a bot with BotFather" state={tokenStep === 'done' ? 'done' : 'open'} />
+      <section className="bfrost-worker-step">
+        <StepHeader ui={ui} n={1} label="Create a bot with BotFather" state={tokenStep === 'done' ? 'done' : 'open'} />
         <p className="footnote">
           Open Telegram and message <a href="https://t.me/BotFather" target="_blank" rel="noreferrer"><code>@BotFather</code></a>. Send <code>/newbot</code>, pick a name, then a username ending in <code>bot</code>. BotFather replies with a token that looks like <code>123456789:ABCDEF…</code>. Copy it.
         </p>
       </section>
 
-      <section style={{ marginBottom: '1.25rem' }}>
-        <StepHeader n={2} label="Paste and verify the bot token" state={tokenStep} />
+      <section className="bfrost-worker-step">
+        <StepHeader ui={ui} n={2} label="Paste and verify the bot token" state={tokenStep} />
         {tokenStep === 'error' && status.errorMessage ? (
           <p className="footnote" style={{ color: 'var(--warning)' }}>
             Stored token did not work: {status.errorMessage}. Paste a fresh one below.
@@ -216,8 +228,8 @@ function TelegramConnectPanel({ onSaved }: { onSaved?: () => void }) {
         </div>
       </section>
 
-      <section style={{ marginBottom: '1.25rem', opacity: tokenStep === 'done' ? 1 : 0.55 }}>
-        <StepHeader n={3} label="Tell BFrost your Telegram user ID" state={userStep} />
+      <section className="bfrost-worker-step" data-disabled={tokenStep === 'done' ? undefined : 'true'}>
+        <StepHeader ui={ui} n={3} label="Tell BFrost your Telegram user ID" state={userStep} />
         <p className="footnote">
           Open <a href="https://t.me/userinfobot" target="_blank" rel="noreferrer"><code>@userinfobot</code></a> in Telegram and send it any message — it replies with your numeric ID. This restricts your BFrost bot so only your account can use it.
         </p>
@@ -244,8 +256,8 @@ function TelegramConnectPanel({ onSaved }: { onSaved?: () => void }) {
         </div>
       </section>
 
-      <section style={{ opacity: allDone ? 1 : 0.55 }}>
-        <StepHeader n={4} label="Send a test message" state={testResult?.ok ? 'done' : allDone ? 'open' : 'pending'} />
+      <section className="bfrost-worker-step" data-disabled={allDone ? undefined : 'true'}>
+        <StepHeader ui={ui} n={4} label="Send a test message" state={testResult?.ok ? 'done' : allDone ? 'open' : 'pending'} />
         <p className="footnote">
           One last check. Make sure you have sent <code>/start</code> to your bot at least once from Telegram (Telegram does not let bots message users who have not initiated a chat). Then click below — BFrost will send a confirmation message to your account.
         </p>
@@ -274,5 +286,5 @@ export const dashboardView: WorkerDashboardViewDefinition = {
   kind: 'channel-connect',
   surfaceIds: ['telegram-credentials'],
   count: () => undefined,
-  render: (ctx) => <TelegramConnectPanel onSaved={ctx.onSaved as (() => void) | undefined} />,
+  render: (ctx) => <TelegramConnectPanel ui={ctx.ui as WorkerDashboardUiContract | undefined} onSaved={ctx.onSaved as (() => void) | undefined} />,
 };

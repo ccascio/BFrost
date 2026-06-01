@@ -105,12 +105,19 @@ test('scheduler runs can reconcile abandoned running records', async () => {
       summary: 'Tweet posted.',
     });
 
-    const count = await abandonRunningSchedulerRuns({
+    const result = await abandonRunningSchedulerRuns({
       finishedAt: '2026-04-24T10:00:00.000Z',
       error: 'BFrost stopped before this scheduler run finished.',
     });
 
-    assert.equal(count, 1);
+    assert.equal(result.count, 1);
+    assert.deepEqual(result.abandoned, [
+      {
+        job: 'news-digest',
+        label: 'News Digest',
+        startedAt: '2026-04-24T08:00:00.000Z',
+      },
+    ]);
     const runs = await listSchedulerRuns();
     const abandoned = runs.find((run) => run.job === 'news-digest');
     assert.ok(abandoned);

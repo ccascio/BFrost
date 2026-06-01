@@ -372,8 +372,24 @@ Inside the bundle, register your view via the host-provided global:
 import { useState } from 'react';
 
 function MyView() {
+  const ui = window.bfrost.ui;
   const [count, setCount] = useState(0);
-  return <button onClick={() => setCount(count + 1)}>{count}</button>;
+  return (
+    <section className={ui.classes.panel}>
+      <div className={ui.classes.panelHead}>
+        <div>
+          <p className={ui.classes.panelKicker}>Local worker</p>
+          <h2>Counter</h2>
+        </div>
+        <span className={ui.statusTone('info')}>{count}</span>
+      </div>
+      <div className={ui.classes.detailBody}>
+        <button className={ui.classes.primaryButton} onClick={() => setCount(count + 1)}>
+          Clicked {count} time{count === 1 ? '' : 's'}
+        </button>
+      </div>
+    </section>
+  );
 }
 
 window.bfrost.registerDashboardView({
@@ -386,6 +402,34 @@ window.bfrost.registerDashboardView({
 ```
 
 Important: `react`, `react-dom`, and `react/jsx-runtime` are externalized and rewired to `window.bfrost.*` automatically. Never bundle a second React — hook dispatchers are per-React-instance and a duplicate React breaks `useState` silently. TypeScript types for `window.bfrost` are not yet packaged; declare a local `declare global` block in your `dashboard.tsx` until a `@bfrost/worker-sdk` ships.
+
+### Dashboard UI host contract
+
+Dashboard bundles should use the host CSS contract instead of copying BFrost styles or importing files from `web/src`. The browser exposes `window.bfrost.ui`:
+
+```ts
+const ui = window.bfrost.ui;
+```
+
+Stable class helpers:
+
+| Helper | Use |
+| --- | --- |
+| `ui.classes.surface` | Top-level dashboard surface wrapper. |
+| `ui.classes.grid` | Responsive grid for repeated panels. |
+| `ui.classes.panel` / `panelHead` / `panelKicker` | Standard dashboard panels and headings. |
+| `ui.classes.detailBody` / `detailGrid` / `detailBlock` | Detail sections and key/value blocks. |
+| `ui.classes.field` | Label + input/select/textarea form rows. |
+| `ui.classes.actions` | Button rows that wrap cleanly. |
+| `ui.classes.button` / `primaryButton` / `dangerButton` | Standard actions without importing a component. |
+| `ui.classes.statusPill` and `ui.statusTone('good' | 'warning' | 'info' | 'muted' | 'error')` | Status chips that match the host. |
+| `ui.classes.emptyState` | Empty/loading/fallback messages. |
+| `ui.classes.timeline` / `timelineEvent` | Event and run timelines. |
+| `ui.classes.stepHeader` | Short setup/checklist step headers. |
+
+`ui.cx(...parts)` joins class names while dropping `false`, `null`, and `undefined`.
+
+Keep custom CSS inside your worker bundle limited to worker-specific layout details. Do not depend on private app module paths; only the `window.bfrost` global and these CSS class names are part of the dashboard UI contract.
 
 See `workers/examples/dashboard-view/` for a runnable example.
 

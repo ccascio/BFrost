@@ -4,6 +4,7 @@ import * as jsxRuntime from 'react/jsx-runtime';
 import App from './App';
 import { UiDemo } from './ui';
 import { registerDashboardView, unregisterDashboardViewsForWorker } from './workers/registry';
+import { workerDashboardUi, type WorkerDashboardUiContract } from './workers/ui-contract';
 import './styles.css';
 
 // Expose the host's React + helpers as a global so runtime-loaded worker dashboard
@@ -16,6 +17,7 @@ declare global {
       React: typeof React;
       ReactDOM: typeof ReactDOM;
       jsxRuntime: typeof jsxRuntime;
+      ui: WorkerDashboardUiContract;
       registerDashboardView: typeof registerDashboardView;
       unregisterDashboardViewsForWorker: typeof unregisterDashboardViewsForWorker;
     };
@@ -26,6 +28,7 @@ window.bfrost = {
   React,
   ReactDOM,
   jsxRuntime,
+  ui: workerDashboardUi,
   registerDashboardView,
   unregisterDashboardViewsForWorker,
 };

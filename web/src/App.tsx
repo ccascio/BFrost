@@ -6,6 +6,7 @@ import { loadRuntimeWorkerBundle, workerQueueItemDetails, useWorkerDashboardView
 import type { WorkerDashboardViewDefinition } from './workers/types';
 import { Wizard } from './Wizard';
 import { AlertDialog, Button, CopyButton, CronBuilder, Dialog, ManagementBar, PreviewLinkCard, Progress, Sheet } from './ui';
+import { workerDashboardUi } from './workers/ui-contract';
 
 type RunStatus = 'idle' | 'success' | 'error' | 'skipped';
 type CoreDashboardTab = 'overview' | 'channels' | 'workers' | 'jobs' | 'config' | 'chat' | 'system' | 'store' | 'actions' | 'health';
@@ -1739,6 +1740,7 @@ export default function App() {
   const workerTabDefinitions = buildWorkerTabDefinitions(dashboard.workers, dashboardViews);
   const activeWorkerTab = workerTabDefinitions.find((tab) => tab.id === activeTab) ?? null;
   const workerViewContext = {
+    ui: workerDashboardUi,
     activeWorkerTab,
     dashboard,
     filteredQueueItems,

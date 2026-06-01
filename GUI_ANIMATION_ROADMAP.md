@@ -110,6 +110,8 @@ Animate UI is useful here as a pattern library: animated primitives, operational
 
 **Goal:** let worker-provided UI use the same interaction language without making core import specific workers.
 
+**Status:** Done. Exposed a tiny `window.bfrost.ui` contract with stable class names and helpers, passed it into worker dashboard render context, documented the host CSS contract, updated the local dashboard example and bundle test, and converted the Telegram channel dashboard as the first worker-owned surface while leaving `web/src/workers/registry.ts` behavior untouched.
+
 - Document a host CSS class contract for local worker dashboard bundles: buttons, status pills, panels, form fields, progress, and empty states.
 - Optionally expose a tiny `window.bfrost.ui` helper surface for stable primitives that worker dashboards can call without bundling a second design system.
 - Keep the runtime bundle behavior in `web/src/workers/registry.ts` intact: workers register their own views and queue detail renderers.

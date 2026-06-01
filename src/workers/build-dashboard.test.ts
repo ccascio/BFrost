@@ -10,7 +10,8 @@ import { useState } from 'react';
 
 function View() {
   const [count, setCount] = useState(0);
-  return <button onClick={() => setCount(count + 1)}>{count}</button>;
+  const ui = window.bfrost.ui;
+  return <button className={ui.classes.primaryButton} onClick={() => setCount(count + 1)}>{count}</button>;
 }
 
 window.bfrost.registerDashboardView({
@@ -40,6 +41,7 @@ test('compileLocalWorkerDashboard bundles TSX into an IIFE referencing host glob
     // rewired through window.bfrost.* so the host's React instance owns hooks.
     assert.ok(compiled.includes('window.bfrost.React'), 'expected window.bfrost.React in bundle');
     assert.ok(compiled.includes('window.bfrost.jsxRuntime'), 'expected window.bfrost.jsxRuntime in bundle');
+    assert.ok(compiled.includes('window.bfrost.ui'), 'expected dashboard bundle to read the host UI contract');
     assert.ok(!/from\s+["']react["']/.test(compiled), 'bundle must not retain unresolved react imports');
     assert.ok(compiled.includes('registerDashboardView'), 'bundle should call the registration helper');
 
