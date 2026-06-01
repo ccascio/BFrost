@@ -160,15 +160,68 @@ npm start
 
 Open the dashboard at `http://127.0.0.1:3030`.
 
+## Running BFrost
+
+Always build before starting for the first time, or after pulling new code:
+
+```bash
+npm run build   # compile backend + dashboard (required before npm start)
+```
+
+### Day-to-day (manual start/stop)
+
+`npm start` starts the server as a **background process** — the terminal is free to close immediately. It automatically stops any existing instance first, so re-running it is safe.
+
+```bash
+npm start        # stop any existing instance, start fresh in background
+npm stop         # stop the running instance
+npm run logs     # tail the live log (macOS / Linux)
+```
+
+> **Windows logs:** `Get-Content -Path data\bfrost.log -Wait`
+
+### Auto-start on login (recommended for regular use)
+
+Run once after `npm run build` to register BFrost as an OS service that starts automatically at login and restarts on crash:
+
+```bash
+npm run install-service     # detect OS, write + load the service file
+npm run uninstall-service   # remove the service and stop the process
+```
+
+Once the service is installed, `npm start` and `npm stop` route through the OS service manager automatically — no conflicts.
+
+| Platform | Mechanism |
+|---|---|
+| macOS | launchd `LaunchAgent` (`~/Library/LaunchAgents/net.bfrost.server.plist`) |
+| Linux | systemd user service (`~/.config/systemd/user/bfrost.service`) |
+| Windows | PM2 (if installed) or Windows Task Scheduler |
+
+### Developer workflow
+
+Use `npm run dev` instead of `npm start` when actively working on the code — it runs the test suite first, then starts backend and Vite dashboard in the foreground (logs visible in the terminal, Ctrl+C to stop both):
+
+```bash
+npm run dev         # test → backend + Vite dashboard (foreground)
+npm run dev:watch   # TypeScript watch mode (backend only)
+npm run dev:web     # Vite dev server only
+```
+
 ## Scripts
 
-- `npm run build` — compile the backend and build the React dashboard.
-- `npm run build:server` / `npm run build:web` — compile one side only.
-- `npm start` — run the bot, scheduler, and admin dashboard server.
-- `npm run dev` — run unit tests, then start backend and Vite dashboard together.
-- `npm run dev:watch` — watch TypeScript backend files.
-- `npm run dev:web` — Vite dev mode for the dashboard.
-- `npm run task -- --job <id>` — run a named job manually (e.g. `news-digest`, `personal-research`).
+| Command | Description |
+|---|---|
+| `npm run build` | Compile backend + React dashboard |
+| `npm run build:server` / `npm run build:web` | Compile one side only |
+| `npm start` | Start server in background (stops any existing instance first) |
+| `npm stop` | Stop the running instance |
+| `npm run logs` | Tail `data/bfrost.log` (macOS / Linux) |
+| `npm run install-service` | Register as OS service (auto-start on login, restart on crash) |
+| `npm run uninstall-service` | Remove the OS service |
+| `npm run dev` | Run tests then start backend + Vite dashboard in foreground |
+| `npm run dev:watch` | TypeScript watch mode for the backend |
+| `npm run dev:web` | Vite dev server for the dashboard only |
+| `npm run task -- --job <id>` | Run a named job once and exit (e.g. `news-digest`, `tweet-post`) |
 
 ## Authoring a worker
 
