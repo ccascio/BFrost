@@ -282,6 +282,10 @@ Most mutable local state is stored in the SQLite database configured by `APP_DB_
 
 Before publishing or sharing a branch, check that `data/`, `logs/`, `models/`, `.env`, SQLite files, generated research notes, and private worker scratch directories are not staged.
 
+## Community
+
+Join the [LLM Productivity Reddit community](https://www.reddit.com/r/LLM_Productivity/) to share what you are building with BFrost, ask questions, compare worker ideas, and participate in the broader local-AI productivity conversation.
+
 ## Documentation
 
 - [`docs/worker-authoring.md`](./docs/worker-authoring.md) — consolidated worker authoring guide.
