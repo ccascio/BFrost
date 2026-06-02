@@ -17,7 +17,11 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ENTRY = path.join(ROOT, 'dist', 'index.js');
-const LOG_FILE = path.join(ROOT, 'data', 'bfrost.log');
+// macOS TCC prevents launchd from opening files in ~/Documents for stdio
+// redirection.  Use ~/Library/Logs which is always accessible to LaunchAgents.
+const LOG_FILE = process.platform === 'darwin'
+  ? path.join(homedir(), 'Library', 'Logs', 'BFrost', 'bfrost.log')
+  : path.join(ROOT, 'data', 'bfrost.log');
 const NODE = process.execPath;
 const LABEL = 'net.bfrost.server';
 
@@ -35,6 +39,7 @@ if (!existsSync(ENTRY)) {
 }
 
 mkdirSync(path.join(ROOT, 'data'), { recursive: true });
+mkdirSync(path.dirname(LOG_FILE), { recursive: true });
 
 // ---------------------------------------------------------------------------
 // macOS — launchd LaunchAgent

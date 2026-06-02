@@ -123,7 +123,14 @@ function normalizeSettings(input: Partial<AdminSettings>): AdminSettings {
           ? candidate.prompt
           : manifest.defaultPrompt,
       params: candidate?.params && typeof candidate.params === 'object'
-        ? manifest.paramsSchema.parse(candidate.params) as Record<string, unknown>
+        ? (() => {
+            const result = manifest.paramsSchema.safeParse(candidate.params);
+            if (!result.success) {
+              console.warn(`[Admin] Stored params for job "${jobName}" are incompatible with the current schema (likely a schema change); resetting to defaults.`);
+              return manifest.defaultParams;
+            }
+            return result.data as Record<string, unknown>;
+          })()
         : manifest.defaultParams,
     };
     validateJobSettings(jobName, jobs[jobName]);

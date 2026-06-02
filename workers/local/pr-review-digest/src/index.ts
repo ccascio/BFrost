@@ -172,7 +172,7 @@ interface RunSummary {
 
 async function loadSettings(): Promise<AutomationSettings> {
   const stored = await openWorkerKv(WORKER_ID).get<Partial<AutomationSettings>>(SETTINGS_KEY);
-  return SettingsSchema.parse(stored ?? {});
+  return SettingsSchema.strip().parse(stored ?? {});
 }
 
 async function saveSettings(settings: AutomationSettings): Promise<AutomationSettings> {

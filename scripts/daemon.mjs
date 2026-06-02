@@ -15,7 +15,9 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ENTRY = path.join(ROOT, 'dist', 'index.js');
-const LOG_FILE = path.join(ROOT, 'data', 'bfrost.log');
+const LOG_FILE = process.platform === 'darwin'
+  ? path.join(homedir(), 'Library', 'Logs', 'BFrost', 'bfrost.log')
+  : path.join(ROOT, 'data', 'bfrost.log');
 const PORT = Number(process.env.BFROST_PORT ?? 3030);
 const LABEL = 'net.bfrost.server';
 
