@@ -19,6 +19,7 @@ test('built-in workers expose the assistant tool catalog', () => {
     'recentRuns',
     'saveMemory',
     'setJobSchedule',
+    'shellExec',
     'triggerJob',
     'webSearch',
   ]);
