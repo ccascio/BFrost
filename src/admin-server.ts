@@ -66,6 +66,7 @@ import {
   AutoBackupSettingsSchema,
   BackupsSectionSchema,
   ChatMessageBodySchema,
+  ChatThreadRenameBodySchema,
   CloudApiKeysBodySchema,
   CoreSettingsBodySchema,
   EmbeddingSettingsBodySchema,
@@ -114,6 +115,13 @@ import {
   cancelPendingRestore,
 } from './app-backup';
 import { processChannelMessage } from './channel';
+import { getFullHistory } from './conversation';
+import {
+  listThreads,
+  getThread,
+  renameThread,
+  deleteThread,
+} from './chat-threads';
 import { createHash } from 'crypto';
 import { loadKvJson, saveKvJson } from './sqlite';
 import { publishItem } from './jobs/item-bus';
@@ -184,6 +192,20 @@ export async function stopAdminServer(): Promise<void> {
   });
 
   server = null;
+}
+
+/** Flatten a stored ModelMessage content (string or part array) into display text. */
+function extractTurnText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) =>
+        part && typeof part === 'object' && 'text' in part ? String((part as { text: unknown }).text) : '',
+      )
+      .filter(Boolean)
+      .join('\n');
+  }
+  return '';
 }
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -317,6 +339,36 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         },
       });
       return sendJson(res, 200, { response: response.text, dashboard: await buildDashboardState() });
+    }
+
+    if (url.pathname === '/api/chats' && req.method === 'GET') {
+      return sendJson(res, 200, { threads: listThreads('dashboard') });
+    }
+
+    {
+      const match = url.pathname.match(/^\/api\/chats\/([^/]+)$/);
+      if (match) {
+        const conversationId = decodeURIComponent(match[1]);
+        if (req.method === 'GET') {
+          const thread = getThread(conversationId);
+          if (!thread) return sendJson(res, 404, { error: 'Chat not found' });
+          const turns = getFullHistory(thread.chatId)
+            .filter((message) => message.role === 'user' || message.role === 'assistant')
+            .map((message) => ({ role: message.role, text: extractTurnText(message.content) }))
+            .filter((turn) => turn.text.length > 0);
+          return sendJson(res, 200, { thread, turns });
+        }
+        if (req.method === 'PATCH') {
+          const body = await readJsonBody(req, ChatThreadRenameBodySchema);
+          const updated = renameThread(conversationId, body.title);
+          if (!updated) return sendJson(res, 404, { error: 'Chat not found' });
+          return sendJson(res, 200, { thread: updated });
+        }
+        if (req.method === 'DELETE') {
+          if (!deleteThread(conversationId)) return sendJson(res, 404, { error: 'Chat not found' });
+          return sendJson(res, 200, { ok: true });
+        }
+      }
     }
 
     const workerRoute = listRegisteredApiRoutes().find((route) =>

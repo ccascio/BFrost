@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
 import { processMessage, type AgentResponse } from './agent';
+import { touchThread } from './chat-threads';
 
 /**
  * Channel identifiers are owned by the channel worker that emits them. Core does not
@@ -22,8 +23,16 @@ export interface ChannelMessage {
 }
 
 export async function processChannelMessage(message: ChannelMessage): Promise<AgentResponse> {
+  const chatId = conversationStorageId(message);
+  // Register/refresh the thread so the conversation surfaces in chat history.
+  touchThread({
+    channel: message.channel,
+    conversationId: message.conversationId,
+    chatId,
+    text: message.text,
+  });
   return processMessage({
-    chatId: conversationStorageId(message),
+    chatId,
     userId: userStorageId(message),
     username: message.username,
     message: message.text,

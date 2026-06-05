@@ -2318,6 +2318,112 @@ h3 {
   flex: 0 0 auto;
 }
 
+.chat-workspace {
+  flex: 1 1 auto;
+  display: flex;
+  gap: 1rem;
+  min-height: 0;
+  margin-top: 1rem;
+}
+
+.chat-history {
+  flex: 0 0 15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
+  border-right: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  padding-right: 0.75rem;
+}
+
+.chat-history-new {
+  flex: 0 0 auto;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.chat-history-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.chat-history-empty {
+  opacity: 0.6;
+  font-size: 0.85rem;
+  padding: 0.5rem;
+}
+
+.chat-history-item {
+  display: flex;
+  align-items: center;
+  border-radius: 0.5rem;
+}
+
+.chat-history-item.active {
+  background: var(--surface-raised, rgba(255, 255, 255, 0.06));
+}
+
+.chat-history-open {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.chat-history-title {
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 11rem;
+}
+
+.chat-history-time {
+  font-size: 0.7rem;
+  opacity: 0.55;
+}
+
+.chat-history-actions {
+  display: flex;
+  gap: 0.15rem;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.chat-history-item:hover .chat-history-actions,
+.chat-history-item.active .chat-history-actions {
+  opacity: 1;
+}
+
+.chat-history-actions button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  opacity: 0.7;
+  padding: 0.2rem 0.3rem;
+}
+
+.chat-history-actions button:hover {
+  opacity: 1;
+}
+
+.chat-main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .chat-log {
   flex: 1 1 auto;
   overflow-y: auto;

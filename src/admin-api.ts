@@ -99,6 +99,10 @@ export const ChatMessageBodySchema = z.object({
   conversationId: z.string().min(1).max(120).optional(),
 }).strict();
 
+export const ChatThreadRenameBodySchema = z.object({
+  title: z.string().min(1).max(120),
+}).strict();
+
 export const WorkerUpdateBodySchema = z.object({
   enabled: z.boolean(),
 }).strict();

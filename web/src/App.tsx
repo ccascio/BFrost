@@ -619,6 +619,16 @@ interface ChatTurn {
   createdAt: string;
 }
 
+interface ChatThread {
+  conversationId: string;
+  chatId: number;
+  channel: string;
+  title: string;
+  createdAt: string;
+  lastMessageAt: string;
+  projectId?: string | null;
+}
+
 export default function App() {
   const [dashboard, setDashboard] = useState<DashboardState | null>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
@@ -642,6 +652,8 @@ export default function App() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [chatDraft, setChatDraft] = useState('');
   const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
+  const [chatThreads, setChatThreads] = useState<ChatThread[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [chatArrivingFromOverview, setChatArrivingFromOverview] = useState(false);
   const chatLogRef = useRef<HTMLDivElement | null>(null);
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -780,6 +792,13 @@ export default function App() {
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   }, [chatTurns.length, busyKey === 'dashboard-chat']);
+
+  // Load the chat history list whenever the Chat tab is opened.
+  useEffect(() => {
+    if (activeTab !== 'chat') return;
+    void loadChatThreads();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab !== 'chat' || !chatArrivingFromOverview) return;
@@ -1528,9 +1547,96 @@ export default function App() {
     );
   }
 
+  function mintConversationId(): string {
+    const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    return `dashboard-${id}`;
+  }
+
+  async function loadChatThreads() {
+    try {
+      const response = await fetch('/api/chats', { credentials: 'include' });
+      if (!response.ok) return;
+      const payload = (await response.json()) as { threads: ChatThread[] };
+      setChatThreads(payload.threads ?? []);
+    } catch {
+      /* non-fatal — history list is best-effort */
+    }
+  }
+
+  function startNewChat() {
+    setActiveConversationId(mintConversationId());
+    setChatTurns([]);
+    setError(null);
+    window.requestAnimationFrame(() => chatInputRef.current?.focus());
+  }
+
+  async function openChatThread(thread: ChatThread) {
+    setBusyKey(`open-chat-${thread.conversationId}`);
+    setError(null);
+    try {
+      const response = await fetch(`/api/chats/${encodeURIComponent(thread.conversationId)}`, {
+        credentials: 'include',
+      });
+      const payload = (await response.json()) as
+        | { thread: ChatThread; turns: { role: 'user' | 'assistant'; text: string }[] }
+        | { error: string };
+      if (!response.ok || 'error' in payload) {
+        throw new Error('error' in payload ? payload.error : 'Failed to open chat');
+      }
+      setActiveConversationId(thread.conversationId);
+      setChatTurns(
+        payload.turns.map((turn) => ({ ...turn, createdAt: thread.lastMessageAt })),
+      );
+    } catch (err) {
+      setError(toAppError(err));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function renameChatThread(thread: ChatThread) {
+    const title = window.prompt('Rename chat', thread.title)?.trim();
+    if (!title || title === thread.title) return;
+    try {
+      const response = await fetch(`/api/chats/${encodeURIComponent(thread.conversationId)}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      });
+      if (!response.ok) throw new Error('Rename failed');
+      await loadChatThreads();
+    } catch (err) {
+      setError(toAppError(err));
+    }
+  }
+
+  async function deleteChatThread(thread: ChatThread) {
+    if (!window.confirm(`Delete chat "${thread.title}"? This cannot be undone.`)) return;
+    try {
+      const response = await fetch(`/api/chats/${encodeURIComponent(thread.conversationId)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Delete failed');
+      if (activeConversationId === thread.conversationId) {
+        setActiveConversationId(null);
+        setChatTurns([]);
+      }
+      await loadChatThreads();
+    } catch (err) {
+      setError(toAppError(err));
+    }
+  }
+
   async function sendDashboardChat() {
     const message = chatDraft.trim();
     if (!message) return;
+
+    const conversationId = activeConversationId ?? mintConversationId();
+    if (!activeConversationId) setActiveConversationId(conversationId);
 
     const userTurn: ChatTurn = { role: 'user', text: message, createdAt: new Date().toISOString() };
     setChatTurns((current) => [...current, userTurn]);
@@ -1543,7 +1649,7 @@ export default function App() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, conversationId: 'dashboard-admin' }),
+        body: JSON.stringify({ message, conversationId }),
       });
       const payload = (await response.json()) as { response: string; dashboard: DashboardState } | { error: string };
       if (!response.ok || 'error' in payload) {
@@ -1558,6 +1664,7 @@ export default function App() {
         { role: 'assistant', text: payload.response, createdAt: new Date().toISOString() },
       ]);
       await fetchDashboard(true);
+      await loadChatThreads();
       setNotice('Dashboard chat answered.');
     } catch (err) {
       setError(toAppError(err));
@@ -2233,6 +2340,46 @@ export default function App() {
             </StatusPill>
           </div>
 
+          <div className="chat-workspace">
+            <aside className="chat-history">
+              <button type="button" className="chat-history-new" onClick={startNewChat}>
+                + New chat
+              </button>
+              <div className="chat-history-list">
+                {chatThreads.length === 0 ? (
+                  <p className="chat-history-empty">No saved chats yet.</p>
+                ) : (
+                  chatThreads.map((thread) => (
+                    <div
+                      key={thread.conversationId}
+                      className={`chat-history-item${
+                        thread.conversationId === activeConversationId ? ' active' : ''
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        className="chat-history-open"
+                        onClick={() => void openChatThread(thread)}
+                        disabled={busyKey === `open-chat-${thread.conversationId}`}
+                      >
+                        <span className="chat-history-title">{thread.title}</span>
+                        <span className="chat-history-time">{formatRelativeTime(thread.lastMessageAt)}</span>
+                      </button>
+                      <div className="chat-history-actions">
+                        <button type="button" title="Rename" onClick={() => void renameChatThread(thread)}>
+                          ✎
+                        </button>
+                        <button type="button" title="Delete" onClick={() => void deleteChatThread(thread)}>
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </aside>
+
+            <div className="chat-main">
           <div className="chat-log" ref={chatLogRef}>
             {chatTurns.length === 0 ? (
               <ChatWelcome prompts={buildChatPromptButtons(dashboard)} onSelect={fillChatDraft} />
@@ -2294,6 +2441,8 @@ export default function App() {
               {busyKey === 'dashboard-chat' ? 'Thinking…' : 'Send'}
             </button>
           </form>
+            </div>
+          </div>
         </section>
       ) : null}
 
@@ -5727,4 +5876,18 @@ function formatTime(value: string): string {
     minute: '2-digit',
     second: '2-digit',
   }).format(new Date(value));
+}
+
+function formatRelativeTime(value: string): string {
+  const ts = Date.parse(value);
+  if (!Number.isFinite(ts)) return '';
+  const diffMs = Date.now() - ts;
+  if (diffMs < 60_000) return 'just now';
+  const minutes = Math.round(diffMs / 60_000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(ts);
 }

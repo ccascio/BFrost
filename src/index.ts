@@ -3,6 +3,7 @@ import { startAdminServer, stopAdminServer } from './admin-server';
 import { applyPendingRestoreIfAny, startAutoBackup, stopAutoBackup } from './app-backup';
 import { getAppHealthSnapshot, logStartupHealthSummary } from './health';
 import { hydrateConversations, flushConversations } from './conversation';
+import { hydrateThreads, flushThreads } from './chat-threads';
 import {
   getActiveLocalProvider,
   listRegisteredChannels,
@@ -31,6 +32,7 @@ async function main(): Promise<void> {
   // are surfaced as warnings rather than blocking startup.
   logStartupHealthSummary(health);
   await hydrateConversations();
+  await hydrateThreads();
   await releaseStaleQueueLockOnBoot();
   await ensureActionTable();
   await acquireRuntimeLock();
@@ -154,6 +156,10 @@ async function main(): Promise<void> {
     await flushConversations().catch((err) => {
       exitCode = 1;
       console.warn('[BFrost] Conversation flush failed:', err);
+    });
+    await flushThreads().catch((err) => {
+      exitCode = 1;
+      console.warn('[BFrost] Thread registry flush failed:', err);
     });
     await stopAdminServer().catch((err) => {
       exitCode = 1;
