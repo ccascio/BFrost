@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { config } from './config';
+import { closeDb } from './sqlite';
 import { acquireSchedulerExecutionLock, schedulerExecutionLockKey } from './scheduler-locks';
 
 test('scheduler execution locks allow only one owner per command and scheduled time', async () => {
@@ -11,22 +12,26 @@ test('scheduler execution locks allow only one owner per command and scheduled t
   const previousDbPath = config.appDbPath;
   config.appDbPath = path.join(dir, 'app.sqlite');
 
+  // Slots must stay inside the lock retention window, so derive them from now.
+  const slotA = new Date().toISOString();
+  const slotB = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
   try {
     const first = await acquireSchedulerExecutionLock({
       commandKey: 'job:news-digest',
-      scheduledAt: '2026-05-21T22:00:00.000Z',
+      scheduledAt: slotA,
     });
     const duplicate = await acquireSchedulerExecutionLock({
       commandKey: 'job:news-digest',
-      scheduledAt: '2026-05-21T22:00:00.000Z',
+      scheduledAt: slotA,
     });
     const nextSlot = await acquireSchedulerExecutionLock({
       commandKey: 'job:news-digest',
-      scheduledAt: '2026-05-22T22:00:00.000Z',
+      scheduledAt: slotB,
     });
     const differentCommand = await acquireSchedulerExecutionLock({
       commandKey: 'job:tweet-post',
-      scheduledAt: '2026-05-21T22:00:00.000Z',
+      scheduledAt: slotA,
     });
 
     assert.equal(first, true);
@@ -35,6 +40,7 @@ test('scheduler execution locks allow only one owner per command and scheduled t
     assert.equal(differentCommand, true);
   } finally {
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });

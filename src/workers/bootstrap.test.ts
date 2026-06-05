@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { config } from '../config';
+import { closeDb } from '../sqlite';
 import { bootstrapLocalWorkers } from './bootstrap';
 import { unregisterLocalWorkerModule } from './registry';
 import { loadWorkerState, saveWorkerState, setWorkerInstalledVersion } from './state';
@@ -114,6 +115,7 @@ async function withBootstrapSetup(moduleJs: string, fn: TestFn): Promise<void> {
     config.appDbPath = prevDbPath;
     config.workerPaths = prevWorkerPaths;
     config.localWorkerCodeEnabled = prevCodeEnabled;
+    closeDb();
     await rm(parentDir, { recursive: true, force: true });
   }
 }

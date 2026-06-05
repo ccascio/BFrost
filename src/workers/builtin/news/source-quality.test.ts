@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { config } from '../../../config';
+import { closeDb } from '../../../sqlite';
 import { loadSourceQualityRules, saveSourceQualityRules } from './source-quality';
 
 test('source quality rules persist to SQLite', async () => {
@@ -29,6 +30,7 @@ test('source quality rules persist to SQLite', async () => {
   } finally {
     config.appDbPath = previousDbPath;
     config.newsStoreDir = previousNewsDir;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });

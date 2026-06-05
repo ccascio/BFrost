@@ -160,6 +160,16 @@ npm start
 
 Open the dashboard at `http://127.0.0.1:3030`.
 
+### Windows users — run npm scripts through Git Bash
+
+Several npm scripts (including `test` and `dev`) use Unix shell syntax like `rm -rf`, `find`, and `&&`. On Windows, npm runs scripts through `cmd.exe` by default, so these fail with errors such as `'rm' is not recognized`. Point npm's `script-shell` at Git Bash once (requires [Git for Windows](https://git-scm.com/download/win)):
+
+```powershell
+npm config set script-shell "C:\Program Files\Git\bin\bash.exe"
+```
+
+Adjust the path if Git is installed elsewhere (e.g. `%LOCALAPPDATA%\Programs\Git\bin\bash.exe`). After this, `npm run dev`, `npm test`, etc. work from PowerShell or CMD as written.
+
 ## Running BFrost
 
 Always build before starting for the first time, or after pulling new code:

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { config } from '../../../config';
+import { closeDb } from '../../../sqlite';
 import { publishItem } from '../../../jobs/item-bus';
 import { queryItems } from './tools';
 
@@ -19,6 +20,7 @@ function withTempStore<T>(fn: () => Promise<T>): Promise<T> {
     } finally {
       config.newsStoreDir = previousDir;
       config.appDbPath = previousDbPath;
+      closeDb();
       await rm(dir, { recursive: true, force: true });
     }
   })();

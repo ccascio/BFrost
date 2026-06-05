@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { config } from '../config';
+import { closeDb } from '../sqlite';
 import { listRecentEvents } from '../event-log';
 import { createQueueItem, loadQueue, saveQueue } from './queue';
 import { loadQueueSnapshot, updateDashboardQueueItem } from './queue-service';
@@ -57,6 +58,7 @@ test('loadQueueSnapshot returns pruned counts and newest items first', async () 
   } finally {
     config.newsStoreDir = previousDir;
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -91,6 +93,7 @@ test('updateDashboardQueueItem persists transition and records an event', async 
   } finally {
     config.newsStoreDir = previousDir;
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });

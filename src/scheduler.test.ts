@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { z } from 'zod';
 import { config } from './config';
+import { closeDb } from './sqlite';
 import { listSchedulerRuns } from './scheduler-runs';
 import { getSchedulerSnapshot, triggerJobNow } from './scheduler';
 import { registerLoadedLocalModule, unregisterLocalWorkerModule } from './workers/registry';
@@ -153,6 +154,7 @@ test('scheduler integration — successful job produces a success run record and
     config.appDbPath = prevDbPath;
     config.openaiApiKey = prevOpenaiKey;
     config.modelFallbackAliases = prevFallbacks;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -195,6 +197,7 @@ test('scheduler integration — failing job produces an error run record and cor
     config.appDbPath = prevDbPath;
     config.openaiApiKey = prevOpenaiKey;
     config.modelFallbackAliases = prevFallbacks;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -223,6 +226,7 @@ test('scheduler snapshot refreshes cached settings when a new worker job appears
     config.appDbPath = prevDbPath;
     config.openaiApiKey = prevOpenaiKey;
     config.modelFallbackAliases = prevFallbacks;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });

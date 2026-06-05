@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { config } from './config';
+import { closeDb } from './sqlite';
 import {
   abandonRunningSchedulerRuns,
   finishSchedulerRun,
@@ -43,6 +44,7 @@ test('scheduler runs persist start and finish records', async () => {
     assert.equal(runs[0].itemCount, 3);
   } finally {
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -75,6 +77,7 @@ test('scheduler runs list newest first', async () => {
     );
   } finally {
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -127,6 +130,7 @@ test('scheduler runs can reconcile abandoned running records', async () => {
     assert.equal(runs.find((run) => run.job === 'tweet-post')?.status, 'success');
   } finally {
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });

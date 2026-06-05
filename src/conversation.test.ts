@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { config } from './config';
+import { closeDb } from './sqlite';
 import {
   addAssistantMessage,
   addUserMessage,
@@ -41,6 +42,7 @@ test('conversation history and model selections persist to disk', async () => {
     config.conversationStorePath = previousPath;
     config.appDbPath = previousDbPath;
     config.ollamaModel = previousModel;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -74,6 +76,7 @@ test('conversation hydration trims oversized histories', async () => {
   } finally {
     config.conversationStorePath = previousPath;
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });

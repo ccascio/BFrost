@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { config } from '../config';
-import { getAppDb } from '../sqlite';
+import { getAppDb, closeDb } from '../sqlite';
 import { openWorkerDb } from './db';
 
 async function withTempDb<T>(fn: () => Promise<T>): Promise<T> {
@@ -15,6 +15,7 @@ async function withTempDb<T>(fn: () => Promise<T>): Promise<T> {
     return await fn();
   } finally {
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 }

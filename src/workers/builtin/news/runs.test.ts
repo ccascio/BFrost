@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { config } from '../../../config';
+import { closeDb } from '../../../sqlite';
 import { listNewsRuns, saveNewsRun } from './runs';
 
 test('news runs persist to SQLite and list newest first', async () => {
@@ -48,6 +49,7 @@ test('news runs persist to SQLite and list newest first', async () => {
     assert.equal(runs[1].ranAt, '2026-04-24T08:00:00.000Z');
   } finally {
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { config } from '../config';
+import { closeDb } from '../sqlite';
 import { discoverLocalWorkerResult, discoverLocalWorkers } from './local';
 import { isWorkerEnabled, loadWorkerState, rememberSeenWorkers, setWorkerEnabled } from './state';
 
@@ -88,6 +89,7 @@ test('local worker discovery loads manifest-only workers from configured directo
     assert.equal(fields[2].placeholder, 'Add another topic');
     assert.equal(workers[0].sourcePath, path.join(workerDir, 'worker.json'));
   } finally {
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -114,6 +116,7 @@ test('local worker discovery reports incompatible manifests', async () => {
     assert.equal(result.issues.length, 1);
     assert.match(result.issues[0].message, /Unsupported manifestVersion 99/);
   } finally {
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -142,6 +145,7 @@ test('local worker discovery rejects unsafe backend entrypoints', async () => {
     assert.match(result.issues[0].message, /must stay inside the worker directory/);
   } finally {
     console.warn = originalWarn;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -178,6 +182,7 @@ test('worker state persists enable and disable lifecycle', async () => {
   } finally {
     config.adminStoreDir = previousDir;
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });

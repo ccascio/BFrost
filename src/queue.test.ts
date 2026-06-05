@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { config } from './config';
+import { closeDb } from './sqlite';
 import {
   approveQueueItem,
   createQueueItem,
@@ -46,6 +47,7 @@ test('loadQueue normalizes legacy queued items', async () => {
   } finally {
     config.newsStoreDir = previousDir;
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -218,6 +220,7 @@ test('saveQueue creates the configured queue directory', async () => {
   } finally {
     config.newsStoreDir = previousDir;
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -235,6 +238,7 @@ test('loadQueue surfaces invalid queue files instead of returning an empty queue
   } finally {
     config.newsStoreDir = previousDir;
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });

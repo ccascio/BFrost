@@ -31,6 +31,7 @@ test('app backups create consistent SQLite backup files', async () => {
   } finally {
     config.appDbPath = previousDbPath;
     config.adminStoreDir = previousAdminDir;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -44,6 +45,7 @@ test('app backups list returns empty when no backup directory exists', async () 
     assert.deepEqual(await listAppBackups(), []);
   } finally {
     config.adminStoreDir = previousAdminDir;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -64,6 +66,7 @@ test('scheduleRestoreOnNextBoot writes a restore-pending marker file', async () 
     assert.ok(parsed.requestedAt, 'requestedAt should be set');
   } finally {
     config.adminStoreDir = previousAdminDir;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -81,6 +84,7 @@ test('applyPendingRestoreIfAny is a no-op when no marker exists', async () => {
   } finally {
     config.adminStoreDir = previousAdminDir;
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });

@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { config } from './config';
 import { loadAdminSettings, updateAdminJob } from './admin-config';
 import { getWorkerJob } from './workers/registry';
-import { saveKvJson } from './sqlite';
+import { saveKvJson, closeDb } from './sqlite';
 import { registerLoadedLocalModule, unregisterLocalWorkerModule } from './workers/registry';
 import type { BackendWorkerModule } from './workers/module';
 
@@ -36,6 +36,7 @@ test('admin settings normalize defaults and persist valid job updates', async ()
   } finally {
     config.adminStoreDir = previousDir;
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -58,6 +59,7 @@ test('tweet post settings persist approval and prompt controls', async () => {
   } finally {
     config.adminStoreDir = previousDir;
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -77,6 +79,7 @@ test('admin settings reject invalid cron expressions', async () => {
   } finally {
     config.adminStoreDir = previousDir;
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -115,6 +118,7 @@ test('admin settings preserve unknown jobs as disabled historical settings', asy
   } finally {
     config.adminStoreDir = previousDir;
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -147,6 +151,7 @@ test('admin settings clear stale model aliases for known jobs', async () => {
   } finally {
     config.adminStoreDir = previousDir;
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -222,6 +227,7 @@ test('admin settings preserve known job params and fill new fields with manifest
     unregisterLocalWorkerModule(FAKE_WORKER_ID);
     config.adminStoreDir = previousDir;
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });

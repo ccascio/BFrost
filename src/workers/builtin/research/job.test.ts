@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { config } from '../../../config';
+import { closeDb } from '../../../sqlite';
 import { loadResearchSettings, parseResearchTopics, saveResearchSettings } from './job';
 
 test('parseResearchTopics trims empty values and caps the list', () => {
@@ -38,6 +39,7 @@ test('research settings persist normalized dashboard topics in SQLite', async ()
     assert.deepEqual(await loadResearchSettings(), saved);
   } finally {
     config.appDbPath = previousDbPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });

@@ -192,14 +192,6 @@ export async function getAppHealthSnapshot(): Promise<AppHealthSnapshot> {
   };
 }
 
-export function assertStartupReadiness(health: AppHealthSnapshot): void {
-  if (!health.dependencies.lmStudioCli.ok) {
-    throw new Error(
-      `${health.dependencies.lmStudioCli.detail} Set LMSTUDIO_BIN in .env to the correct local path.`,
-    );
-  }
-}
-
 export function logStartupHealthSummary(health: AppHealthSnapshot): void {
   const warnings = [
     ...Object.values(health.integrations),

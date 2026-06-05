@@ -1,7 +1,7 @@
 import { startScheduler, stopScheduler } from './scheduler';
 import { startAdminServer, stopAdminServer } from './admin-server';
 import { applyPendingRestoreIfAny, startAutoBackup, stopAutoBackup } from './app-backup';
-import { assertStartupReadiness, getAppHealthSnapshot, logStartupHealthSummary } from './health';
+import { getAppHealthSnapshot, logStartupHealthSummary } from './health';
 import { hydrateConversations, flushConversations } from './conversation';
 import {
   getActiveLocalProvider,
@@ -26,7 +26,9 @@ async function main(): Promise<void> {
   await applyPendingRestoreIfAny();
 
   const health = await getAppHealthSnapshot();
-  assertStartupReadiness(health);
+  // No local-runtime dependency is a hard requirement: LM Studio is optional
+  // (Ollama or a cloud provider can serve models instead). Missing dependencies
+  // are surfaced as warnings rather than blocking startup.
   logStartupHealthSummary(health);
   await hydrateConversations();
   await releaseStaleQueueLockOnBoot();
@@ -94,11 +96,21 @@ async function main(): Promise<void> {
         ` uses '${resolvedDefault!.provider}' — skipping runtime start.`,
       );
     } else {
-      const weStarted = await activeLocalAdapter.startRuntime();
-      if (weStarted) {
-        startedRuntimes.push(activeLocalAdapter);
+      // Best-effort: a local runtime that fails to start (e.g. its CLI/binary
+      // isn't installed) must not crash startup. Degrade to a warning and let
+      // the rest of the platform — cloud providers, channels, scheduler — boot.
+      try {
+        const weStarted = await activeLocalAdapter.startRuntime();
+        if (weStarted) {
+          startedRuntimes.push(activeLocalAdapter);
+        }
+        console.log(`[BFrost] Provider ${activeLocalAdapter.providerId} ready.`);
+      } catch (err) {
+        console.warn(
+          `[BFrost] Provider ${activeLocalAdapter.providerId} could not start its local runtime; ` +
+          `continuing without it. ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
-      console.log(`[BFrost] Provider ${activeLocalAdapter.providerId} ready.`);
     }
   }
   await refreshActiveLocalProviderModels();

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { config } from './config';
+import { closeDb } from './sqlite';
 import { listRecentEvents, recordEvent } from './event-log';
 
 test('event log records and lists recent events from SQLite', async () => {
@@ -27,6 +28,7 @@ test('event log records and lists recent events from SQLite', async () => {
     assert.deepEqual(events[0].metadata, { value: 42 });
   } finally {
     config.appDbPath = previousPath;
+    closeDb();
     await rm(dir, { recursive: true, force: true });
   }
 });
