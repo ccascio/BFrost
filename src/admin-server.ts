@@ -66,7 +66,9 @@ import {
   AutoBackupSettingsSchema,
   BackupsSectionSchema,
   ChatMessageBodySchema,
-  ChatThreadRenameBodySchema,
+  ChatThreadUpdateBodySchema,
+  ProjectCreateBodySchema,
+  ProjectRenameBodySchema,
   CloudApiKeysBodySchema,
   CoreSettingsBodySchema,
   EmbeddingSettingsBodySchema,
@@ -120,8 +122,17 @@ import {
   listThreads,
   getThread,
   renameThread,
+  assignThreadProject,
+  clearProjectFromThreads,
   deleteThread,
 } from './chat-threads';
+import {
+  listProjects,
+  getProject,
+  createProject,
+  renameProject,
+  deleteProject,
+} from './projects';
 import { createHash } from 'crypto';
 import { loadKvJson, saveKvJson } from './sqlite';
 import { publishItem } from './jobs/item-bus';
@@ -327,6 +338,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         userId: 'admin',
         username: 'dashboard',
         text: body.message,
+        projectId: body.projectId,
       });
       await recordEventSafe({
         category: 'chat',
@@ -359,13 +371,47 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
           return sendJson(res, 200, { thread, turns });
         }
         if (req.method === 'PATCH') {
-          const body = await readJsonBody(req, ChatThreadRenameBodySchema);
-          const updated = renameThread(conversationId, body.title);
-          if (!updated) return sendJson(res, 404, { error: 'Chat not found' });
+          const body = await readJsonBody(req, ChatThreadUpdateBodySchema);
+          if (!getThread(conversationId)) return sendJson(res, 404, { error: 'Chat not found' });
+          if (body.title !== undefined) renameThread(conversationId, body.title);
+          const updated =
+            body.projectId !== undefined
+              ? assignThreadProject(conversationId, body.projectId)
+              : getThread(conversationId);
           return sendJson(res, 200, { thread: updated });
         }
         if (req.method === 'DELETE') {
           if (!deleteThread(conversationId)) return sendJson(res, 404, { error: 'Chat not found' });
+          return sendJson(res, 200, { ok: true });
+        }
+      }
+    }
+
+    if (url.pathname === '/api/projects' && req.method === 'GET') {
+      return sendJson(res, 200, { projects: listProjects() });
+    }
+
+    if (url.pathname === '/api/projects' && req.method === 'POST') {
+      const body = await readJsonBody(req, ProjectCreateBodySchema);
+      const project = createProject(body.name);
+      return sendJson(res, 201, { project });
+    }
+
+    {
+      const match = url.pathname.match(/^\/api\/projects\/([^/]+)$/);
+      if (match) {
+        const projectId = decodeURIComponent(match[1]);
+        if (req.method === 'PATCH') {
+          const body = await readJsonBody(req, ProjectRenameBodySchema);
+          const updated = renameProject(projectId, body.name);
+          if (!updated) return sendJson(res, 404, { error: 'Project not found' });
+          return sendJson(res, 200, { project: updated });
+        }
+        if (req.method === 'DELETE') {
+          if (!getProject(projectId)) return sendJson(res, 404, { error: 'Project not found' });
+          deleteProject(projectId);
+          // Detach threads so the chat UI doesn't carry a dangling project id.
+          clearProjectFromThreads(projectId);
           return sendJson(res, 200, { ok: true });
         }
       }

@@ -97,10 +97,23 @@ export const LmStudioActionBodySchema = z.object({
 export const ChatMessageBodySchema = z.object({
   message: z.string().min(1).max(8000),
   conversationId: z.string().min(1).max(120).optional(),
+  projectId: z.string().min(1).max(120).nullable().optional(),
 }).strict();
 
-export const ChatThreadRenameBodySchema = z.object({
-  title: z.string().min(1).max(120),
+export const ChatThreadUpdateBodySchema = z.object({
+  title: z.string().min(1).max(120).optional(),
+  projectId: z.string().min(1).max(120).nullable().optional(),
+}).strict().refine(
+  (body) => body.title !== undefined || body.projectId !== undefined,
+  { message: 'Provide a title and/or projectId to update.' },
+);
+
+export const ProjectCreateBodySchema = z.object({
+  name: z.string().min(1).max(80),
+}).strict();
+
+export const ProjectRenameBodySchema = z.object({
+  name: z.string().min(1).max(80),
 }).strict();
 
 export const WorkerUpdateBodySchema = z.object({

@@ -20,19 +20,26 @@ export interface ChannelMessage {
   text: string;
   imageBase64?: string;
   imageMimeType?: string;
+  /** Optional project grouping to scope the turn (and seed a brand-new thread). */
+  projectId?: string | null;
 }
 
 export async function processChannelMessage(message: ChannelMessage): Promise<AgentResponse> {
   const chatId = conversationStorageId(message);
   // Register/refresh the thread so the conversation surfaces in chat history.
-  touchThread({
+  const thread = touchThread({
     channel: message.channel,
     conversationId: message.conversationId,
     chatId,
     text: message.text,
+    projectId: message.projectId,
   });
+  // Scope the turn to the named project, falling back to the thread's grouping.
+  const projectId = message.projectId ?? thread.projectId ?? null;
   return processMessage({
     chatId,
+    conversationId: message.conversationId,
+    projectId,
     userId: userStorageId(message),
     username: message.username,
     message: message.text,

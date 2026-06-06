@@ -12,7 +12,8 @@ import {
 } from './admin-server';
 import { config } from './config';
 import { closeDb } from './sqlite';
-import { createThread, hydrateThreads } from './chat-threads';
+import { createThread, getThread, hydrateThreads } from './chat-threads';
+import { hydrateProjects } from './projects';
 import { addUserMessage, addAssistantMessage } from './conversation';
 
 async function freePort(): Promise<number> {
@@ -125,6 +126,66 @@ test('chat thread routes list, reopen, rename, and delete over HTTP', async () =
     // Delete, then reopen 404s.
     assert.equal((await fetch(`${base}/api/chats/http-1`, { method: 'DELETE' })).status, 200);
     assert.equal((await fetch(`${base}/api/chats/http-1`)).status, 404);
+  } finally {
+    await stopAdminServer();
+    config.appDbPath = previous.appDbPath;
+    config.adminPort = previous.adminPort;
+    config.adminHost = previous.adminHost;
+    config.adminPassword = previous.adminPassword;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('project routes create/list/delete and assign a chat to a project over HTTP', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-admin-projects-'));
+  const previous = {
+    appDbPath: config.appDbPath,
+    adminPort: config.adminPort,
+    adminHost: config.adminHost,
+    adminPassword: config.adminPassword,
+  };
+  config.appDbPath = path.join(dir, 'app.sqlite');
+  config.adminHost = '127.0.0.1';
+  config.adminPort = await freePort();
+  config.adminPassword = '';
+  const base = `http://127.0.0.1:${config.adminPort}`;
+
+  try {
+    await hydrateThreads();
+    await hydrateProjects();
+    createThread({ channel: 'dashboard', conversationId: 'chat-proj', chatId: 7000, title: 'Assign me' });
+
+    await startAdminServer();
+
+    // Create a project.
+    const created = await fetch(`${base}/api/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Research' }),
+    });
+    assert.equal(created.status, 201);
+    const { project } = await created.json() as { project: { projectId: string; name: string } };
+    assert.equal(project.name, 'Research');
+
+    // It appears in the list.
+    const list = await (await fetch(`${base}/api/projects`)).json() as { projects: Array<{ projectId: string }> };
+    assert.ok(list.projects.some((p) => p.projectId === project.projectId));
+
+    // Assign the chat to the project via PATCH /api/chats/:id.
+    const assign = await fetch(`${base}/api/chats/chat-proj`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId: project.projectId }),
+    });
+    assert.equal(assign.status, 200);
+    assert.equal(getThread('chat-proj')?.projectId, project.projectId);
+
+    // Delete the project; unknown project → 404.
+    assert.equal((await fetch(`${base}/api/projects/${project.projectId}`, { method: 'DELETE' })).status, 200);
+    assert.equal((await fetch(`${base}/api/projects/nope`, { method: 'DELETE' })).status, 404);
+    // The assigned thread is detached, not left with a dangling project id.
+    assert.equal(getThread('chat-proj')?.projectId, null);
   } finally {
     await stopAdminServer();
     config.appDbPath = previous.appDbPath;

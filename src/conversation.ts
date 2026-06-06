@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import { ModelMessage, UserContent } from 'ai';
 import { config } from './config';
-import { loadKvJson, saveKvJson } from './sqlite';
+import { loadKvJson, saveKvJson, saveKvJsonSync } from './sqlite';
 
 /** How many trailing messages are fed to the model. Storage keeps the full history. */
 const MODEL_WINDOW = 30;
@@ -9,7 +9,6 @@ const CONVERSATION_STORE_KEY = 'assistant.conversations';
 
 const conversations = new Map<number, ModelMessage[]>();
 const selectedModels = new Map<number, string>();
-let writeChain: Promise<void> = Promise.resolve();
 
 interface PersistedConversationStore {
   version: 1;
@@ -37,7 +36,7 @@ export async function hydrateConversations(): Promise<void> {
 }
 
 export async function flushConversations(): Promise<void> {
-  await writeChain;
+  // Writes are synchronous; nothing to flush.
 }
 
 export function getSelectedModel(chatId: number): string {
@@ -85,12 +84,11 @@ function appendMessage(chatId: number, message: ModelMessage): void {
 }
 
 function schedulePersist(): void {
-  const snapshot = buildSnapshot();
-  writeChain = writeChain
-    .then(() => saveSnapshot(snapshot))
-    .catch((err) => {
-      console.warn('[Conversation] Failed to persist conversations:', err);
-    });
+  try {
+    saveKvJsonSync(CONVERSATION_STORE_KEY, buildSnapshot());
+  } catch (err) {
+    console.warn('[Conversation] Failed to persist conversations:', err);
+  }
 }
 
 function buildSnapshot(): PersistedConversationStore {

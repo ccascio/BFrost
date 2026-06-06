@@ -4,6 +4,7 @@ import { applyPendingRestoreIfAny, startAutoBackup, stopAutoBackup } from './app
 import { getAppHealthSnapshot, logStartupHealthSummary } from './health';
 import { hydrateConversations, flushConversations } from './conversation';
 import { hydrateThreads, flushThreads } from './chat-threads';
+import { hydrateProjects, flushProjects } from './projects';
 import {
   getActiveLocalProvider,
   listRegisteredChannels,
@@ -33,6 +34,7 @@ async function main(): Promise<void> {
   logStartupHealthSummary(health);
   await hydrateConversations();
   await hydrateThreads();
+  await hydrateProjects();
   await releaseStaleQueueLockOnBoot();
   await ensureActionTable();
   await acquireRuntimeLock();
@@ -160,6 +162,10 @@ async function main(): Promise<void> {
     await flushThreads().catch((err) => {
       exitCode = 1;
       console.warn('[BFrost] Thread registry flush failed:', err);
+    });
+    await flushProjects().catch((err) => {
+      exitCode = 1;
+      console.warn('[BFrost] Project registry flush failed:', err);
     });
     await stopAdminServer().catch((err) => {
       exitCode = 1;

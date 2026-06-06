@@ -53,6 +53,15 @@ export async function loadKvJson<T>(key: string): Promise<T | null> {
 
 export async function saveKvJson(key: string, value: unknown): Promise<void> {
   await ensureAppDb();
+  saveKvJsonSync(key, value);
+}
+
+/**
+ * Synchronous write — use instead of `saveKvJson` from any code that runs
+ * after startup hydration. Skips the async `ensureAppDb` call; `getDb()`
+ * opens the database synchronously if it isn't already open.
+ */
+export function saveKvJsonSync(key: string, value: unknown): void {
   getDb()
     .prepare(
       `INSERT INTO app_kv (key, value_json, updated_at)

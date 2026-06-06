@@ -629,6 +629,12 @@ interface ChatThread {
   projectId?: string | null;
 }
 
+interface ChatProject {
+  projectId: string;
+  name: string;
+  createdAt: string;
+}
+
 export default function App() {
   const [dashboard, setDashboard] = useState<DashboardState | null>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
@@ -653,6 +659,8 @@ export default function App() {
   const [chatDraft, setChatDraft] = useState('');
   const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
   const [chatThreads, setChatThreads] = useState<ChatThread[]>([]);
+  const [chatProjects, setChatProjects] = useState<ChatProject[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [chatArrivingFromOverview, setChatArrivingFromOverview] = useState(false);
   const chatLogRef = useRef<HTMLDivElement | null>(null);
@@ -793,10 +801,11 @@ export default function App() {
     el.scrollTop = el.scrollHeight;
   }, [chatTurns.length, busyKey === 'dashboard-chat']);
 
-  // Load the chat history list whenever the Chat tab is opened.
+  // Load the chat history list and projects whenever the Chat tab is opened.
   useEffect(() => {
     if (activeTab !== 'chat') return;
     void loadChatThreads();
+    void loadChatProjects();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
@@ -1565,6 +1574,37 @@ export default function App() {
     }
   }
 
+  async function loadChatProjects() {
+    try {
+      const response = await fetch('/api/projects', { credentials: 'include' });
+      if (!response.ok) return;
+      const payload = (await response.json()) as { projects: ChatProject[] };
+      setChatProjects(payload.projects ?? []);
+    } catch {
+      /* non-fatal — projects are best-effort */
+    }
+  }
+
+  async function createChatProject() {
+    const name = window.prompt('New project name')?.trim();
+    if (!name) return;
+    try {
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!response.ok) throw new Error('Failed to create project');
+      const { project } = (await response.json()) as { project: ChatProject };
+      await loadChatProjects();
+      setActiveProjectId(project.projectId);
+      startNewChat();
+    } catch (err) {
+      setError(toAppError(err));
+    }
+  }
+
   function startNewChat() {
     setActiveConversationId(mintConversationId());
     setChatTurns([]);
@@ -1586,6 +1626,7 @@ export default function App() {
         throw new Error('error' in payload ? payload.error : 'Failed to open chat');
       }
       setActiveConversationId(thread.conversationId);
+      setActiveProjectId(thread.projectId ?? null);
       setChatTurns(
         payload.turns.map((turn) => ({ ...turn, createdAt: thread.lastMessageAt })),
       );
@@ -1649,7 +1690,7 @@ export default function App() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, conversationId }),
+        body: JSON.stringify({ message, conversationId, projectId: activeProjectId ?? undefined }),
       });
       const payload = (await response.json()) as { response: string; dashboard: DashboardState } | { error: string };
       if (!response.ok || 'error' in payload) {
@@ -2342,14 +2383,40 @@ export default function App() {
 
           <div className="chat-workspace">
             <aside className="chat-history">
+              <div className="chat-history-project">
+                <select
+                  value={activeProjectId ?? ''}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (value === '__new__') {
+                      void createChatProject();
+                      return;
+                    }
+                    setActiveProjectId(value || null);
+                  }}
+                  title="Scope chats and document search to a project"
+                >
+                  <option value="">All chats</option>
+                  {chatProjects.map((project) => (
+                    <option key={project.projectId} value={project.projectId}>
+                      {project.name}
+                    </option>
+                  ))}
+                  <option value="__new__">+ New project…</option>
+                </select>
+              </div>
               <button type="button" className="chat-history-new" onClick={startNewChat}>
                 + New chat
               </button>
               <div className="chat-history-list">
-                {chatThreads.length === 0 ? (
-                  <p className="chat-history-empty">No saved chats yet.</p>
-                ) : (
-                  chatThreads.map((thread) => (
+                {(() => {
+                  const visible = activeProjectId
+                    ? chatThreads.filter((thread) => thread.projectId === activeProjectId)
+                    : chatThreads;
+                  if (visible.length === 0) {
+                    return <p className="chat-history-empty">No saved chats yet.</p>;
+                  }
+                  return visible.map((thread) => (
                     <div
                       key={thread.conversationId}
                       className={`chat-history-item${
@@ -2374,8 +2441,8 @@ export default function App() {
                         </button>
                       </div>
                     </div>
-                  ))
-                )}
+                  ));
+                })()}
               </div>
             </aside>
 

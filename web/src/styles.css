@@ -2336,6 +2336,16 @@ h3 {
   padding-right: 0.75rem;
 }
 
+.chat-history-project {
+  flex: 0 0 auto;
+}
+
+.chat-history-project select {
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.5rem;
+}
+
 .chat-history-new {
   flex: 0 0 auto;
   padding: 0.5rem 0.75rem;

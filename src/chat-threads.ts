@@ -1,4 +1,4 @@
-import { loadKvJson, saveKvJson } from './sqlite';
+import { loadKvJson, saveKvJsonSync } from './sqlite';
 import { clearHistory } from './conversation';
 
 /**
@@ -33,7 +33,6 @@ interface PersistedThreadStore {
 }
 
 const threads = new Map<string, ChatThread>();
-let writeChain: Promise<void> = Promise.resolve();
 
 export async function hydrateThreads(): Promise<void> {
   threads.clear();
@@ -46,7 +45,7 @@ export async function hydrateThreads(): Promise<void> {
 }
 
 export async function flushThreads(): Promise<void> {
-  await writeChain;
+  // Writes are synchronous; nothing to flush.
 }
 
 /** Threads newest-activity first, optionally filtered to a single channel. */
@@ -92,6 +91,28 @@ export function renameThread(conversationId: string, title: string): ChatThread 
   return thread;
 }
 
+/** Assign (or clear, with null) the project grouping of an existing thread. */
+export function assignThreadProject(conversationId: string, projectId: string | null): ChatThread | undefined {
+  const thread = threads.get(conversationId);
+  if (!thread) return undefined;
+  thread.projectId = projectId;
+  schedulePersist();
+  return thread;
+}
+
+/** Detach every thread from a project (used when that project is deleted). */
+export function clearProjectFromThreads(projectId: string): number {
+  let cleared = 0;
+  for (const thread of threads.values()) {
+    if (thread.projectId === projectId) {
+      thread.projectId = null;
+      cleared += 1;
+    }
+  }
+  if (cleared > 0) schedulePersist();
+  return cleared;
+}
+
 export function deleteThread(conversationId: string): boolean {
   const thread = threads.get(conversationId);
   if (!thread) return false;
@@ -111,6 +132,7 @@ export function touchThread(input: {
   conversationId: string;
   chatId: number;
   text?: string;
+  projectId?: string | null;
 }): ChatThread {
   const now = new Date().toISOString();
   const existing = threads.get(input.conversationId);
@@ -118,6 +140,10 @@ export function touchThread(input: {
     existing.lastMessageAt = now;
     if (existing.title === 'New chat' && input.text?.trim()) {
       existing.title = clampTitle(input.text);
+    }
+    // Keep the thread's project grouping in sync when the turn names a project.
+    if (input.projectId !== undefined) {
+      existing.projectId = input.projectId;
     }
     schedulePersist();
     return existing;
@@ -129,7 +155,7 @@ export function touchThread(input: {
     title: input.text?.trim() ? clampTitle(input.text) : 'New chat',
     createdAt: now,
     lastMessageAt: now,
-    projectId: null,
+    projectId: input.projectId ?? null,
   };
   threads.set(thread.conversationId, thread);
   schedulePersist();
@@ -164,10 +190,9 @@ function normalizeThread(thread: ChatThread): ChatThread {
 }
 
 function schedulePersist(): void {
-  const snapshot: PersistedThreadStore = { version: 1, threads: [...threads.values()] };
-  writeChain = writeChain
-    .then(() => saveKvJson(THREADS_STORE_KEY, snapshot))
-    .catch((err) => {
-      console.warn('[ChatThreads] Failed to persist thread registry:', err);
-    });
+  try {
+    saveKvJsonSync(THREADS_STORE_KEY, { version: 1, threads: [...threads.values()] });
+  } catch (err) {
+    console.warn('[ChatThreads] Failed to persist thread registry:', err);
+  }
 }
