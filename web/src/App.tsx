@@ -308,6 +308,7 @@ interface WorkerSummary {
   /** True when the built-in worker can be soft-deleted and later restored from the store. */
   deletable?: boolean;
   kind: WorkerKind;
+  section?: 'workers' | 'system';
   enabled: boolean;
   missing: boolean;
   sourcePath?: string;
@@ -1945,7 +1946,7 @@ export default function App() {
       id: tab.id,
       label: tab.definition.menu?.label ?? tab.worker.name,
       icon: tab.definition.menu?.icon ?? 'workers',
-      group: tab.definition.menu?.group ?? 'Workers',
+      group: tab.definition.menu?.group ?? (tab.worker.section === 'system' ? 'System' : 'Workers'),
       order: tab.definition.menu?.order ?? 1000,
       count: safeWorkerViewCount(tab.definition, workerViewContext),
     })),
@@ -1955,7 +1956,8 @@ export default function App() {
     ...configGroupsByWorker.flatMap(({ worker }) => {
       const workerTab = workerTabDefinitions.find((t) => t.worker.id === worker.id);
       const baseOrder = workerTab ? (workerTab.definition.menu?.order ?? 1000) : 900;
-      const group = workerTab ? (workerTab.definition.menu?.group ?? 'Workers') : 'Workers';
+      const workerSection = worker.section === 'system' ? 'System' : 'Workers';
+      const group = workerTab ? (workerTab.definition.menu?.group ?? workerSection) : workerSection;
       if (workerTab) {
         return [{
           id: `worker-config:${worker.id}` as DashboardTab,

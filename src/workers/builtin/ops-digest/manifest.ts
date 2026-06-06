@@ -13,6 +13,7 @@ export const opsDigestWorker: WorkerManifest = {
     'Aggregates scheduler runs since the last digest, highlights errors and skipped jobs, and sends a concise report to Telegram (or whichever channel you have configured).',
   builtIn: true,
   deletable: true,
+  section: 'system',
   dashboard: {
     routes: [],
   },

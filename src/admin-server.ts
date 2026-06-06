@@ -1817,6 +1817,7 @@ function listWorkerSummaries(
       builtIn: worker.builtIn,
       deletable: worker.deletable ?? false,
       kind: deriveWorkerKind(worker),
+      section: worker.section,
       enabled,
       missing,
       sourcePath: worker.sourcePath,

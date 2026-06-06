@@ -25,6 +25,7 @@ export const shellWorker: WorkerManifest = {
     },
   ],
   builtIn: true,
+  section: 'system',
   ownedSettings: [
     {
       key: 'shell-policy',

@@ -331,6 +331,7 @@ export const WorkerSummarySchema = z.object({
   /** True when the built-in worker can be soft-deleted and restored from the store. */
   deletable: z.boolean().optional(),
   kind: z.enum(['feature', 'channel', 'provider']),
+  section: z.enum(['workers', 'system']).optional(),
   enabled: z.boolean(),
   missing: z.boolean(),
   sourcePath: z.string().optional(),
