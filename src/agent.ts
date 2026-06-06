@@ -2,6 +2,7 @@ import { generateText, jsonSchema, stepCountIs, tool, ModelMessage, UserContent 
 import { getChatModel } from './llm';
 import { findModel } from './config';
 import { getHistory, addUserMessage, addAssistantMessage, getSelectedModel } from './conversation';
+import { runWithChatContext } from './chat-context';
 import { listRegisteredTools } from './workers/registry';
 import { buildJobToolCatalog } from './workers/job-tools';
 import type { WorkerToolManifest } from './workers/types';
@@ -15,6 +16,10 @@ export interface AgentInput {
   message: string;
   imageBase64?: string;
   imageMimeType?: string;
+  /** Opaque conversation id for the active turn (exposed to worker tools via chat context). */
+  conversationId?: string;
+  /** Optional project grouping that scopes the turn for worker tools. */
+  projectId?: string | null;
 }
 
 export interface AgentResponse {
@@ -100,7 +105,12 @@ export async function processMessage(input: AgentInput): Promise<AgentResponse> 
 
   const messages: ModelMessage[] = getHistory(input.chatId);
   const { runChatTurn } = (await import('./job-runner')) as { runChatTurn: typeof RunChatTurnFn };
-  const { text } = await runChatTurn(getSelectedModel(input.chatId), (model) => runAgent(messages, model.id));
+  // Make the active project/conversation visible to worker tools (e.g. document
+  // retrieval) for the whole turn, including the AI SDK tool-execution chain.
+  const { text } = await runWithChatContext(
+    { conversationId: input.conversationId, projectId: input.projectId ?? null },
+    () => runChatTurn(getSelectedModel(input.chatId), (model) => runAgent(messages, model.id)),
+  );
 
   addAssistantMessage(input.chatId, text);
 

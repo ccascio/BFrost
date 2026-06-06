@@ -1,14 +1,14 @@
 import { promises as fs } from 'fs';
 import { ModelMessage, UserContent } from 'ai';
 import { config } from './config';
-import { loadKvJson, saveKvJson } from './sqlite';
+import { loadKvJson, saveKvJson, saveKvJsonSync } from './sqlite';
 
-const MAX_MESSAGES = 30;
+/** How many trailing messages are fed to the model. Storage keeps the full history. */
+const MODEL_WINDOW = 30;
 const CONVERSATION_STORE_KEY = 'assistant.conversations';
 
 const conversations = new Map<number, ModelMessage[]>();
 const selectedModels = new Map<number, string>();
-let writeChain: Promise<void> = Promise.resolve();
 
 interface PersistedConversationStore {
   version: 1;
@@ -36,7 +36,7 @@ export async function hydrateConversations(): Promise<void> {
 }
 
 export async function flushConversations(): Promise<void> {
-  await writeChain;
+  // Writes are synchronous; nothing to flush.
 }
 
 export function getSelectedModel(chatId: number): string {
@@ -48,20 +48,27 @@ export function setSelectedModel(chatId: number, modelId: string): void {
   schedulePersist();
 }
 
+/**
+ * Trailing slice fed to the model. Capped at MODEL_WINDOW so prompts stay
+ * bounded; the full thread is preserved in storage and returned by
+ * {@link getFullHistory}.
+ */
 export function getHistory(chatId: number): ModelMessage[] {
+  const history = conversations.get(chatId) ?? [];
+  return history.length > MODEL_WINDOW ? history.slice(-MODEL_WINDOW) : history;
+}
+
+/** Complete, untrimmed history for a thread — used to reopen a chat in the UI. */
+export function getFullHistory(chatId: number): ModelMessage[] {
   return conversations.get(chatId) ?? [];
 }
 
 export function addUserMessage(chatId: number, content: UserContent): void {
-  const history = getHistory(chatId);
-  history.push({ role: 'user', content });
-  trimAndStore(chatId, history);
+  appendMessage(chatId, { role: 'user', content });
 }
 
 export function addAssistantMessage(chatId: number, text: string): void {
-  const history = getHistory(chatId);
-  history.push({ role: 'assistant', content: text });
-  trimAndStore(chatId, history);
+  appendMessage(chatId, { role: 'assistant', content: text });
 }
 
 export function clearHistory(chatId: number): void {
@@ -69,22 +76,19 @@ export function clearHistory(chatId: number): void {
   schedulePersist();
 }
 
-function trimAndStore(chatId: number, history: ModelMessage[]): void {
-  if (history.length > MAX_MESSAGES) {
-    conversations.set(chatId, history.slice(-MAX_MESSAGES));
-  } else {
-    conversations.set(chatId, history);
-  }
+function appendMessage(chatId: number, message: ModelMessage): void {
+  const history = conversations.get(chatId) ?? [];
+  history.push(message);
+  conversations.set(chatId, history);
   schedulePersist();
 }
 
 function schedulePersist(): void {
-  const snapshot = buildSnapshot();
-  writeChain = writeChain
-    .then(() => saveSnapshot(snapshot))
-    .catch((err) => {
-      console.warn('[Conversation] Failed to persist conversations:', err);
-    });
+  try {
+    saveKvJsonSync(CONVERSATION_STORE_KEY, buildSnapshot());
+  } catch (err) {
+    console.warn('[Conversation] Failed to persist conversations:', err);
+  }
 }
 
 function buildSnapshot(): PersistedConversationStore {
@@ -110,7 +114,7 @@ function hydrateFromStore(parsed: Partial<PersistedConversationStore>): void {
   for (const [chatId, history] of Object.entries(parsed.conversations ?? {})) {
     const numericChatId = Number(chatId);
     if (Number.isSafeInteger(numericChatId) && Array.isArray(history)) {
-      conversations.set(numericChatId, history.slice(-MAX_MESSAGES));
+      conversations.set(numericChatId, history);
     }
   }
 

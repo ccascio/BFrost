@@ -3,6 +3,7 @@ import type { WorkerDashboardViewDefinition, WorkerQueueItem } from './types';
 
 interface WorkerDashboardViewModule {
   dashboardView?: WorkerDashboardViewDefinition;
+  dashboardViews?: WorkerDashboardViewDefinition[];
   default?: WorkerDashboardViewDefinition;
 }
 
@@ -15,7 +16,11 @@ const dashboardViewModules = import.meta.glob<WorkerDashboardViewModule>(
 );
 
 const builtInViews: WorkerDashboardViewDefinition[] = Object.values(dashboardViewModules)
-  .map((module) => module.dashboardView ?? module.default)
+  .flatMap((module) => {
+    if (Array.isArray(module.dashboardViews)) return module.dashboardViews;
+    const single = module.dashboardView ?? module.default;
+    return single ? [single] : [];
+  })
   .filter((view): view is WorkerDashboardViewDefinition => Boolean(view));
 
 const runtimeViews: WorkerDashboardViewDefinition[] = [];

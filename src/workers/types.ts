@@ -53,6 +53,12 @@ export interface WorkerManifest {
    */
   deletable?: boolean;
   kind?: WorkerKind;
+  /**
+   * Which sidebar section this worker belongs to. Defaults to `'workers'` when unset.
+   * Set to `'system'` for platform-infrastructure workers (shell, ops digest, etc.) that
+   * should appear in a distinct "System" group rather than the main "Workers" group.
+   */
+  section?: 'workers' | 'system';
   backendEntrypoint?: string;
   requiredCredentials?: WorkerHealthRequirement[];
   optionalCredentials?: WorkerHealthRequirement[];

@@ -29,6 +29,8 @@ import { recordEventSafe } from './event-log';
 import { getChatModel, isModelProviderConfigured } from './llm';
 import { findModel, getDefaultModel } from './config';
 import { embedText } from './embeddings';
+import { getActiveChatContext } from './chat-context';
+import { listProjects, listProjectIds } from './projects';
 import { BadRequestError } from './admin-route';
 import { loadKvJson } from './sqlite';
 
@@ -92,6 +94,13 @@ export const bfrostSdk = {
   isModelProviderConfigured,
   embedText,
   getJobPrompt,
+  // Ambient chat-turn context. `getActiveChatContext()` returns the active
+  // conversation/project for the current turn (empty outside a chat turn), so a
+  // worker tool can scope itself. `listProjects`/`listProjectIds` expose the
+  // generic project grouping for reconciliation of worker-owned resources.
+  getActiveChatContext,
+  listProjects,
+  listProjectIds,
   // Operator notifications (broadcast to all configured channels)
   notifyOperatorChannels,
   // Errors that admin routes can throw to produce a 400
@@ -125,8 +134,13 @@ export {
   isModelProviderConfigured,
   embedText,
   recordEventSafe,
+  getActiveChatContext,
+  listProjects,
+  listProjectIds,
 };
 
+export type { ChatContext } from './chat-context';
+export type { Project } from './projects';
 export type { ActionClass, ActionState, ActionRequest, ActionResult } from './actions/types';
 export type { EmbeddingResult } from './embeddings';
 export type { ModelOption } from './config';

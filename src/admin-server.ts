@@ -66,6 +66,9 @@ import {
   AutoBackupSettingsSchema,
   BackupsSectionSchema,
   ChatMessageBodySchema,
+  ChatThreadUpdateBodySchema,
+  ProjectCreateBodySchema,
+  ProjectRenameBodySchema,
   CloudApiKeysBodySchema,
   CoreSettingsBodySchema,
   EmbeddingSettingsBodySchema,
@@ -114,6 +117,22 @@ import {
   cancelPendingRestore,
 } from './app-backup';
 import { processChannelMessage } from './channel';
+import { getFullHistory } from './conversation';
+import {
+  listThreads,
+  getThread,
+  renameThread,
+  assignThreadProject,
+  clearProjectFromThreads,
+  deleteThread,
+} from './chat-threads';
+import {
+  listProjects,
+  getProject,
+  createProject,
+  renameProject,
+  deleteProject,
+} from './projects';
 import { createHash } from 'crypto';
 import { loadKvJson, saveKvJson } from './sqlite';
 import { publishItem } from './jobs/item-bus';
@@ -184,6 +203,20 @@ export async function stopAdminServer(): Promise<void> {
   });
 
   server = null;
+}
+
+/** Flatten a stored ModelMessage content (string or part array) into display text. */
+function extractTurnText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) =>
+        part && typeof part === 'object' && 'text' in part ? String((part as { text: unknown }).text) : '',
+      )
+      .filter(Boolean)
+      .join('\n');
+  }
+  return '';
 }
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -305,6 +338,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         userId: 'admin',
         username: 'dashboard',
         text: body.message,
+        projectId: body.projectId,
       });
       await recordEventSafe({
         category: 'chat',
@@ -317,6 +351,70 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         },
       });
       return sendJson(res, 200, { response: response.text, dashboard: await buildDashboardState() });
+    }
+
+    if (url.pathname === '/api/chats' && req.method === 'GET') {
+      return sendJson(res, 200, { threads: listThreads('dashboard') });
+    }
+
+    {
+      const match = url.pathname.match(/^\/api\/chats\/([^/]+)$/);
+      if (match) {
+        const conversationId = decodeURIComponent(match[1]);
+        if (req.method === 'GET') {
+          const thread = getThread(conversationId);
+          if (!thread) return sendJson(res, 404, { error: 'Chat not found' });
+          const turns = getFullHistory(thread.chatId)
+            .filter((message) => message.role === 'user' || message.role === 'assistant')
+            .map((message) => ({ role: message.role, text: extractTurnText(message.content) }))
+            .filter((turn) => turn.text.length > 0);
+          return sendJson(res, 200, { thread, turns });
+        }
+        if (req.method === 'PATCH') {
+          const body = await readJsonBody(req, ChatThreadUpdateBodySchema);
+          if (!getThread(conversationId)) return sendJson(res, 404, { error: 'Chat not found' });
+          if (body.title !== undefined) renameThread(conversationId, body.title);
+          const updated =
+            body.projectId !== undefined
+              ? assignThreadProject(conversationId, body.projectId)
+              : getThread(conversationId);
+          return sendJson(res, 200, { thread: updated });
+        }
+        if (req.method === 'DELETE') {
+          if (!deleteThread(conversationId)) return sendJson(res, 404, { error: 'Chat not found' });
+          return sendJson(res, 200, { ok: true });
+        }
+      }
+    }
+
+    if (url.pathname === '/api/projects' && req.method === 'GET') {
+      return sendJson(res, 200, { projects: listProjects() });
+    }
+
+    if (url.pathname === '/api/projects' && req.method === 'POST') {
+      const body = await readJsonBody(req, ProjectCreateBodySchema);
+      const project = createProject(body.name);
+      return sendJson(res, 201, { project });
+    }
+
+    {
+      const match = url.pathname.match(/^\/api\/projects\/([^/]+)$/);
+      if (match) {
+        const projectId = decodeURIComponent(match[1]);
+        if (req.method === 'PATCH') {
+          const body = await readJsonBody(req, ProjectRenameBodySchema);
+          const updated = renameProject(projectId, body.name);
+          if (!updated) return sendJson(res, 404, { error: 'Project not found' });
+          return sendJson(res, 200, { project: updated });
+        }
+        if (req.method === 'DELETE') {
+          if (!getProject(projectId)) return sendJson(res, 404, { error: 'Project not found' });
+          deleteProject(projectId);
+          // Detach threads so the chat UI doesn't carry a dangling project id.
+          clearProjectFromThreads(projectId);
+          return sendJson(res, 200, { ok: true });
+        }
+      }
     }
 
     const workerRoute = listRegisteredApiRoutes().find((route) =>
@@ -1719,6 +1817,7 @@ function listWorkerSummaries(
       builtIn: worker.builtIn,
       deletable: worker.deletable ?? false,
       kind: deriveWorkerKind(worker),
+      section: worker.section,
       enabled,
       missing,
       sourcePath: worker.sourcePath,

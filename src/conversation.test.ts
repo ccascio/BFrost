@@ -10,6 +10,7 @@ import {
   addUserMessage,
   clearHistory,
   flushConversations,
+  getFullHistory,
   getHistory,
   getSelectedModel,
   hydrateConversations,
@@ -42,6 +43,36 @@ test('conversation history and model selections persist to disk', async () => {
     config.conversationStorePath = previousPath;
     config.appDbPath = previousDbPath;
     config.ollamaModel = previousModel;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('full history is stored untrimmed while the model window is capped', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-conversation-'));
+  const previousPath = config.conversationStorePath;
+  const previousDbPath = config.appDbPath;
+  config.conversationStorePath = path.join(dir, 'conversations.json');
+  config.appDbPath = path.join(dir, 'app.sqlite');
+
+  try {
+    clearHistory(777);
+    for (let i = 0; i < 40; i += 1) {
+      addUserMessage(777, `message ${i}`);
+    }
+
+    // Storage keeps everything; only the model-facing window is capped at 30.
+    assert.equal(getFullHistory(777).length, 40);
+    assert.equal(getHistory(777).length, 30);
+    assert.equal(getHistory(777)[0].content, 'message 10');
+
+    await flushConversations();
+    await hydrateConversations();
+    assert.equal(getFullHistory(777).length, 40);
+    assert.equal(getHistory(777).length, 30);
+  } finally {
+    config.conversationStorePath = previousPath;
+    config.appDbPath = previousDbPath;
     closeDb();
     await rm(dir, { recursive: true, force: true });
   }

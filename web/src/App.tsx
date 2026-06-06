@@ -308,6 +308,7 @@ interface WorkerSummary {
   /** True when the built-in worker can be soft-deleted and later restored from the store. */
   deletable?: boolean;
   kind: WorkerKind;
+  section?: 'workers' | 'system';
   enabled: boolean;
   missing: boolean;
   sourcePath?: string;
@@ -619,6 +620,22 @@ interface ChatTurn {
   createdAt: string;
 }
 
+interface ChatThread {
+  conversationId: string;
+  chatId: number;
+  channel: string;
+  title: string;
+  createdAt: string;
+  lastMessageAt: string;
+  projectId?: string | null;
+}
+
+interface ChatProject {
+  projectId: string;
+  name: string;
+  createdAt: string;
+}
+
 export default function App() {
   const [dashboard, setDashboard] = useState<DashboardState | null>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
@@ -642,7 +659,15 @@ export default function App() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [chatDraft, setChatDraft] = useState('');
   const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
+  const [chatThreads, setChatThreads] = useState<ChatThread[]>([]);
+  const [chatProjects, setChatProjects] = useState<ChatProject[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [chatArrivingFromOverview, setChatArrivingFromOverview] = useState(false);
+  const [chatQuery, setChatQuery] = useState('');
+  const [projectComboOpen, setProjectComboOpen] = useState(false);
+  const [projectComboQuery, setProjectComboQuery] = useState('');
+  const projectComboRef = useRef<HTMLDivElement | null>(null);
   const chatLogRef = useRef<HTMLDivElement | null>(null);
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [workerUploadFile, setWorkerUploadFile] = useState<File | null>(null);
@@ -781,6 +806,14 @@ export default function App() {
     el.scrollTop = el.scrollHeight;
   }, [chatTurns.length, busyKey === 'dashboard-chat']);
 
+  // Load the chat history list and projects whenever the Chat tab is opened.
+  useEffect(() => {
+    if (activeTab !== 'chat') return;
+    void loadChatThreads();
+    void loadChatProjects();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
   useEffect(() => {
     if (activeTab !== 'chat' || !chatArrivingFromOverview) return;
     const focusTimer = window.setTimeout(() => chatInputRef.current?.focus(), 120);
@@ -837,6 +870,17 @@ export default function App() {
     const timer = window.setInterval(() => void fetchPendingActions(), 3000);
     return () => window.clearInterval(timer);
   }, [activeTab]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (projectComboRef.current && !projectComboRef.current.contains(e.target as Node)) {
+        setProjectComboOpen(false);
+        setProjectComboQuery('');
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   async function refreshActiveTabSections(): Promise<void> {
     const sections = sectionsForTab(activeTabRef.current);
@@ -1528,9 +1572,128 @@ export default function App() {
     );
   }
 
+  function mintConversationId(): string {
+    const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    return `dashboard-${id}`;
+  }
+
+  async function loadChatThreads() {
+    try {
+      const response = await fetch('/api/chats', { credentials: 'include' });
+      if (!response.ok) return;
+      const payload = (await response.json()) as { threads: ChatThread[] };
+      setChatThreads(payload.threads ?? []);
+    } catch {
+      /* non-fatal — history list is best-effort */
+    }
+  }
+
+  async function loadChatProjects() {
+    try {
+      const response = await fetch('/api/projects', { credentials: 'include' });
+      if (!response.ok) return;
+      const payload = (await response.json()) as { projects: ChatProject[] };
+      setChatProjects(payload.projects ?? []);
+    } catch {
+      /* non-fatal — projects are best-effort */
+    }
+  }
+
+  async function createChatProject() {
+    const name = window.prompt('New project name')?.trim();
+    if (!name) return;
+    try {
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!response.ok) throw new Error('Failed to create project');
+      const { project } = (await response.json()) as { project: ChatProject };
+      await loadChatProjects();
+      setActiveProjectId(project.projectId);
+      startNewChat();
+    } catch (err) {
+      setError(toAppError(err));
+    }
+  }
+
+  function startNewChat() {
+    setActiveConversationId(mintConversationId());
+    setChatTurns([]);
+    setError(null);
+    window.requestAnimationFrame(() => chatInputRef.current?.focus());
+  }
+
+  async function openChatThread(thread: ChatThread) {
+    setBusyKey(`open-chat-${thread.conversationId}`);
+    setError(null);
+    try {
+      const response = await fetch(`/api/chats/${encodeURIComponent(thread.conversationId)}`, {
+        credentials: 'include',
+      });
+      const payload = (await response.json()) as
+        | { thread: ChatThread; turns: { role: 'user' | 'assistant'; text: string }[] }
+        | { error: string };
+      if (!response.ok || 'error' in payload) {
+        throw new Error('error' in payload ? payload.error : 'Failed to open chat');
+      }
+      setActiveConversationId(thread.conversationId);
+      setActiveProjectId(thread.projectId ?? null);
+      setChatTurns(
+        payload.turns.map((turn) => ({ ...turn, createdAt: thread.lastMessageAt })),
+      );
+    } catch (err) {
+      setError(toAppError(err));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function renameChatThread(thread: ChatThread) {
+    const title = window.prompt('Rename chat', thread.title)?.trim();
+    if (!title || title === thread.title) return;
+    try {
+      const response = await fetch(`/api/chats/${encodeURIComponent(thread.conversationId)}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      });
+      if (!response.ok) throw new Error('Rename failed');
+      await loadChatThreads();
+    } catch (err) {
+      setError(toAppError(err));
+    }
+  }
+
+  async function deleteChatThread(thread: ChatThread) {
+    if (!window.confirm(`Delete chat "${thread.title}"? This cannot be undone.`)) return;
+    try {
+      const response = await fetch(`/api/chats/${encodeURIComponent(thread.conversationId)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Delete failed');
+      if (activeConversationId === thread.conversationId) {
+        setActiveConversationId(null);
+        setChatTurns([]);
+      }
+      await loadChatThreads();
+    } catch (err) {
+      setError(toAppError(err));
+    }
+  }
+
   async function sendDashboardChat() {
     const message = chatDraft.trim();
     if (!message) return;
+
+    const conversationId = activeConversationId ?? mintConversationId();
+    if (!activeConversationId) setActiveConversationId(conversationId);
 
     const userTurn: ChatTurn = { role: 'user', text: message, createdAt: new Date().toISOString() };
     setChatTurns((current) => [...current, userTurn]);
@@ -1543,7 +1706,7 @@ export default function App() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, conversationId: 'dashboard-admin' }),
+        body: JSON.stringify({ message, conversationId, projectId: activeProjectId ?? undefined }),
       });
       const payload = (await response.json()) as { response: string; dashboard: DashboardState } | { error: string };
       if (!response.ok || 'error' in payload) {
@@ -1558,6 +1721,7 @@ export default function App() {
         { role: 'assistant', text: payload.response, createdAt: new Date().toISOString() },
       ]);
       await fetchDashboard(true);
+      await loadChatThreads();
       setNotice('Dashboard chat answered.');
     } catch (err) {
       setError(toAppError(err));
@@ -1782,7 +1946,7 @@ export default function App() {
       id: tab.id,
       label: tab.definition.menu?.label ?? tab.worker.name,
       icon: tab.definition.menu?.icon ?? 'workers',
-      group: tab.definition.menu?.group ?? 'Workers',
+      group: tab.definition.menu?.group ?? (tab.worker.section === 'system' ? 'System' : 'Workers'),
       order: tab.definition.menu?.order ?? 1000,
       count: safeWorkerViewCount(tab.definition, workerViewContext),
     })),
@@ -1792,7 +1956,8 @@ export default function App() {
     ...configGroupsByWorker.flatMap(({ worker }) => {
       const workerTab = workerTabDefinitions.find((t) => t.worker.id === worker.id);
       const baseOrder = workerTab ? (workerTab.definition.menu?.order ?? 1000) : 900;
-      const group = workerTab ? (workerTab.definition.menu?.group ?? 'Workers') : 'Workers';
+      const workerSection = worker.section === 'system' ? 'System' : 'Workers';
+      const group = workerTab ? (workerTab.definition.menu?.group ?? workerSection) : workerSection;
       if (workerTab) {
         return [{
           id: `worker-config:${worker.id}` as DashboardTab,
@@ -2233,6 +2398,144 @@ export default function App() {
             </StatusPill>
           </div>
 
+          <div className="chat-workspace">
+            <aside className="chat-history">
+              <p className="sidebar-section-label">Projects</p>
+              <div className="chat-history-project" ref={projectComboRef}>
+                {(() => {
+                  const q = projectComboQuery.toLowerCase();
+                  const filteredProjects = chatProjects.filter((p) =>
+                    p.name.toLowerCase().includes(q),
+                  );
+                  const selectedName = activeProjectId
+                    ? (chatProjects.find((p) => p.projectId === activeProjectId)?.name ?? '')
+                    : 'All chats';
+                  return (
+                    <div className="project-combobox">
+                      <input
+                        className="project-combobox-input"
+                        type="text"
+                        placeholder="Search projects…"
+                        title="Scope chats and document search to a project"
+                        value={projectComboOpen ? projectComboQuery : selectedName}
+                        onFocus={() => {
+                          setProjectComboOpen(true);
+                          setProjectComboQuery('');
+                        }}
+                        onChange={(e) => {
+                          setProjectComboQuery(e.target.value);
+                          setProjectComboOpen(true);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') {
+                            setProjectComboOpen(false);
+                            setProjectComboQuery('');
+                            (e.target as HTMLInputElement).blur();
+                          }
+                        }}
+                      />
+                      {projectComboOpen && (
+                        <ul className="project-combobox-dropdown">
+                          {'all chats'.includes(q) && (
+                            <li
+                              className={`project-combobox-option${activeProjectId === null ? ' active' : ''}`}
+                              onMouseDown={() => {
+                                setActiveProjectId(null);
+                                setProjectComboOpen(false);
+                                setProjectComboQuery('');
+                              }}
+                            >
+                              All chats
+                            </li>
+                          )}
+                          {filteredProjects.map((p) => (
+                            <li
+                              key={p.projectId}
+                              className={`project-combobox-option${activeProjectId === p.projectId ? ' active' : ''}`}
+                              onMouseDown={() => {
+                                setActiveProjectId(p.projectId);
+                                setProjectComboOpen(false);
+                                setProjectComboQuery('');
+                              }}
+                            >
+                              {p.name}
+                            </li>
+                          ))}
+                          <li
+                            className="project-combobox-option project-combobox-new"
+                            onMouseDown={() => {
+                              setProjectComboOpen(false);
+                              void createChatProject();
+                            }}
+                          >
+                            + New project…
+                          </li>
+                        </ul>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+              {(() => {
+                const filesView = dashboardViews.find((v) => v.kind === 'project-files-sidebar');
+                return activeProjectId && filesView
+                  ? filesView.render?.({ activeProjectId }) ?? null
+                  : null;
+              })()}
+              <p className="sidebar-section-label">Chats</p>
+              <button type="button" className="chat-history-new" onClick={startNewChat}>
+                + New chat
+              </button>
+              {chatThreads.length > 0 && (
+                <input
+                  className="chat-history-filter"
+                  type="search"
+                  placeholder="Filter chats…"
+                  value={chatQuery}
+                  onChange={(e) => setChatQuery(e.target.value)}
+                />
+              )}
+              <div className="chat-history-list">
+                {(() => {
+                  const q = chatQuery.toLowerCase();
+                  const visible = (activeProjectId
+                    ? chatThreads.filter((thread) => thread.projectId === activeProjectId)
+                    : chatThreads
+                  ).filter((thread) => !q || thread.title.toLowerCase().includes(q));
+                  if (visible.length === 0) {
+                    return <p className="chat-history-empty">No saved chats yet.</p>;
+                  }
+                  return visible.map((thread) => (
+                    <div
+                      key={thread.conversationId}
+                      className={`chat-history-item${
+                        thread.conversationId === activeConversationId ? ' active' : ''
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        className="chat-history-open"
+                        onClick={() => void openChatThread(thread)}
+                        disabled={busyKey === `open-chat-${thread.conversationId}`}
+                      >
+                        <span className="chat-history-title">{thread.title}</span>
+                        <span className="chat-history-time">{formatRelativeTime(thread.lastMessageAt)}</span>
+                      </button>
+                      <div className="chat-history-actions">
+                        <button type="button" title="Rename" onClick={() => void renameChatThread(thread)}>
+                          ✎
+                        </button>
+                        <button type="button" title="Delete" onClick={() => void deleteChatThread(thread)}>
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </aside>
+
+            <div className="chat-main">
           <div className="chat-log" ref={chatLogRef}>
             {chatTurns.length === 0 ? (
               <ChatWelcome prompts={buildChatPromptButtons(dashboard)} onSelect={fillChatDraft} />
@@ -2262,6 +2565,13 @@ export default function App() {
               </div>
             ) : null}
           </div>
+
+          {chatTurns.length > 0 ? (
+            <ChatSuggestions
+              prompts={buildChatPromptButtons(dashboard)}
+              onSelect={fillChatDraft}
+            />
+          ) : null}
 
           <form
             className={`chat-composer${chatArrivingFromOverview ? ' chat-composer-arriving' : ''}`}
@@ -2294,6 +2604,8 @@ export default function App() {
               {busyKey === 'dashboard-chat' ? 'Thinking…' : 'Send'}
             </button>
           </form>
+            </div>
+          </div>
         </section>
       ) : null}
 
@@ -5540,6 +5852,32 @@ function ChatWelcome({
   );
 }
 
+function ChatSuggestions({
+  prompts,
+  onSelect,
+}: {
+  prompts: ChatPromptButton[];
+  onSelect: (prompt: string) => void;
+}) {
+  const chips = prompts.slice(0, 4);
+  if (chips.length === 0) return null;
+  return (
+    <div className="chat-suggestions" aria-label="Quick prompts">
+      {chips.map((p) => (
+        <button
+          key={p.id}
+          type="button"
+          className="chat-suggestion-chip"
+          title={p.prompt}
+          onClick={() => onSelect(p.prompt)}
+        >
+          {p.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function StatusPill({
   children,
   tone,
@@ -5727,4 +6065,18 @@ function formatTime(value: string): string {
     minute: '2-digit',
     second: '2-digit',
   }).format(new Date(value));
+}
+
+function formatRelativeTime(value: string): string {
+  const ts = Date.parse(value);
+  if (!Number.isFinite(ts)) return '';
+  const diffMs = Date.now() - ts;
+  if (diffMs < 60_000) return 'just now';
+  const minutes = Math.round(diffMs / 60_000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(ts);
 }

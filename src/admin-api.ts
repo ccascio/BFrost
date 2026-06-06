@@ -97,6 +97,23 @@ export const LmStudioActionBodySchema = z.object({
 export const ChatMessageBodySchema = z.object({
   message: z.string().min(1).max(8000),
   conversationId: z.string().min(1).max(120).optional(),
+  projectId: z.string().min(1).max(120).nullable().optional(),
+}).strict();
+
+export const ChatThreadUpdateBodySchema = z.object({
+  title: z.string().min(1).max(120).optional(),
+  projectId: z.string().min(1).max(120).nullable().optional(),
+}).strict().refine(
+  (body) => body.title !== undefined || body.projectId !== undefined,
+  { message: 'Provide a title and/or projectId to update.' },
+);
+
+export const ProjectCreateBodySchema = z.object({
+  name: z.string().min(1).max(80),
+}).strict();
+
+export const ProjectRenameBodySchema = z.object({
+  name: z.string().min(1).max(80),
 }).strict();
 
 export const WorkerUpdateBodySchema = z.object({
@@ -314,6 +331,7 @@ export const WorkerSummarySchema = z.object({
   /** True when the built-in worker can be soft-deleted and restored from the store. */
   deletable: z.boolean().optional(),
   kind: z.enum(['feature', 'channel', 'provider']),
+  section: z.enum(['workers', 'system']).optional(),
   enabled: z.boolean(),
   missing: z.boolean(),
   sourcePath: z.string().optional(),
