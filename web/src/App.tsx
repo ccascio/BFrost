@@ -2477,6 +2477,13 @@ export default function App() {
             ) : null}
           </div>
 
+          {chatTurns.length > 0 ? (
+            <ChatSuggestions
+              prompts={buildChatPromptButtons(dashboard)}
+              onSelect={fillChatDraft}
+            />
+          ) : null}
+
           <form
             className={`chat-composer${chatArrivingFromOverview ? ' chat-composer-arriving' : ''}`}
             onSubmit={(event) => {
@@ -5752,6 +5759,32 @@ function ChatWelcome({
           <p className="empty-state chat-prompt-empty">No matching example requests.</p>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function ChatSuggestions({
+  prompts,
+  onSelect,
+}: {
+  prompts: ChatPromptButton[];
+  onSelect: (prompt: string) => void;
+}) {
+  const chips = prompts.slice(0, 4);
+  if (chips.length === 0) return null;
+  return (
+    <div className="chat-suggestions" aria-label="Quick prompts">
+      {chips.map((p) => (
+        <button
+          key={p.id}
+          type="button"
+          className="chat-suggestion-chip"
+          title={p.prompt}
+          onClick={() => onSelect(p.prompt)}
+        >
+          {p.label}
+        </button>
+      ))}
     </div>
   );
 }

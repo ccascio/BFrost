@@ -2679,6 +2679,33 @@ h3 {
   padding: 0 1.1rem;
 }
 
+.chat-suggestions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  padding: 0.5rem 0.6rem 0;
+}
+
+.chat-suggestion-chip {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast);
+  white-space: nowrap;
+  line-height: 1.5;
+}
+
+.chat-suggestion-chip:hover {
+  background: var(--accent-muted);
+  border-color: var(--brand);
+  color: var(--brand-deep);
+}
+
 /* Markdown rendering inside chat turns. */
 .markdown > :first-child { margin-top: 0; }
 .markdown > :last-child { margin-bottom: 0; }
