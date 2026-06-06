@@ -663,6 +663,10 @@ export default function App() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [chatArrivingFromOverview, setChatArrivingFromOverview] = useState(false);
+  const [chatQuery, setChatQuery] = useState('');
+  const [projectComboOpen, setProjectComboOpen] = useState(false);
+  const [projectComboQuery, setProjectComboQuery] = useState('');
+  const projectComboRef = useRef<HTMLDivElement | null>(null);
   const chatLogRef = useRef<HTMLDivElement | null>(null);
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [workerUploadFile, setWorkerUploadFile] = useState<File | null>(null);
@@ -865,6 +869,17 @@ export default function App() {
     const timer = window.setInterval(() => void fetchPendingActions(), 3000);
     return () => window.clearInterval(timer);
   }, [activeTab]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (projectComboRef.current && !projectComboRef.current.contains(e.target as Node)) {
+        setProjectComboOpen(false);
+        setProjectComboQuery('');
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   async function refreshActiveTabSections(): Promise<void> {
     const sections = sectionsForTab(activeTabRef.current);
@@ -2383,36 +2398,108 @@ export default function App() {
 
           <div className="chat-workspace">
             <aside className="chat-history">
-              <div className="chat-history-project">
-                <select
-                  value={activeProjectId ?? ''}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    if (value === '__new__') {
-                      void createChatProject();
-                      return;
-                    }
-                    setActiveProjectId(value || null);
-                  }}
-                  title="Scope chats and document search to a project"
-                >
-                  <option value="">All chats</option>
-                  {chatProjects.map((project) => (
-                    <option key={project.projectId} value={project.projectId}>
-                      {project.name}
-                    </option>
-                  ))}
-                  <option value="__new__">+ New project…</option>
-                </select>
+              <p className="sidebar-section-label">Projects</p>
+              <div className="chat-history-project" ref={projectComboRef}>
+                {(() => {
+                  const q = projectComboQuery.toLowerCase();
+                  const filteredProjects = chatProjects.filter((p) =>
+                    p.name.toLowerCase().includes(q),
+                  );
+                  const selectedName = activeProjectId
+                    ? (chatProjects.find((p) => p.projectId === activeProjectId)?.name ?? '')
+                    : 'All chats';
+                  return (
+                    <div className="project-combobox">
+                      <input
+                        className="project-combobox-input"
+                        type="text"
+                        placeholder="Search projects…"
+                        title="Scope chats and document search to a project"
+                        value={projectComboOpen ? projectComboQuery : selectedName}
+                        onFocus={() => {
+                          setProjectComboOpen(true);
+                          setProjectComboQuery('');
+                        }}
+                        onChange={(e) => {
+                          setProjectComboQuery(e.target.value);
+                          setProjectComboOpen(true);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') {
+                            setProjectComboOpen(false);
+                            setProjectComboQuery('');
+                            (e.target as HTMLInputElement).blur();
+                          }
+                        }}
+                      />
+                      {projectComboOpen && (
+                        <ul className="project-combobox-dropdown">
+                          {'all chats'.includes(q) && (
+                            <li
+                              className={`project-combobox-option${activeProjectId === null ? ' active' : ''}`}
+                              onMouseDown={() => {
+                                setActiveProjectId(null);
+                                setProjectComboOpen(false);
+                                setProjectComboQuery('');
+                              }}
+                            >
+                              All chats
+                            </li>
+                          )}
+                          {filteredProjects.map((p) => (
+                            <li
+                              key={p.projectId}
+                              className={`project-combobox-option${activeProjectId === p.projectId ? ' active' : ''}`}
+                              onMouseDown={() => {
+                                setActiveProjectId(p.projectId);
+                                setProjectComboOpen(false);
+                                setProjectComboQuery('');
+                              }}
+                            >
+                              {p.name}
+                            </li>
+                          ))}
+                          <li
+                            className="project-combobox-option project-combobox-new"
+                            onMouseDown={() => {
+                              setProjectComboOpen(false);
+                              void createChatProject();
+                            }}
+                          >
+                            + New project…
+                          </li>
+                        </ul>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
+              {(() => {
+                const filesView = dashboardViews.find((v) => v.kind === 'project-files-sidebar');
+                return activeProjectId && filesView
+                  ? filesView.render?.({ activeProjectId }) ?? null
+                  : null;
+              })()}
+              <p className="sidebar-section-label">Chats</p>
               <button type="button" className="chat-history-new" onClick={startNewChat}>
                 + New chat
               </button>
+              {chatThreads.length > 0 && (
+                <input
+                  className="chat-history-filter"
+                  type="search"
+                  placeholder="Filter chats…"
+                  value={chatQuery}
+                  onChange={(e) => setChatQuery(e.target.value)}
+                />
+              )}
               <div className="chat-history-list">
                 {(() => {
-                  const visible = activeProjectId
+                  const q = chatQuery.toLowerCase();
+                  const visible = (activeProjectId
                     ? chatThreads.filter((thread) => thread.projectId === activeProjectId)
-                    : chatThreads;
+                    : chatThreads
+                  ).filter((thread) => !q || thread.title.toLowerCase().includes(q));
                   if (visible.length === 0) {
                     return <p className="chat-history-empty">No saved chats yet.</p>;
                   }

@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { WorkerDashboardViewDefinition } from '../../types';
 
-interface Project {
-  projectId: string;
-  name: string;
-}
-
 interface DocumentFile {
   id: string;
   filename: string;
@@ -21,31 +16,13 @@ function textToBase64(text: string): string {
   return btoa(binary);
 }
 
-function DocumentsPanel() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+function FileSidebarPanel({ projectId }: { projectId: string }) {
   const [files, setFiles] = useState<DocumentFile[]>([]);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null);
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  async function loadProjects() {
-    try {
-      const res = await fetch('/api/projects', { credentials: 'include' });
-      if (!res.ok) return;
-      const data = (await res.json()) as { projects: Project[] };
-      setProjects(data.projects);
-      setSelectedProjectId((current) => current || data.projects[0]?.projectId || '');
-    } catch {
-      /* best-effort */
-    }
-  }
-
-  async function loadFiles(projectId: string) {
-    if (!projectId) {
-      setFiles([]);
-      return;
-    }
+  async function loadFiles() {
     try {
       const res = await fetch(`/api/documents/list?projectId=${encodeURIComponent(projectId)}`, {
         credentials: 'include',
@@ -59,41 +36,13 @@ function DocumentsPanel() {
   }
 
   useEffect(() => {
-    void loadProjects();
-  }, []);
-
-  useEffect(() => {
-    void loadFiles(selectedProjectId);
-  }, [selectedProjectId]);
-
-  async function createProject() {
-    const name = window.prompt('New project name')?.trim();
-    if (!name) return;
-    setBusy(true);
+    setFiles([]);
     setNotice(null);
-    try {
-      const res = await fetch('/api/projects', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      });
-      if (!res.ok) throw new Error('Failed to create project');
-      const { project } = (await res.json()) as { project: Project };
-      await loadProjects();
-      setSelectedProjectId(project.projectId);
-    } catch (err) {
-      setNotice({ ok: false, message: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setBusy(false);
-    }
-  }
+    void loadFiles();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
   async function uploadFile(file: File) {
-    if (!selectedProjectId) {
-      setNotice({ ok: false, message: 'Select or create a project first.' });
-      return;
-    }
     setBusy(true);
     setNotice(null);
     try {
@@ -103,7 +52,7 @@ function DocumentsPanel() {
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          projectId: selectedProjectId,
+          projectId,
           filename: file.name,
           contentBase64: textToBase64(text),
         }),
@@ -112,10 +61,10 @@ function DocumentsPanel() {
         const err = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error ?? 'Upload failed');
       }
-      setNotice({ ok: true, message: `Uploaded ${file.name}.` });
-      await loadFiles(selectedProjectId);
+      setNotice({ ok: true, text: `Uploaded ${file.name}.` });
+      await loadFiles();
     } catch (err) {
-      setNotice({ ok: false, message: err instanceof Error ? err.message : String(err) });
+      setNotice({ ok: false, text: err instanceof Error ? err.message : 'Upload failed' });
     } finally {
       setBusy(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -123,7 +72,7 @@ function DocumentsPanel() {
   }
 
   async function removeFile(fileId: string, filename: string) {
-    if (!window.confirm(`Remove "${filename}" from this project?`)) return;
+    if (!window.confirm(`Remove "${filename}"?`)) return;
     setBusy(true);
     setNotice(null);
     try {
@@ -134,100 +83,69 @@ function DocumentsPanel() {
         body: JSON.stringify({ fileId }),
       });
       if (!res.ok) throw new Error('Delete failed');
-      await loadFiles(selectedProjectId);
+      await loadFiles();
     } catch (err) {
-      setNotice({ ok: false, message: err instanceof Error ? err.message : String(err) });
+      setNotice({ ok: false, text: err instanceof Error ? err.message : 'Delete failed' });
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <section className="panel tab-page">
-      <div className="panel-head">
-        <div>
-          <p className="panel-kicker">Project Documents</p>
-          <h2>Files the assistant can read</h2>
-        </div>
-      </div>
-
-      <p className="footnote" style={{ marginTop: '0.5rem' }}>
-        Upload text or markdown files to a project. When you chat inside that project, the assistant
-        searches these files to answer. Files stay on your machine.
-      </p>
-
-      <div className="form-grid" style={{ marginTop: '0.75rem' }}>
-        <label className="field">
-          <span>Project</span>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <select
-              value={selectedProjectId}
-              onChange={(event) => setSelectedProjectId(event.target.value)}
-              style={{ flex: 1 }}
-            >
-              {projects.length === 0 ? <option value="">(no projects yet)</option> : null}
-              {projects.map((project) => (
-                <option key={project.projectId} value={project.projectId}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-            <button type="button" disabled={busy} onClick={() => void createProject()}>
-              + New
-            </button>
-          </div>
+    <div className="docs-sidebar">
+      <div className="docs-sidebar-head">
+        <span>Files</span>
+        <label className={`docs-sidebar-upload-btn${busy ? ' disabled' : ''}`} title="Upload a .txt or .md file">
+          + Upload
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".txt,.md,.markdown,.text,text/plain,text/markdown"
+            disabled={busy}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void uploadFile(file);
+            }}
+          />
         </label>
       </div>
-
-      <div className="panel-actions" style={{ marginTop: '0.75rem' }}>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".txt,.md,.markdown,.text,text/plain,text/markdown"
-          disabled={busy || !selectedProjectId}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void uploadFile(file);
-          }}
-        />
-        {notice ? (
-          <span
-            className="footnote"
-            style={{ color: notice.ok ? 'var(--good)' : 'var(--warning)', alignSelf: 'center' }}
-          >
-            {notice.message}
-          </span>
-        ) : null}
-      </div>
-
-      <div className="stack-list compact" style={{ marginTop: '1rem' }}>
+      {notice ? (
+        <p className="docs-sidebar-notice" style={{ color: notice.ok ? 'var(--good)' : 'var(--warning)' }}>
+          {notice.text}
+        </p>
+      ) : null}
+      <div className="docs-sidebar-list">
         {files.length === 0 ? (
-          <p className="empty-state">No documents in this project yet.</p>
+          <p className="docs-sidebar-empty">No files yet. Upload a .txt or .md file to let the assistant read it.</p>
         ) : (
           files.map((file) => (
-            <div className="run-item" key={file.id} style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <div>
-                <strong>{file.filename}</strong>
-                <span>
-                  {Math.max(1, Math.round(file.size / 1024))} KB · {file.chunkCount} chunk
-                  {file.chunkCount === 1 ? '' : 's'}
-                </span>
-              </div>
-              <button type="button" disabled={busy} onClick={() => void removeFile(file.id, file.filename)}>
-                Remove
+            <div key={file.id} className="docs-sidebar-file">
+              <span className="docs-sidebar-filename" title={`${file.filename} — ${Math.max(1, Math.round(file.size / 1024))} KB, ${file.chunkCount} chunk${file.chunkCount === 1 ? '' : 's'}`}>
+                {file.filename}
+              </span>
+              <button
+                type="button"
+                className="docs-sidebar-remove"
+                disabled={busy}
+                title="Remove file"
+                onClick={() => void removeFile(file.id, file.filename)}
+              >
+                ✕
               </button>
             </div>
           ))
         )}
       </div>
-    </section>
+    </div>
   );
 }
 
-export const dashboardView: WorkerDashboardViewDefinition = {
-  workerId: 'core.documents',
-  kind: 'documents-files',
-  surfaceIds: ['documents-files'],
-  count: () => undefined,
-  render: () => <DocumentsPanel />,
-};
+export const dashboardViews: WorkerDashboardViewDefinition[] = [
+  {
+    workerId: 'core.documents',
+    kind: 'project-files-sidebar',
+    surfaceIds: ['project-files-sidebar'],
+    count: () => undefined,
+    render: (ctx) => <FileSidebarPanel projectId={ctx.activeProjectId as string} />,
+  },
+];

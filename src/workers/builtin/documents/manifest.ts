@@ -24,14 +24,7 @@ export const documentsWorker: WorkerManifest = {
     { key: 'embeddingModelReachable', label: 'Local embedding model endpoint', settingsTarget: 'system' },
   ],
   dashboard: {
-    routes: [
-      {
-        id: 'documents-files',
-        label: 'Documents',
-        description: 'Upload, view, and remove the files attached to each project.',
-        tab: 'workers',
-      },
-    ],
+    routes: [],
   },
   jobs: [],
   tools: [
