@@ -1888,9 +1888,8 @@ export default function App() {
     .map((worker) => ({
       worker,
       surfaces: worker.dashboard.settings.filter((surface) => surface.tab === 'config'),
-      jobs: dashboard.cron.jobs.filter((job) => job.workerId === worker.id),
     }))
-    .filter((group) => group.surfaces.length > 0 || group.jobs.length > 0);
+    .filter((group) => group.surfaces.length > 0);
   const configJobCount = 0;
   const configSurfaceCount = 0; // worker surfaces now live in per-worker Config tabs
   const configCoreCount = 3; // platform routing + embedding + security
@@ -2876,7 +2875,7 @@ export default function App() {
         const workerId = activeTab.slice('worker-config:'.length);
         const group = configGroupsByWorker.find((g) => g.worker.id === workerId);
         if (!group) return null;
-        const { worker, surfaces, jobs } = group;
+        const { worker, surfaces } = group;
         return (
           <section className="panel tab-page">
             <div className="panel-head">
@@ -2889,7 +2888,7 @@ export default function App() {
               </StatusPill>
             </div>
 
-            {surfaces.length === 0 && jobs.length === 0 ? (
+            {surfaces.length === 0 ? (
               <p className="empty-state">No configurable settings declared for this worker.</p>
             ) : null}
 
@@ -2903,22 +2902,6 @@ export default function App() {
                   </div>
                 </div>
                 {renderWorkerConfigurationSurface({ worker, surface })}
-              </div>
-            ))}
-
-            {jobs.map((job) => (
-              <div key={job.name} className="detail-panel config-detail-panel" style={{ marginTop: '1rem' }}>
-                <div className="panel-head section-break">
-                  <div>
-                    <p className="panel-kicker">Job settings</p>
-                    <h2>{job.label}</h2>
-                    {job.description ? <p className="footnote">{job.description}</p> : null}
-                  </div>
-                  <StatusPill tone={job.running ? 'info' : job.lastStatus === 'success' ? 'good' : job.lastStatus === 'error' ? 'error' : 'muted'}>
-                    {job.running ? 'Running' : job.lastStatus === 'idle' ? 'Never run' : job.lastStatus}
-                  </StatusPill>
-                </div>
-                {renderJobConfiguration(job)}
               </div>
             ))}
           </section>
