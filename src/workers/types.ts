@@ -44,6 +44,21 @@ export interface WorkerManifest {
    * and the assistant/tool registry decides how to handle the request.
    */
   chatPrompts?: WorkerChatPromptExample[];
+  /**
+   * Optional first-run call-to-action the worker contributes to the onboarding surfaces
+   * (the setup wizard's welcome step, the overview empty state). The core renders whatever
+   * actions the registry exposes without knowing any worker by name — removing the worker
+   * removes its CTA. Use this for a zero-config "try me now" moment that runs one of the
+   * worker's own jobs and shows the result inline.
+   */
+  onboarding?: WorkerOnboardingAction;
+  /**
+   * Optional persistent banner shown at the top of the dashboard while this worker is
+   * enabled. Worker-agnostic: the core renders whatever enabled workers expose, naming none —
+   * disabling or deleting the worker removes its banner. Use it for "you're in a special mode"
+   * notices, e.g. a demo worker telling the operator how to turn the demo off.
+   */
+  demoNotice?: string;
   owner?: string;
   builtIn: boolean;
   /**
@@ -105,6 +120,34 @@ export interface WorkerChatPromptExample {
   label: string;
   description: string;
   prompt: string;
+}
+
+/**
+ * A first-run call-to-action a worker contributes to the platform's onboarding surfaces.
+ * Worker-agnostic by design: the core reads these off the registry and renders them, so a
+ * worker can offer a "run me now" moment without the core referencing it.
+ *
+ * Activation calls one of two targets the surface POSTs to and then shows the result inline:
+ *   - `endpoint` — a worker-owned API route (`apiRoutes`) that does the work directly and
+ *     returns an optional `{ summary }`. This is the zero-config path: it bypasses the job
+ *     runner entirely, so it needs no configured model provider.
+ *   - `runJob` — the name of a scheduled job to trigger via `POST /api/cron-jobs/:name`.
+ *     Goes through the model-failover runner, so it requires a configured provider.
+ * Prefer `endpoint` for a true no-setup demo; use `runJob` to showcase a real scheduled job.
+ */
+export interface WorkerOnboardingAction {
+  /** Stable id, unique within the worker. */
+  id: string;
+  /** Button/headline text, e.g. "▶ Try the live demo — no setup". */
+  title: string;
+  /** One-line explanation shown beneath the title. */
+  description: string;
+  /** Worker-owned POST API route to call; may return `{ summary }`. Bypasses the job runner. */
+  endpoint?: string;
+  /** Name of a job belonging to this worker to trigger when the CTA is activated. */
+  runJob?: string;
+  /** Lower sorts first across all workers' actions. Defaults to 100 when unset. */
+  priority?: number;
 }
 
 /**

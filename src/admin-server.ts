@@ -1813,6 +1813,8 @@ function listWorkerSummaries(
       description: worker.description,
       tagline: worker.tagline,
       chatPrompts: worker.chatPrompts ?? [],
+      onboarding: worker.onboarding,
+      demoNotice: worker.demoNotice,
       bfrostEngineRange: worker.bfrostEngineRange,
       builtIn: worker.builtIn,
       deletable: worker.deletable ?? false,

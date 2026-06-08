@@ -69,6 +69,15 @@ interface ChatPromptExample {
   prompt: string;
 }
 
+interface WorkerOnboardingAction {
+  id: string;
+  title: string;
+  description: string;
+  endpoint?: string;
+  runJob?: string;
+  priority?: number;
+}
+
 interface ChatPromptButton extends ChatPromptExample {
   id: string;
   source?: string;
@@ -304,6 +313,8 @@ interface WorkerSummary {
   description: string;
   tagline?: string;
   chatPrompts: ChatPromptExample[];
+  onboarding?: WorkerOnboardingAction;
+  demoNotice?: string;
   builtIn: boolean;
   /** True when the built-in worker can be soft-deleted and later restored from the store. */
   deletable?: boolean;
@@ -644,6 +655,9 @@ export default function App() {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<AppError | null>(null);
   const [notice, setNotice] = useState<string>('Loading dashboard...');
+  // Dismiss the first-run onboarding hero once the user has activated it (endpoint actions
+  // don't create a scheduler run, so `hasRun` alone wouldn't hide the card).
+  const [onboardingRan, setOnboardingRan] = useState(false);
   const [password, setPassword] = useState('');
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [selectedJobName, setSelectedJobName] = useState<string | null>(null);
@@ -2269,9 +2283,93 @@ export default function App() {
       />
       <main className="shell dashboard-main">
 
+      {/* Generic "special mode" banner: shown on every tab while any enabled worker exposes a
+          demoNotice. Names no worker — deleting/disabling the worker removes its banner. */}
+      {dashboard.workers
+        .filter((w) => w.enabled && w.demoNotice)
+        .map((w) => (
+          <div key={`demo-notice-${w.id}`} className="demo-notice-banner" role="status">
+            <span aria-hidden="true">🧪</span>
+            <span>{w.demoNotice}</span>
+            <button type="button" onClick={() => setActiveTab('workers')}>
+              Open Workers
+            </button>
+          </div>
+        ))}
+
       {activeTab === 'overview' ? (
         <section className="tab-page">
           {renderStuckDetectorBanner()}
+          {(() => {
+            // Generic first-run CTA: surface whatever onboarding actions the worker registry
+            // exposes until the user has run something. Names no worker — removing the worker
+            // that contributes the action removes this card.
+            const hasRun = dashboard.cron.jobs.some((j) => j.lastStartedAt !== null && j.lastStartedAt !== undefined);
+            if (hasRun || onboardingRan) return null;
+            const actions = dashboard.workers
+              .filter((w) => w.onboarding && w.enabled)
+              .map((w) => ({ ...(w.onboarding as WorkerOnboardingAction), workerId: w.id }))
+              .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+            if (actions.length === 0) return null;
+            const runAction = async (action: WorkerOnboardingAction & { workerId: string }) => {
+              setBusyKey(`onboarding:${action.id}`);
+              try {
+                if (action.endpoint) {
+                  // Worker-owned route: runs directly, no model provider required.
+                  const res = await fetch(action.endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: '{}',
+                  });
+                  if (!res.ok) throw new Error((await res.text()) || 'Request failed');
+                  const body = (await res.json().catch(() => ({}))) as { summary?: string };
+                  setOnboardingRan(true);
+                  await fetchDashboard(true);
+                  setNotice(body.summary ?? 'Demo finished — open the Jobs tab to see the queued items.');
+                } else if (action.runJob) {
+                  const res = await fetch(`/api/cron-jobs/${encodeURIComponent(action.runJob)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'run' }),
+                  });
+                  if (!res.ok) throw new Error(await res.text());
+                  setNotice('Running the demo… results will appear in Jobs and Activity in a moment.');
+                  await new Promise((r) => setTimeout(r, 1500));
+                  await fetchDashboard(true);
+                  setNotice('Demo finished — open the Jobs tab to see the queued items.');
+                }
+              } catch (err) {
+                setError(toAppError(err));
+              } finally {
+                setBusyKey(null);
+              }
+            };
+            return (
+              <section className="panel onboarding-hero">
+                <div className="panel-head">
+                  <div>
+                    <p className="panel-kicker">Get started</p>
+                    <h2>See BFrost work — no setup needed</h2>
+                  </div>
+                </div>
+                <p className="footnote">{actions[0].description}</p>
+                <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+                  {actions.map((action) => (
+                    <button
+                      key={`${action.workerId}:${action.id}`}
+                      type="button"
+                      className="primary"
+                      disabled={(!action.endpoint && !action.runJob) || busyKey === `onboarding:${action.id}`}
+                      onClick={() => void runAction(action)}
+                    >
+                      {busyKey === `onboarding:${action.id}` ? 'Running…' : action.title}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            );
+          })()}
           <section className="overview-chat-panel" aria-label="Dashboard chat quick entry">
             <p className="panel-kicker">Assistant</p>
             <label className="overview-chat-launcher">

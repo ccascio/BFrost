@@ -4870,6 +4870,68 @@ code {
   color: var(--text, #1d2327);
 }
 
+.wizard-onboarding {
+  max-width: 440px;
+  margin: 1rem auto;
+  padding: 1rem;
+  border: 1px solid var(--accent, #2271b1);
+  border-radius: 0.75rem;
+  background: var(--accent-muted, rgba(34, 113, 177, 0.08));
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-align: center;
+}
+
+.wizard-onboarding-kicker {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.wizard-onboarding-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.wizard-onboarding-action > button {
+  font-size: 1rem;
+  padding: 0.6rem 1.2rem;
+}
+
+.wizard-onboarding-desc {
+  font-size: 0.85rem;
+}
+
+.onboarding-hero {
+  border: 1px solid var(--accent, #2271b1);
+  background: var(--accent-muted, rgba(34, 113, 177, 0.08));
+}
+
+.onboarding-hero .panel-actions > button {
+  font-size: 1rem;
+  padding: 0.55rem 1.1rem;
+}
+
+.demo-notice-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--warning, #b26a00);
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--warning, #b26a00) 12%, transparent);
+  font-size: 0.9rem;
+}
+
+.demo-notice-banner > button {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
 .wizard-tabs {
   display: flex;
   gap: 0;

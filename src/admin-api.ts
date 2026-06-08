@@ -318,6 +318,15 @@ export const WorkerChatPromptExampleSchema = z.object({
   prompt: z.string(),
 }).strict();
 
+export const WorkerOnboardingActionSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string(),
+  endpoint: z.string().optional(),
+  runJob: z.string().optional(),
+  priority: z.number().optional(),
+}).strict();
+
 export const WorkerSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -326,6 +335,8 @@ export const WorkerSummarySchema = z.object({
   description: z.string(),
   tagline: z.string().optional(),
   chatPrompts: z.array(WorkerChatPromptExampleSchema),
+  onboarding: WorkerOnboardingActionSchema.optional(),
+  demoNotice: z.string().optional(),
   bfrostEngineRange: z.string().optional(),
   builtIn: z.boolean(),
   /** True when the built-in worker can be soft-deleted and restored from the store. */

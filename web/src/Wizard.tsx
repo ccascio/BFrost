@@ -39,6 +39,16 @@ interface WorkerSummary {
   healthDetail: string;
   jobCount: number;
   enabledJobCount: number;
+  onboarding?: WorkerOnboardingAction;
+}
+
+interface WorkerOnboardingAction {
+  id: string;
+  title: string;
+  description: string;
+  endpoint?: string;
+  runJob?: string;
+  priority?: number;
 }
 
 interface SchedulerJobState {
@@ -122,7 +132,131 @@ async function markCompleted() {
 // Sub-components for each step
 // ────────────────────────────────────────────────────────────────────────────
 
-function StepWelcome() {
+interface OnboardingActionEntry extends WorkerOnboardingAction {
+  workerId: string;
+}
+
+/** Collect every onboarding CTA the worker registry exposes, most prominent first. */
+function collectOnboardingActions(dashboard: DashboardSnapshot): OnboardingActionEntry[] {
+  return dashboard.workers
+    .filter((w) => w.onboarding && w.enabled)
+    .map((w) => ({ ...(w.onboarding as WorkerOnboardingAction), workerId: w.id }))
+    .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+}
+
+type OnboardingOutcome = { status: 'success' | 'error'; summary: string };
+
+/** Call a worker-owned onboarding endpoint and return its `{ summary }` directly. */
+async function runOnboardingEndpoint(endpoint: string): Promise<OnboardingOutcome> {
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: '{}',
+  });
+  if (!res.ok) throw new Error((await res.text()) || 'Request failed');
+  const body = (await res.json().catch(() => ({}))) as { summary?: string };
+  return { status: 'success', summary: body.summary ?? 'Done — open the Queue to see the results.' };
+}
+
+/** Trigger a scheduled job and poll the dashboard until it reports a terminal status. */
+async function runOnboardingJob(jobName: string): Promise<OnboardingOutcome> {
+  const after = Date.now();
+  const res = await fetch(`/api/cron-jobs/${encodeURIComponent(jobName)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'run' }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  for (let attempt = 0; attempt < 15; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    try {
+      const snapRes = await fetch('/api/dashboard', { credentials: 'include' });
+      if (!snapRes.ok) continue;
+      const snap = (await snapRes.json()) as DashboardSnapshot;
+      const job = snap.cron?.jobs?.find((j) => j.name === jobName);
+      if (!job || !job.lastStartedAt || job.running) continue;
+      if (new Date(job.lastStartedAt).getTime() < after - 3000) continue; // wait for our run, not a prior one
+      if (job.lastStatus === 'success') return { status: 'success', summary: job.lastSummary ?? 'Done.' };
+      if (job.lastStatus === 'error') return { status: 'error', summary: job.lastError ?? 'The demo job failed.' };
+    } catch {
+      // transient — keep polling
+    }
+  }
+  return { status: 'success', summary: 'Started — open the Queue to see the results.' };
+}
+
+/**
+ * Generic first-run call-to-action list. Renders whatever onboarding actions the worker
+ * registry exposes — it references no worker by name. Activating one triggers that worker's
+ * job via the standard run endpoint and polls for the result so the payoff lands inline,
+ * here in the welcome step, instead of sending the user off to another tab.
+ */
+function OnboardingActions({
+  dashboard,
+  onRefresh,
+}: {
+  dashboard: DashboardSnapshot;
+  onRefresh: () => Promise<void>;
+}) {
+  const actions = collectOnboardingActions(dashboard);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [result, setResult] = useState<{ status: 'success' | 'error'; summary: string } | null>(null);
+
+  if (actions.length === 0) return null;
+
+  async function activate(action: OnboardingActionEntry) {
+    setBusy(action.id);
+    setResult(null);
+    try {
+      const outcome = action.endpoint
+        ? await runOnboardingEndpoint(action.endpoint)
+        : action.runJob
+          ? await runOnboardingJob(action.runJob)
+          : null;
+      if (!outcome) return;
+      await onRefresh();
+      setResult(outcome);
+    } catch (err) {
+      setResult({ status: 'error', summary: err instanceof Error ? err.message : 'Demo failed to run.' });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="wizard-onboarding">
+      <p className="wizard-onboarding-kicker">Just exploring? See it work first — no setup needed:</p>
+      {actions.map((action) => (
+        <div key={`${action.workerId}:${action.id}`} className="wizard-onboarding-action">
+          <button
+            type="button"
+            className="primary"
+            disabled={busy !== null}
+            onClick={() => void activate(action)}
+          >
+            {busy === action.id ? 'Running…' : action.title}
+          </button>
+          <span className="wizard-onboarding-desc footnote">{action.description}</span>
+        </div>
+      ))}
+      {result ? (
+        <p className={result.status === 'success' ? 'wizard-status-ok' : 'wizard-error'}>
+          {result.status === 'success' ? '✓ ' : '✗ '}
+          {result.summary}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function StepWelcome({
+  dashboard,
+  onRefresh,
+}: {
+  dashboard: DashboardSnapshot;
+  onRefresh: () => Promise<void>;
+}) {
   return (
     <div className="wizard-step-body">
       <div className="wizard-hero">
@@ -132,6 +266,7 @@ function StepWelcome() {
           BFrost is a <strong>worker-first local AI operations platform</strong>. Every
           capability — news digests, research, publishing — is a worker you install, configure, and schedule. Nothing runs in the cloud unless you choose it.
         </p>
+        <OnboardingActions dashboard={dashboard} onRefresh={onRefresh} />
         <ul className="wizard-bullets">
           <li>🔒 All data stays on your machine by default</li>
           <li>🤖 Works with local models (LM Studio / Ollama) or cloud APIs (OpenAI, Anthropic)</li>
@@ -994,7 +1129,7 @@ export function Wizard({ dashboard, onDismiss, onComplete, onRefreshDashboard, o
 
         {/* Step content — aria-live announces step changes to screen readers */}
         <div className="wizard-content" aria-live="polite" aria-atomic="false">
-          {step === 0 && <StepWelcome />}
+          {step === 0 && <StepWelcome dashboard={dashboard} onRefresh={onRefreshDashboard} />}
           {step === 1 && <StepModel dashboard={dashboard} onRefresh={onRefreshDashboard} />}
           {step === 2 && <StepEmbedding dashboard={dashboard} onRefresh={onRefreshDashboard} />}
           {step === 3 && <StepChannels dashboard={dashboard} onRefresh={onRefreshDashboard} />}
