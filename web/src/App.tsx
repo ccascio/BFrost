@@ -2293,9 +2293,26 @@ export default function App() {
           <div key={`demo-notice-${w.id}`} className="demo-notice-banner" role="status">
             <span aria-hidden="true">🧪</span>
             <span>{w.demoNotice}</span>
-            <button type="button" onClick={() => setActiveTab('workers')}>
-              Open Workers
-            </button>
+            {w.deletable ? (
+              <button
+                type="button"
+                disabled={busyKey === `banner-delete-${w.id}`}
+                onClick={() => {
+                  if (!window.confirm(`Delete ${w.name}? You can restore it from the Worker store later.`)) return;
+                  setBusyKey(`banner-delete-${w.id}`);
+                  fetch(`/api/workers/${encodeURIComponent(w.id)}`, { method: 'DELETE', credentials: 'include' })
+                    .then(() => fetchDashboard(true))
+                    .catch((err: unknown) => setError(toAppError(err)))
+                    .finally(() => setBusyKey(null));
+                }}
+              >
+                {busyKey === `banner-delete-${w.id}` ? 'Deleting…' : 'Delete'}
+              </button>
+            ) : (
+              <button type="button" onClick={() => setActiveTab('workers')}>
+                Open Workers
+              </button>
+            )}
           </div>
         ))}
 
