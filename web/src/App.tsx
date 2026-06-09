@@ -721,6 +721,7 @@ export default function App() {
 
   // First-run wizard state
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardCompleted, setWizardCompleted] = useState(true); // default true avoids flash before data loads
 
   // Preview-before-save for schedule edits: holds job.name when awaiting confirmation
   const [confirmSaveJobName, setConfirmSaveJobName] = useState<string | null>(null);
@@ -1228,6 +1229,7 @@ export default function App() {
         const wizRes = await fetch('/api/wizard/state', { credentials: 'include' });
         if (wizRes.ok) {
           const wizState = await wizRes.json() as { step: number; completed: boolean };
+          setWizardCompleted(wizState.completed);
           if (!wizState.completed) {
             setWizardOpen(true);
           }
@@ -2345,6 +2347,28 @@ export default function App() {
                 setBusyKey(null);
               }
             };
+            const deletableDemoWorkers = actions
+              .map((a) => dashboard.workers.find((w) => w.id === a.workerId))
+              .filter((w): w is NonNullable<typeof w> => Boolean(w?.deletable));
+
+            const dismissDemo = async () => {
+              if (!window.confirm('Delete the demo worker? You can restore it from the Worker store later.')) return;
+              setBusyKey('onboarding:dismiss');
+              try {
+                for (const w of deletableDemoWorkers) {
+                  await fetch(`/api/workers/${encodeURIComponent(w.id)}`, {
+                    method: 'DELETE',
+                    credentials: 'include',
+                  });
+                }
+                await fetchDashboard(true);
+              } catch (err) {
+                setError(toAppError(err));
+              } finally {
+                setBusyKey(null);
+              }
+            };
+
             return (
               <section className="panel onboarding-hero">
                 <div className="panel-head">
@@ -2360,16 +2384,42 @@ export default function App() {
                       key={`${action.workerId}:${action.id}`}
                       type="button"
                       className="primary"
-                      disabled={(!action.endpoint && !action.runJob) || busyKey === `onboarding:${action.id}`}
+                      disabled={(!action.endpoint && !action.runJob) || busyKey === `onboarding:${action.id}` || busyKey === 'onboarding:dismiss'}
                       onClick={() => void runAction(action)}
                     >
                       {busyKey === `onboarding:${action.id}` ? 'Running…' : action.title}
                     </button>
                   ))}
+                  {deletableDemoWorkers.length > 0 ? (
+                    <button
+                      type="button"
+                      disabled={busyKey === 'onboarding:dismiss'}
+                      onClick={() => void dismissDemo()}
+                    >
+                      {busyKey === 'onboarding:dismiss' ? 'Deleting…' : 'Not interested — delete demo'}
+                    </button>
+                  ) : null}
                 </div>
               </section>
             );
           })()}
+          {!wizardCompleted ? (
+            <section className="panel onboarding-hero">
+              <div className="panel-head">
+                <div>
+                  <p className="panel-kicker">Setup</p>
+                  <h2>Configure BFrost with the setup wizard</h2>
+                </div>
+              </div>
+              <p className="footnote">Connect a model provider, a notification channel, and enable your first worker — guided step by step.</p>
+              <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+                <button type="button" className="primary" onClick={() => setWizardOpen(true)}>
+                  Open setup wizard →
+                </button>
+              </div>
+            </section>
+          ) : null}
+
           <section className="overview-chat-panel" aria-label="Dashboard chat quick entry">
             <p className="panel-kicker">Assistant</p>
             <label className="overview-chat-launcher">
@@ -3394,6 +3444,7 @@ export default function App() {
           dashboard={dashboard}
           onDismiss={() => {
             setWizardOpen(false);
+            setWizardCompleted(true);
             void fetch('/api/wizard/state', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -3402,6 +3453,7 @@ export default function App() {
           }}
           onComplete={() => {
             setWizardOpen(false);
+            setWizardCompleted(true);
             void fetchDashboard(true);
           }}
           onRefreshDashboard={() => fetchDashboard(true)}
