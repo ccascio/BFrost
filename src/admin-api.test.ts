@@ -273,6 +273,16 @@ test('dashboard response schema accepts the control-room payload shape', () => {
               ],
             },
             {
+              id: 'tweet-post-prompt',
+              label: 'Writing instructions',
+              description: 'The prompt template the LLM uses to draft each tweet. Placeholders: {items}, {maxContentLength}, {signature}.',
+              tab: 'config',
+              path: '/api/cron-jobs/tweet-post',
+              fields: [
+                { key: 'prompt', label: 'Prompt template', type: 'textarea', defaultValue: '', rows: 10, helpText: 'Available placeholders: {items}, {maxContentLength}, {signature}.', seedPath: 'core.publisher.x.prompt' },
+              ],
+            },
+            {
               id: 'x-credentials',
               label: 'X credentials',
               description: 'Credential fields used by the X publishing job.',

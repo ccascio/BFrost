@@ -8,7 +8,8 @@ export const xPublisherModule: BackendWorkerModule = {
   apiRoutes: xPublisherApiRoutes,
   async loadDashboardData() {
     const settings = await loadAdminSettings();
-    return settings.jobs['tweet-post']?.params ?? {};
+    const job = settings.jobs['tweet-post'];
+    return { ...(job?.params ?? {}), prompt: job?.prompt ?? '' };
   },
 };
 

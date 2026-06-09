@@ -48,7 +48,8 @@ test('built-in jobs include worker ownership and defaults', () => {
   assert.equal(tweetPost.job.defaultCron, '45 0,7 * * *');
   assert.equal(tweetPost.job.paramsSchema.safeParse(tweetPost.job.defaultParams).success, true);
   assert.equal(tweetPost.worker.dashboard?.settings?.[0]?.path, '/api/workers/publisher-x/params');
-  assert.equal(tweetPost.worker.dashboard?.settings?.[1]?.path, '/api/x-credentials');
+  assert.equal(tweetPost.worker.dashboard?.settings?.[1]?.path, '/api/cron-jobs/tweet-post');
+  assert.equal(tweetPost.worker.dashboard?.settings?.[2]?.path, '/api/x-credentials');
   assert.equal(tweetPost.worker.dashboard?.routes?.[0]?.tab, 'queue');
   assert.equal(tweetPost.worker.ownedSettings?.[0]?.storageKey, 'admin.settings.jobs.tweet-post');
 });

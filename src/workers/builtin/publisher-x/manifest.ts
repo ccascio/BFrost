@@ -110,6 +110,24 @@ export const xPublisherWorker: WorkerManifest = {
         ],
       },
       {
+        id: 'tweet-post-prompt',
+        label: 'Writing instructions',
+        description: 'The prompt template the LLM uses to draft each tweet. Placeholders: {items}, {maxContentLength}, {signature}.',
+        tab: 'config',
+        path: '/api/cron-jobs/tweet-post',
+        fields: [
+          {
+            key: 'prompt',
+            label: 'Prompt template',
+            type: 'textarea' as const,
+            defaultValue: DEFAULT_TWEET_POST_PROMPT,
+            rows: 10,
+            helpText: 'Available placeholders: {items}, {maxContentLength}, {signature}.',
+            seedPath: 'core.publisher.x.prompt',
+          },
+        ],
+      },
+      {
         id: 'x-credentials',
         label: 'X credentials',
         description: "OAuth 1.0a app credentials used by the X publishing job. Stored in this worker's KV; .env is kept in sync.",
@@ -181,7 +199,7 @@ export const xPublisherWorker: WorkerManifest = {
       approvalRequiredEditable: true,
       defaultPrompt: DEFAULT_TWEET_POST_PROMPT,
       prompt: {
-        editable: true,
+        editable: false,
         helpText: 'Available placeholders: {items}, {maxContentLength}, {signature}.',
       },
       paramsSchema: TweetPostParamsSchema,
