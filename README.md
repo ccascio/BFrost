@@ -6,6 +6,14 @@
 
 **A worker-first local AI operations platform — every capability is a pluggable worker.**
 
+<p align="center">
+  <img src="assets/bfrost-demo.gif" alt="BFrost first run: clicking 'Try the live demo — no setup' runs a sample news → research pipeline on the Item Bus with no API key or model" width="820" />
+</p>
+
+<p align="center">
+  <em>Clone, <code>npm start</code>, click <strong>“Try the live demo — no setup”</strong> — a sample news&nbsp;→&nbsp;research pipeline runs on the Item Bus in seconds, with no API key or model. Then wire up your own workers.</em>
+</p>
+
 BFrost is a local scheduler and orchestration runtime for AI-driven automations. Every capability — scheduled jobs, AI assistants, communication channels, model providers, publishing destinations — is a **worker**. The core knows only how to install, configure, schedule, run, observe, and uninstall workers; it knows nothing about any specific workflow. Add a worker to add a feature. Remove it to remove the feature.
 
 Run it on your own machine: model inference, scheduler state, queue state, and the dashboard all stay local. There is no hosted service, no remote loading, no usage tracking. Workers load from directories you control, and your data stays in a SQLite file you own.
