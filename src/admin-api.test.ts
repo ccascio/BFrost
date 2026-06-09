@@ -180,22 +180,7 @@ test('dashboard response schema accepts the control-room payload shape', () => {
             signature: '',
             maxContentLength: 250,
           },
-          dashboardFields: [
-            {
-              key: 'signature',
-              label: 'Signature',
-              type: 'text',
-              defaultValue: '',
-            },
-            {
-              key: 'maxContentLength',
-              label: 'Max content length',
-              type: 'number',
-              defaultValue: 250,
-              min: 1,
-              max: 280,
-            },
-          ],
+          dashboardFields: [],
           presets: [],
           effectiveModelAlias: 'local-model',
           running: false,
@@ -276,6 +261,17 @@ test('dashboard response schema accepts the control-room payload shape', () => {
         ],
         dashboard: {
           settings: [
+            {
+              id: 'tweet-post-params',
+              label: 'Post parameters',
+              description: 'Signature appended to every tweet, character budget, and candidate selection limits.',
+              tab: 'config',
+              path: '/api/workers/publisher-x/params',
+              fields: [
+                { key: 'signature', label: 'Signature', type: 'text', defaultValue: '', helpText: 'Text appended to every published tweet. Leave blank for no signature.', seedPath: 'core.publisher.x.signature' },
+                { key: 'maxContentLength', label: 'Max content length', type: 'number', defaultValue: 250, min: 1, max: 280, helpText: 'Character limit for the tweet body (excluding signature). Max 280.', seedPath: 'core.publisher.x.maxContentLength' },
+              ],
+            },
             {
               id: 'x-credentials',
               label: 'X credentials',
