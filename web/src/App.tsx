@@ -772,6 +772,20 @@ export default function App() {
   const [firstResultJob, setFirstResultJob] = useState<{ label: string; summary: string; jobName: string } | null>(null);
   const firstResultShownKey = 'bfrost:first-result-shown';
 
+  // One-time star ask, surfaced at the first moment of delight (demo recap or
+  // first real result). Dismissing or clicking it means it never shows again.
+  const starAskKey = 'bfrost:star-ask-shown';
+  const [starAsk, setStarAsk] = useState(false);
+  useEffect(() => {
+    if (!demoRecap && !firstResultJob) return;
+    if (localStorage.getItem(starAskKey)) return;
+    setStarAsk(true);
+  }, [demoRecap, firstResultJob]);
+  const dismissStarAsk = () => {
+    localStorage.setItem(starAskKey, '1');
+    setStarAsk(false);
+  };
+
   // Stable handler for the demo action — shared between the Overview hero and the wizard CTA
   // so both paths produce the same narration + recap experience.
   const runDemoAction = async (action: WorkerOnboardingAction & { workerId: string }) => {
@@ -2684,6 +2698,26 @@ export default function App() {
                   View Pipeline →
                 </button>
               </div>
+            </section>
+          ) : null}
+
+          {starAsk ? (
+            <section className="panel star-ask-banner" aria-label="Enjoying BFrost?">
+              <p>
+                Enjoying BFrost?{' '}
+                <a
+                  href="https://github.com/ccascio/BFrost"
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={dismissStarAsk}
+                >
+                  Star it on GitHub ⭐
+                </a>{' '}
+                — it&rsquo;s how other people find it.
+              </p>
+              <button type="button" className="icon-btn" aria-label="Dismiss" onClick={dismissStarAsk}>
+                ✕
+              </button>
             </section>
           ) : null}
 

@@ -5036,6 +5036,28 @@ code {
   -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent);
 }
 
+/* ---- Star ask (one-time, at the moment of delight) ---- */
+
+.star-ask-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--accent, #4f46e5);
+  background: color-mix(in srgb, var(--accent, #4f46e5) 6%, transparent);
+  animation: recap-appear var(--motion-slow, 260ms) ease;
+}
+
+.star-ask-banner p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.star-ask-banner a {
+  font-weight: 600;
+}
+
 /* ---- Cloud provider quick-connect ---- */
 
 .cloud-connect-panel {

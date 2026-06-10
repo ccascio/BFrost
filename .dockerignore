@@ -1,0 +1,17 @@
+.git
+.github
+node_modules
+web/node_modules
+dist
+web/dist
+data
+logs
+models
+workers/local
+.env
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.tgz
+Dockerfile
+docker-compose.yml

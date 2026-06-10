@@ -1,4 +1,4 @@
-import { promises as fs } from 'fs';
+import { promises as fs, existsSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import http, { IncomingMessage, Server, ServerResponse } from 'http';
@@ -2046,8 +2046,24 @@ function sendJson(res: ServerResponse, statusCode: number, payload: unknown): vo
   res.end(body);
 }
 
+// The dashboard build lives next to the working directory in a repo checkout, but
+// next to the compiled module when BFrost runs from an installed npm package
+// (where cwd is the user's data home, e.g. ~/.bfrost).
+let cachedFrontendDir: string | undefined;
+function frontendDistDir(): string {
+  if (!cachedFrontendDir) {
+    const candidates = [
+      path.join(process.cwd(), 'web/dist'),
+      path.resolve(__dirname, '..', 'web', 'dist'),
+    ];
+    cachedFrontendDir =
+      candidates.find((dir) => existsSync(path.join(dir, 'index.html'))) ?? candidates[0];
+  }
+  return cachedFrontendDir;
+}
+
 async function serveStatic(requestPath: string, res: ServerResponse): Promise<void> {
-  const frontendDir = path.join(process.cwd(), 'web/dist');
+  const frontendDir = frontendDistDir();
   const assetPath = requestPath === '/' ? 'index.html' : requestPath.replace(/^\/+/, '');
   const normalized = path.normalize(assetPath);
   const resolved = path.resolve(frontendDir, normalized);

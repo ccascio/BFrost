@@ -33,13 +33,13 @@ The demo must not just *run*; it must perform. Watching is the wow.
 
 The demo proves the machine works; the next five minutes must make it *theirs*.
 
-- [ ] **Recipes: one-click outcome presets.** A recipe wires existing workers into a named outcome and asks only for what's missing. Launch set of three:
+- [x] **Recipes: one-click outcome presets.** A recipe wires existing workers into a named outcome and asks only for what's missing. Launch set of three:
   - *"Morning digest on Telegram"* — news → research → Telegram; asks for a bot token and a topic.
   - *"Watch a topic, write research notes"* — news → research, fully local; asks for a topic only.
   - *"Publish to X from a feed"* — news → publisher-x; asks for X credentials.
   Recipes are data (manifest-level composition), not core code — they configure and enable workers that already exist.
-- [ ] **Provider adoption that feels psychic.** On first run, detect a locally running LM Studio or Ollama and offer one-click adoption ("Found LM Studio with 2 models loaded — use it?"). For cloud keys, a paste-one-key flow that immediately fires a test message and shows the reply.
-- [ ] **First real result is delivered, not buried.** When the user's first non-demo job completes, push the artifact to wherever they are: a dashboard notification with the result inline, and the configured channel if one exists. Never make them go find it in a table.
+- [x] **Provider adoption that feels psychic.** On first run, detect a locally running LM Studio or Ollama and offer one-click adoption ("Found LM Studio with 2 models loaded — use it?"). For cloud keys, a paste-one-key flow that immediately fires a test message and shows the reply.
+- [x] **First real result is delivered, not buried.** When the user's first non-demo job completes, push the artifact to wherever they are: a dashboard notification with the result inline, and the configured channel if one exists. Never make them go find it in a table.
 
 **Exit criterion:** a new user with LM Studio already running reaches a personalized, delivered result in under 5 minutes without reading any docs.
 
@@ -57,11 +57,11 @@ This is the wow for the developer audience — the ones who write the blog posts
 
 The wow has to be seen to earn stars, and friction kills it before it starts.
 
-- [ ] **Zero-friction install.** `npx bfrost` (or equivalent single command), a Docker one-liner, and a Homebrew tap. `git clone && npm install && npm run build && npm start` is a wow killer — every minute of setup taxes the 60-second budget.
+- [x] **Zero-friction install.** `npx bfrost` (bin entry + publishable package, state in `~/.bfrost`) and a Docker one-liner (`Dockerfile`, `docker-compose.yml`, ghcr publish via the Release workflow). First publish: push a `v*` tag with the `NPM_TOKEN` secret configured. Homebrew tap deliberately deferred — npx + Docker cover the audiences that convert.
 - [ ] **Hero media refresh.** Re-record the README GIF the moment the Pipeline view lands; add a 60–90 second narrated video (demo → recipe → result).
 - [ ] **Docs site with a 5-minute quickstart** (carried over from the v1.0 roadmap) whose steps match the wizard exactly — no drift between docs and product.
-- [ ] **Ask at the moment of delight.** After the first successful demo or recipe run, show one dismissible, once-ever "Enjoying BFrost? Star it on GitHub ⭐" link. Asking at the peak converts; asking in the README footer doesn't.
-- [ ] **Launch beats.** Time Show HN / r/selfhosted / X posts to the Pipeline view + recipes landing together, not to incremental releases.
+- [x] **Ask at the moment of delight.** After the first successful demo or recipe run, a dismissible, once-ever "Enjoying BFrost? Star it on GitHub ⭐" banner shows on the Overview (`bfrost:star-ask-shown` localStorage key).
+- [ ] **Launch beats.** Time Show HN / r/selfhosted / X posts to the Pipeline view + recipes landing together, not to incremental releases. Drafts ready in `docs/launch/`.
 
 ---
 

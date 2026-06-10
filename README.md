@@ -1,17 +1,27 @@
 <p align="center">
-  <img src="assets/bfrost-banner.jpeg" alt="BFrost — worker-first local AI operations platform" />
+  <img src="https://raw.githubusercontent.com/ccascio/BFrost/main/assets/bfrost-banner.jpeg" alt="BFrost — worker-first local AI operations platform" />
 </p>
 
 # BFrost
 
-**A worker-first local AI operations platform — every capability is a pluggable worker.**
+**It researches your topics, writes the notes, and delivers them to your Telegram every morning — entirely on your machine.**
+
+## Try it in 60 seconds
+
+```bash
+npx bfrost
+```
+
+or with Docker:
+
+```bash
+docker run -d --name bfrost -p 127.0.0.1:3030:3030 -v bfrost-data:/app/data ghcr.io/ccascio/bfrost
+```
+
+Open <http://127.0.0.1:3030> and click **“Try the live demo — no setup”** — a sample news → research pipeline runs live on the Item Bus, narrating itself as it goes. No API key, no model, no config.
 
 <p align="center">
-  <img src="assets/bfrost-demo.gif" alt="BFrost first run: clicking 'Try the live demo — no setup' runs a sample news → research pipeline on the Item Bus with no API key or model" width="820" />
-</p>
-
-<p align="center">
-  <em>Clone, <code>npm start</code>, click <strong>“Try the live demo — no setup”</strong> — a sample news&nbsp;→&nbsp;research pipeline runs on the Item Bus in seconds, with no API key or model. Then wire up your own workers.</em>
+  <img src="https://raw.githubusercontent.com/ccascio/BFrost/main/assets/bfrost-demo.gif" alt="BFrost first run: clicking 'Try the live demo — no setup' runs a sample news → research pipeline on the Item Bus with no API key or model" width="820" />
 </p>
 
 BFrost is a local scheduler and orchestration runtime for AI-driven automations. Every capability — scheduled jobs, AI assistants, communication channels, model providers, publishing destinations — is a **worker**. The core knows only how to install, configure, schedule, run, observe, and uninstall workers; it knows nothing about any specific workflow. Add a worker to add a feature. Remove it to remove the feature.
@@ -25,7 +35,7 @@ Run it on your own machine: model inference, scheduler state, queue state, and t
 BFrost ships with a local dashboard for the whole worker lifecycle: pick models, inspect worker health, review events, install capabilities, and keep the approval queue visible before anything risky runs.
 
 <p align="center">
-  <img src="assets/screenshots/dashboard-overview.jpeg" alt="BFrost dashboard overview showing model defaults, LM Studio runtime controls, installed worker status, and recent events" />
+  <img src="https://raw.githubusercontent.com/ccascio/BFrost/main/assets/screenshots/dashboard-overview.jpeg" alt="BFrost dashboard overview showing model defaults, LM Studio runtime controls, installed worker status, and recent events" />
 </p>
 
 <p align="center">
@@ -33,7 +43,7 @@ BFrost ships with a local dashboard for the whole worker lifecycle: pick models,
 </p>
 
 <p align="center">
-  <img src="assets/screenshots/chat-dashboard.jpeg" alt="BFrost dashboard chat showing natural-language assistant prompts, worker-specific prompt cards, and the message composer" />
+  <img src="https://raw.githubusercontent.com/ccascio/BFrost/main/assets/screenshots/chat-dashboard.jpeg" alt="BFrost dashboard chat showing natural-language assistant prompts, worker-specific prompt cards, and the message composer" />
 </p>
 
 <p align="center">
@@ -43,10 +53,10 @@ BFrost ships with a local dashboard for the whole worker lifecycle: pick models,
 <table>
   <tr>
     <td width="50%">
-      <img src="assets/screenshots/workers-catalog.jpeg" alt="BFrost installed workers screen grouped by provider and channel capabilities" />
+      <img src="https://raw.githubusercontent.com/ccascio/BFrost/main/assets/screenshots/workers-catalog.jpeg" alt="BFrost installed workers screen grouped by provider and channel capabilities" />
     </td>
     <td width="50%">
-      <img src="assets/screenshots/worker-store.jpeg" alt="BFrost worker store showing searchable worker cards with trust and category badges" />
+      <img src="https://raw.githubusercontent.com/ccascio/BFrost/main/assets/screenshots/worker-store.jpeg" alt="BFrost worker store showing searchable worker cards with trust and category badges" />
     </td>
   </tr>
   <tr>
@@ -134,39 +144,43 @@ Each has a one-page README in `src/workers/builtin/<id>/README.md` covering what
 - `workers/` — local worker examples and authoring docs.
 - `data/` — local state and run artefacts.
 
-## Requirements
+## Install
 
-### Base app
+**Node 20+ is the only requirement to try BFrost.** Everything else — model endpoints, bot tokens, API keys — is optional and only needed by the specific worker that uses it; the dashboard walks you through each one when you enable it.
 
-- Node.js 20+
-- `sqlite3`
-- a Telegram bot token (only for the Telegram channel worker)
-- an OpenAI-compatible local model endpoint
-- the LM Studio CLI binary available at the configured path
-
-### Voice features
-
-- `ffmpeg`
-- `whisper-cli`
-- a Whisper model file
-
-### Optional integrations
-
-- Google Custom Search credentials — for `core.search.google`, `core.news`, and `core.research`.
-- X credentials — for `core.publisher.x`.
-- A WordPress site with Application Passwords enabled — if you install the [`wordpress-publisher`](./workers/examples/wordpress-publisher/README.md) example to publish news items to your own WP site.
-- Research topics configured from the dashboard — for `core.research`.
-
-## Setup
+### npx (no install)
 
 ```bash
+npx bfrost
+```
+
+State lives in `~/.bfrost` (override with `--home <dir>` or `BFROST_HOME`). `bfrost --help` lists the flags.
+
+### Docker
+
+```bash
+docker run -d --name bfrost -p 127.0.0.1:3030:3030 -v bfrost-data:/app/data ghcr.io/ccascio/bfrost
+```
+
+Or grab [`docker-compose.yml`](./docker-compose.yml) and run `docker compose up -d` — it includes the host-gateway mapping you need to reach an LM Studio / Ollama instance running on the host, and commented slots for `ADMIN_PASSWORD` and network exposure.
+
+### From source (contributors)
+
+```bash
+git clone https://github.com/ccascio/BFrost.git && cd BFrost
 npm install
 cp .env.example .env
 npm run build
 npm start
 ```
 
-Open the dashboard at `http://127.0.0.1:3030`.
+Either way, the dashboard is at `http://127.0.0.1:3030`.
+
+### Optional, per worker
+
+- An OpenAI-compatible local model endpoint (LM Studio or Ollama) — or a cloud key — for AI jobs.
+- A Telegram bot token for the Telegram channel; Google Custom Search credentials for web search and news; X credentials for the X publisher.
+- `ffmpeg` + `whisper-cli` + a Whisper model file for voice features.
 
 ### Windows users — run npm scripts through Git Bash
 

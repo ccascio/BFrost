@@ -37,3 +37,53 @@ jobs:
 
       - name: Check manifest enum sync (App.tsx vs canonical schema)
         run: npm run check:manifest
+
+  docker:
+    name: Docker image builds and boots
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t bfrost-ci .
+
+      - name: Boot container and probe dashboard
+        run: |
+          docker run -d --name bfrost-ci -p 3030:3030 bfrost-ci
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://127.0.0.1:3030/; then
+              echo "Dashboard is up"; exit 0
+            fi
+            sleep 2
+          done
+          echo "Dashboard never came up"; docker logs bfrost-ci; exit 1
+
+  package:
+    name: npm package installs and boots
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pack tarball (runs prepack build)
+        run: npm pack
+
+      - name: Install tarball in isolation and boot
+        run: |
+          mkdir -p /tmp/pkg-test && cd /tmp/pkg-test
+          npm install -g --prefix ./prefix "$GITHUB_WORKSPACE"/bfrost-*.tgz
+          ./prefix/bin/bfrost --home /tmp/pkg-test/home --port 3937 > boot.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://127.0.0.1:3937/; then
+              echo "Dashboard is up"; exit 0
+            fi
+            sleep 2
+          done
+          echo "Dashboard never came up"; cat boot.log; exit 1
