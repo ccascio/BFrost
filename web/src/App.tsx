@@ -768,6 +768,10 @@ export default function App() {
   const [cloudConnecting, setCloudConnecting] = useState(false);
   const [cloudTestReply, setCloudTestReply] = useState<string | null>(null);
 
+  // First real result notification — shown once when the first non-demo job succeeds.
+  const [firstResultJob, setFirstResultJob] = useState<{ label: string; summary: string; jobName: string } | null>(null);
+  const firstResultShownKey = 'bfrost:first-result-shown';
+
   // Stable handler for the demo action — shared between the Overview hero and the wizard CTA
   // so both paths produce the same narration + recap experience.
   const runDemoAction = async (action: WorkerOnboardingAction & { workerId: string }) => {
@@ -1012,6 +1016,16 @@ export default function App() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Detect the first successful non-demo job run and surface it inline.
+  useEffect(() => {
+    if (localStorage.getItem(firstResultShownKey)) return;
+    const jobs = dashboard.cron?.jobs ?? [];
+    const hit = jobs.find(
+      (j) => j.workerId !== 'core.demo' && j.lastStatus === 'success' && j.lastSummary && j.lastFinishedAt,
+    );
+    if (hit) setFirstResultJob({ label: hit.label, summary: hit.lastSummary!, jobName: hit.name });
+  }, [dashboard.cron?.jobs]);
 
   async function refreshActiveTabSections(): Promise<void> {
     const sections = sectionsForTab(activeTabRef.current);
@@ -2504,6 +2518,50 @@ export default function App() {
               </section>
             );
           })()}
+          {firstResultJob ? (
+            <section className="panel first-result-banner" aria-label="First result delivered" aria-live="polite">
+              <div className="panel-head" style={{ alignItems: 'flex-start' }}>
+                <div>
+                  <p className="panel-kicker" style={{ color: 'var(--good, #1f7a57)' }}>Result ready</p>
+                  <h2>{firstResultJob.label}</h2>
+                </div>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="Dismiss"
+                  onClick={() => {
+                    localStorage.setItem(firstResultShownKey, '1');
+                    setFirstResultJob(null);
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="first-result-summary">{firstResultJob.summary}</p>
+              <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => {
+                    localStorage.setItem(firstResultShownKey, '1');
+                    setFirstResultJob(null);
+                    setActiveTab('pipeline');
+                  }}
+                >
+                  View full result →
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.setItem(firstResultShownKey, '1');
+                    setFirstResultJob(null);
+                  }}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </section>
+          ) : null}
           {(() => {
             const lmRunning = dashboard.lmStudio.running && dashboard.lmStudio.loadedCount > 0;
             const alreadyAdopted = dashboard.platform.activeLocalProviderId === 'lmstudio' && dashboard.lmStudio.running;

@@ -5017,6 +5017,25 @@ code {
   animation: recap-appear var(--motion-slow, 260ms) ease;
 }
 
+/* ---- First real result notification ---- */
+
+.first-result-banner {
+  border: 1px solid var(--good, #1f7a57);
+  background: color-mix(in srgb, var(--good, #1f7a57) 8%, transparent);
+  animation: recap-appear var(--motion-slow, 260ms) ease;
+}
+
+.first-result-summary {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0.4rem 0 0;
+  white-space: pre-wrap;
+  max-height: 6rem;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, black 60%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent);
+}
+
 /* ---- Cloud provider quick-connect ---- */
 
 .cloud-connect-panel {
