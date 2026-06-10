@@ -404,6 +404,7 @@ test('dashboard response schema accepts the control-room payload shape', () => {
       notes: [],
       events: [],
     },
+    recipes: [],
   };
 
   assert.equal(DashboardStateSchema.safeParse(payload).success, true);

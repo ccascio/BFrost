@@ -21,6 +21,7 @@ import {
 import { refreshActiveLocalProviderModels, refreshCloudProviderModels } from './model-discovery';
 import { upsertEnvValue } from './env-file';
 import {
+  collectRecipes,
   getActiveLocalProvider,
   getRegisteredProvider,
   listRegisteredApiRoutes,
@@ -90,6 +91,7 @@ import {
   QueueSectionSchema,
   ActionDecisionBodySchema,
   JobMetricsResponseSchema,
+  RecipeApplyBodySchema,
   type BackupsSection,
   type CronRunsSection,
   type DashboardState,
@@ -135,6 +137,7 @@ import {
 } from './projects';
 import { createHash } from 'crypto';
 import { loadKvJson, saveKvJson } from './sqlite';
+import { openWorkerKv } from './workers/storage';
 import { publishItem } from './jobs/item-bus';
 
 let server: Server | null = null;
@@ -952,6 +955,54 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return sendJson(res, 200, { step: state.step ?? 0, completed });
     }
 
+    if (url.pathname === '/api/recipes/apply' && req.method === 'POST') {
+      const body = await readJsonBody(req, RecipeApplyBodySchema);
+      const recipes = collectRecipes();
+      const recipe = recipes.find((r) => r.id === body.recipeId);
+      if (!recipe) {
+        return sendJson(res, 404, { error: `Recipe "${body.recipeId}" not found.` });
+      }
+
+      // Enable each step's worker (builtins only; local workers are not recipe targets).
+      for (const step of recipe.steps) {
+        await setWorkerEnabled(step.workerId, true, { builtIn: true });
+      }
+      await reloadSchedulerSchedules();
+
+      // Apply provided inputs to their storage targets.
+      const inputs = body.inputs ?? {};
+      const missing: string[] = [];
+      for (const input of recipe.requiredInputs ?? []) {
+        const value = inputs[input.key];
+        if (!value?.trim()) {
+          missing.push(input.key);
+          continue;
+        }
+        if (input.storage.type === 'worker-kv') {
+          const kv = openWorkerKv(input.storage.workerId);
+          const current = (await kv.get<Record<string, string>>(input.storage.kvKey)) ?? {};
+          await kv.set(input.storage.kvKey, { ...current, [input.storage.kvField]: value.trim() });
+        } else if (input.storage.type === 'global-kv-array') {
+          const stored = await loadKvJson<Record<string, unknown>>(input.storage.kvKey) ?? {};
+          const arr = Array.isArray(stored[input.storage.arrayField]) ? stored[input.storage.arrayField] as string[] : [];
+          if (!arr.includes(value.trim())) arr.push(value.trim());
+          await saveKvJson(input.storage.kvKey, { ...stored, [input.storage.arrayField]: arr });
+        }
+      }
+
+      // Apply any platform-level settings.
+      if (recipe.platformSettings?.primaryChannelId) {
+        await updatePlatformSettings({ primaryChannelId: recipe.platformSettings.primaryChannelId });
+      }
+
+      return sendJson(res, 200, {
+        ok: true,
+        applied: missing.length === 0,
+        missing,
+        dashboard: await buildDashboardState(),
+      });
+    }
+
     if (url.pathname === '/api/wizard/state' && req.method === 'POST') {
       const body = await readJsonBody(req, z.object({
         step: z.number().int().min(0).max(5).optional(),
@@ -1082,6 +1133,7 @@ async function buildDashboardState(): Promise<DashboardState> {
     integrations: health.integrations,
     dependencies: health.dependencies,
     workerData: {},
+    recipes: collectRecipes(),
   });
 }
 

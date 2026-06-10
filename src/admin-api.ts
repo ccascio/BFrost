@@ -327,6 +327,47 @@ export const WorkerOnboardingActionSchema = z.object({
   priority: z.number().optional(),
 }).strict();
 
+export const RecipeInputStorageSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('worker-kv'),
+    workerId: z.string(),
+    kvKey: z.string(),
+    kvField: z.string(),
+  }).strict(),
+  z.object({
+    type: z.literal('global-kv-array'),
+    kvKey: z.string(),
+    arrayField: z.string(),
+  }).strict(),
+]);
+
+export const WorkerRecipeInputSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  helpText: z.string().optional(),
+  inputType: z.enum(['text', 'password']).optional(),
+  storage: RecipeInputStorageSchema,
+}).strict();
+
+export const WorkerRecipeSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  description: z.string(),
+  steps: z.array(z.object({ workerId: z.string() }).strict()),
+  requiredInputs: z.array(WorkerRecipeInputSchema).optional(),
+  platformSettings: z.object({
+    primaryChannelId: z.string().optional(),
+  }).strict().optional(),
+}).strict();
+
+export const RecipeApplyBodySchema = z.object({
+  recipeId: z.string(),
+  inputs: z.record(z.string()).optional(),
+}).strict();
+
+export type WorkerRecipe = z.infer<typeof WorkerRecipeSchema>;
+export type RecipeApplyBody = z.infer<typeof RecipeApplyBodySchema>;
+
 export const WorkerSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -490,6 +531,7 @@ export const DashboardStateSchema = z.object({
   events: z.array(EventLogRecordSchema).optional(),
   backups: z.array(AppBackupRecordSchema).optional(),
   workerData: z.record(z.unknown()).default({}),
+  recipes: z.array(WorkerRecipeSchema).default([]),
 }).passthrough();
 
 // Per-section schemas. Each section endpoint returns one of these so the frontend can
