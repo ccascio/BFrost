@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Sidebar, type SidebarEntry } from './Sidebar';
 import { TopBar } from './TopBar';
 import { Markdown } from './Markdown';
@@ -9,7 +9,7 @@ import { AlertDialog, Button, CopyButton, CronBuilder, Dialog, ManagementBar, Pr
 import { workerDashboardUi } from './workers/ui-contract';
 
 type RunStatus = 'idle' | 'success' | 'error' | 'skipped';
-type CoreDashboardTab = 'overview' | 'channels' | 'workers' | 'jobs' | 'config' | 'chat' | 'system' | 'store' | 'actions' | 'health';
+type CoreDashboardTab = 'overview' | 'channels' | 'workers' | 'jobs' | 'config' | 'chat' | 'system' | 'store' | 'actions' | 'health' | 'pipeline';
 
 interface AppError {
   friendly: string;
@@ -108,6 +108,7 @@ const CORE_CHAT_PROMPTS: ChatPromptExample[] = [
 
 const CORE_MENU_ENTRIES: Array<Omit<SidebarEntry<DashboardTab>, 'count'>> = [
   { id: 'overview', label: 'Overview', icon: 'overview', group: 'Workspace', order: 10 },
+  { id: 'pipeline', label: 'Pipeline', icon: 'pipeline', group: 'Workspace', order: 12 },
   { id: 'channels', label: 'Channels', icon: 'channels', group: 'Workspace', order: 15 },
   { id: 'jobs', label: 'Jobs', icon: 'jobs', group: 'Workspace', order: 20 },
   { id: 'workers', label: 'Workers', icon: 'workers', group: 'Workspace', order: 30 },
@@ -706,6 +707,75 @@ export default function App() {
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   // In-product changelog
   const [whatsNew, setWhatsNew] = useState<WhatsNewEntry[] | null>(null);
+
+  // Demo narration: stages that play out after the onboarding demo endpoint returns.
+  const [demoNarration, setDemoNarration] = useState<{
+    stages: Array<{ label: string; detail: string }>;
+    currentIndex: number;
+    done: boolean;
+  } | null>(null);
+  // Recap card shown after the narration finishes.
+  const [demoRecap, setDemoRecap] = useState<{
+    headline: string;
+    body: string;
+    ctaText?: string;
+    ctaAction?: string;
+  } | null>(null);
+
+  // Stable handler for the demo action — shared between the Overview hero and the wizard CTA
+  // so both paths produce the same narration + recap experience.
+  const runDemoAction = async (action: WorkerOnboardingAction & { workerId: string }) => {
+    setDemoNarration(null);
+    setDemoRecap(null);
+    setActiveTab('overview');
+    setBusyKey(`onboarding:${action.id}`);
+    try {
+      if (action.endpoint) {
+        const res = await fetch(action.endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: '{}',
+        });
+        if (!res.ok) throw new Error((await res.text()) || 'Request failed');
+        const body = (await res.json().catch(() => ({}))) as {
+          summary?: string;
+          stages?: Array<{ label: string; detail: string }>;
+          recap?: { headline: string; body: string; ctaText?: string; ctaAction?: string };
+        };
+        setOnboardingRan(true);
+        if (body.stages && body.stages.length > 0) {
+          setDemoNarration({ stages: body.stages, currentIndex: 0, done: false });
+          for (let i = 0; i < body.stages.length; i++) {
+            setDemoNarration((prev) => prev ? { ...prev, currentIndex: i } : prev);
+            await new Promise((r) => setTimeout(r, 900));
+          }
+          setDemoNarration((prev) => prev ? { ...prev, done: true } : prev);
+        }
+        await fetchDashboard(true);
+        if (body.recap) {
+          setDemoRecap(body.recap);
+        } else {
+          setNotice(body.summary ?? 'Done — open Pipeline to see the items in the bus.');
+        }
+      } else if (action.runJob) {
+        const res = await fetch(`/api/cron-jobs/${encodeURIComponent(action.runJob)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'run' }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        setNotice('Running… results will appear in the Pipeline and Jobs tabs in a moment.');
+        await new Promise((r) => setTimeout(r, 1500));
+        await fetchDashboard(true);
+        setNotice('Done — open Pipeline to see the items in the bus.');
+      }
+    } catch (err) {
+      setError(toAppError(err));
+    } finally {
+      setBusyKey(null);
+    }
+  };
 
   // Actions tab state
   const [pendingActions, setPendingActions] = useState<ActionRequest[]>([]);
@@ -2330,40 +2400,7 @@ export default function App() {
               .map((w) => ({ ...(w.onboarding as WorkerOnboardingAction), workerId: w.id }))
               .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
             if (actions.length === 0) return null;
-            const runAction = async (action: WorkerOnboardingAction & { workerId: string }) => {
-              setBusyKey(`onboarding:${action.id}`);
-              try {
-                if (action.endpoint) {
-                  // Worker-owned route: runs directly, no model provider required.
-                  const res = await fetch(action.endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: '{}',
-                  });
-                  if (!res.ok) throw new Error((await res.text()) || 'Request failed');
-                  const body = (await res.json().catch(() => ({}))) as { summary?: string };
-                  setOnboardingRan(true);
-                  await fetchDashboard(true);
-                  setNotice(body.summary ?? 'Demo finished — open the Jobs tab to see the queued items.');
-                } else if (action.runJob) {
-                  const res = await fetch(`/api/cron-jobs/${encodeURIComponent(action.runJob)}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'run' }),
-                  });
-                  if (!res.ok) throw new Error(await res.text());
-                  setNotice('Running the demo… results will appear in Jobs and Activity in a moment.');
-                  await new Promise((r) => setTimeout(r, 1500));
-                  await fetchDashboard(true);
-                  setNotice('Demo finished — open the Jobs tab to see the queued items.');
-                }
-              } catch (err) {
-                setError(toAppError(err));
-              } finally {
-                setBusyKey(null);
-              }
-            };
+            const runAction = runDemoAction;
             const deletableDemoWorkers = actions
               .map((a) => dashboard.workers.find((w) => w.id === a.workerId))
               .filter((w): w is NonNullable<typeof w> => Boolean(w?.deletable));
@@ -2420,6 +2457,72 @@ export default function App() {
               </section>
             );
           })()}
+          {demoNarration ? (
+            <section className="panel demo-narration-panel" aria-live="polite" aria-label="Pipeline run progress">
+              <div className="panel-head">
+                <div>
+                  <p className="panel-kicker">Running</p>
+                  <h2>{demoNarration.done ? 'Pipeline ran' : 'Running pipeline…'}</h2>
+                </div>
+              </div>
+              <div className="demo-narration-stages">
+                {demoNarration.stages.map((stage, i) => {
+                  const completed = demoNarration.done || i < demoNarration.currentIndex;
+                  const active = !demoNarration.done && i === demoNarration.currentIndex;
+                  return (
+                    <div
+                      key={stage.label}
+                      className={`demo-narration-stage${completed ? ' completed' : ''}${active ? ' active' : ''}`}
+                    >
+                      <span className="stage-icon" aria-hidden>{completed ? '✓' : active ? '◷' : '○'}</span>
+                      <div>
+                        <strong>{stage.label}</strong>
+                        {(completed || active) ? <span>{stage.detail}</span> : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+
+          {demoRecap ? (
+            <section className="panel demo-recap-panel">
+              <div className="panel-head">
+                <div>
+                  <p className="panel-kicker">What just happened</p>
+                  <h2>{demoRecap.headline}</h2>
+                </div>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="Dismiss recap"
+                  onClick={() => setDemoRecap(null)}
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="footnote">{demoRecap.body}</p>
+              <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+                {demoRecap.ctaAction === 'wizard' ? (
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => { setDemoRecap(null); setWizardOpen(true); }}
+                  >
+                    {demoRecap.ctaText ?? 'Open setup wizard →'}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => { setDemoRecap(null); setActiveTab('pipeline'); }}
+                >
+                  View Pipeline →
+                </button>
+              </div>
+            </section>
+          ) : null}
+
           {!wizardCompleted ? (
             <section className="panel onboarding-hero">
               <div className="panel-head">
@@ -2468,25 +2571,40 @@ export default function App() {
               <div className="panel-head">
                 <div>
                   <p className="panel-kicker">Capabilities</p>
-                  <h2>Installed worker status <HelpTip>Workers are the building blocks of BFrost. Each one does a specific job — fetching news, posting to social media, running research — on a schedule you control. Enable or disable them from the Workers tab. A green "healthy" badge means everything it needs is configured.</HelpTip></h2>
+                  <h2>Active workers <HelpTip>Workers that are healthy and ready to run. Workers missing credentials won't appear here — configure them in the Workers tab, then they'll show up once healthy.</HelpTip></h2>
                 </div>
-                <StatusPill tone={dashboard.workers.some((worker) => worker.healthState !== 'healthy' && worker.healthState !== 'disabled') ? 'warning' : 'good'}>
-                  {dashboard.workers.length} installed
+                <StatusPill tone={dashboard.workers.some((w) => w.healthState === 'healthy') ? 'good' : 'muted'}>
+                  {dashboard.workers.filter((w) => w.healthState === 'healthy').length} healthy
                 </StatusPill>
               </div>
               <div className="stack-list compact">
-                {dashboard.workers.filter((w) => w.enabled).map((worker) => (
-                  <div className="summary-row" key={`${worker.id}-overview`}>
-                    <div>
-                      <strong>{worker.displayName ?? worker.name}</strong>
-                      <span>{worker.tagline ?? worker.description}</span>
-                      <span>{worker.builtIn ? 'built-in' : 'local'} · {worker.jobCount} jobs</span>
+                {dashboard.workers
+                  .filter((w) => w.enabled && (w.healthState === 'healthy' || w.runningJobCount > 0))
+                  .map((worker) => (
+                    <div className="summary-row" key={`${worker.id}-overview`}>
+                      <div>
+                        <strong>{worker.displayName ?? worker.name}</strong>
+                        <span>{worker.tagline ?? worker.description}</span>
+                        <span>{worker.builtIn ? 'built-in' : 'local'} · {worker.jobCount} jobs</span>
+                      </div>
+                      <StatusPill tone={workerHealthTone(worker.healthState)}>
+                        {worker.runningJobCount > 0 ? 'running' : workerHealthLabel(worker.healthState)}
+                      </StatusPill>
                     </div>
-                    <StatusPill tone={workerHealthTone(worker.healthState)}>
-                      {worker.runningJobCount > 0 ? 'running' : workerHealthLabel(worker.healthState)}
-                    </StatusPill>
+                  ))}
+                {dashboard.workers.filter((w) => w.enabled && (w.healthState === 'healthy' || w.runningJobCount > 0)).length === 0 ? (
+                  <div className="empty-state">
+                    <p>No workers are active yet.</p>
+                    <p className="footnote">
+                      Run the demo above to see the pipeline in action, or open Workers to enable and configure your first worker.
+                    </p>
+                    <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+                      <button type="button" onClick={() => setActiveTab('workers')}>
+                        Open Workers
+                      </button>
+                    </div>
                   </div>
-                ))}
+                ) : null}
               </div>
             </article>
 
@@ -3146,6 +3264,8 @@ export default function App() {
 
       {activeTab === 'store' ? renderStoreTab() : null}
 
+      {activeTab === 'pipeline' ? renderPipelineTab(dashboard, () => setActiveTab('overview')) : null}
+
       {activeTab === 'health' ? renderHealthTab() : null}
 
       {activeTab === 'actions' ? renderActionsTab() : null}
@@ -3477,6 +3597,16 @@ export default function App() {
           onNavigate={(tab) => {
             setWizardOpen(false);
             setActiveTab(tab as CoreDashboardTab);
+          }}
+          onRunDemoAction={(action) => {
+            setWizardOpen(false);
+            setWizardCompleted(true);
+            void fetch('/api/wizard/state', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ completed: true }),
+            });
+            void runDemoAction(action as WorkerOnboardingAction & { workerId: string });
           }}
         />
       ) : null}
@@ -4580,7 +4710,7 @@ export default function App() {
     const pct = Math.round(rate * 100);
     const color = pct >= 90 ? 'var(--health-ok, #22c55e)' : pct >= 70 ? 'var(--health-warn, #f59e0b)' : 'var(--health-err, #ef4444)';
     return (
-      <span className="success-rate-pill" style={{ '--rate-color': color } as React.CSSProperties}>
+      <span className="success-rate-pill" style={{ '--rate-color': color } as CSSProperties}>
         <span className="success-rate-bar" style={{ width: `${pct}%`, background: color }} />
         <span className="success-rate-label">{pct}%</span>
       </span>
@@ -5463,6 +5593,7 @@ function mergeSection(
 // table conservative is safer than under-fetching and showing empty UI.
 function sectionsForTab(tab: DashboardTab): DashboardSectionName[] {
   if (tab === 'overview') return ['queue', 'events', 'lmStudioModels'];
+  if (tab === 'pipeline') return ['queue'];
   if (tab === 'channels') return ['workerData'];
   if (tab === 'jobs') return ['cronRuns', 'queue'];
   if (tab === 'system') return ['events', 'backups'];
@@ -6067,6 +6198,175 @@ function statusTone(status: RunStatus): 'good' | 'warning' | 'info' | 'muted' {
   return 'muted';
 }
 
+// ---------------------------------------------------------------------------
+// Pipeline view — builds a generic producer/consumer graph from Item Bus data
+// ---------------------------------------------------------------------------
+
+interface PipelineNode {
+  workerId: string;
+  displayName: string;
+  count: number;
+  itemTypes: string[];
+}
+
+interface PipelineTopology {
+  producers: PipelineNode[];
+  consumers: PipelineNode[];
+  totalItems: number;
+  unconsumedCount: number;
+}
+
+function buildPipelineTopology(items: QueueItem[], workers: WorkerSummary[]): PipelineTopology {
+  const producerMap = new Map<string, { count: number; types: Set<string> }>();
+  const consumerMap = new Map<string, { count: number; types: Set<string> }>();
+  let unconsumedCount = 0;
+
+  for (const item of items) {
+    if (!item.producerWorkerId) continue;
+    if (!producerMap.has(item.producerWorkerId)) {
+      producerMap.set(item.producerWorkerId, { count: 0, types: new Set() });
+    }
+    const p = producerMap.get(item.producerWorkerId)!;
+    p.count++;
+    if (item.itemType) p.types.add(item.itemType);
+
+    const consumers = Object.keys(item.metadata ?? {});
+    if (consumers.length === 0) unconsumedCount++;
+    for (const cId of consumers) {
+      if (!consumerMap.has(cId)) consumerMap.set(cId, { count: 0, types: new Set() });
+      const c = consumerMap.get(cId)!;
+      c.count++;
+      if (item.itemType) c.types.add(item.itemType);
+    }
+  }
+
+  const label = (id: string) => workers.find((w) => w.id === id)?.displayName ?? id;
+
+  return {
+    producers: [...producerMap.entries()].map(([workerId, d]) => ({
+      workerId,
+      displayName: label(workerId),
+      count: d.count,
+      itemTypes: [...d.types],
+    })),
+    consumers: [...consumerMap.entries()].map(([workerId, d]) => ({
+      workerId,
+      displayName: label(workerId),
+      count: d.count,
+      itemTypes: [...d.types],
+    })),
+    totalItems: items.filter((i) => i.producerWorkerId).length,
+    unconsumedCount,
+  };
+}
+
+function renderPipelineTab(dashboard: DashboardState, onRunDemo: () => void): ReactNode {
+  const topology = buildPipelineTopology(dashboard.queue.recentItems, dashboard.workers);
+  const isEmpty = topology.producers.length === 0 && topology.consumers.length === 0;
+
+  return (
+    <section className="tab-page pipeline-tab">
+      <div className="pipeline-tab-header">
+        <p className="panel-kicker">Live view</p>
+        <h2>Item Bus Pipeline</h2>
+        <p className="footnote">
+          Every item in the bus, organised by who produced it and who consumed it.
+          Producers publish items; consumers stamp their workerId into the metadata —
+          this graph is derived from those stamps alone, with no worker names baked in.
+        </p>
+      </div>
+
+      {isEmpty ? (
+        <section className="panel">
+          <div className="empty-state">
+            <p>The bus is empty — no items have been produced yet.</p>
+            <p className="footnote">
+              Run the demo to see a live producer → bus → consumer graph, or enable the
+              news and research workers to start a real pipeline.
+            </p>
+            <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+              <button type="button" className="primary" onClick={onRunDemo}>
+                Go to the demo →
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : (
+        <section className="panel pipeline-graph-card">
+          <div className="pipeline-graph">
+            {/* Producers */}
+            <div className="pipeline-col pipeline-producers-col" aria-label="Producers">
+              <p className="pipeline-col-label">Producers</p>
+              {topology.producers.map((node) => (
+                <div key={node.workerId} className="pipeline-node pipeline-node-producer">
+                  <strong className="pipeline-node-name">{node.displayName}</strong>
+                  <span className="pipeline-node-count">{node.count} item{node.count !== 1 ? 's' : ''}</span>
+                  <span className="pipeline-node-types footnote">{node.itemTypes.join(' · ')}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Left flow lane */}
+            <div className="pipeline-lane" aria-hidden>
+              <div className="pipeline-lane-track">
+                <span className="pipeline-dot" style={{ '--dot-delay': '0s' } as CSSProperties} />
+                <span className="pipeline-dot" style={{ '--dot-delay': '0.5s' } as CSSProperties} />
+                <span className="pipeline-dot" style={{ '--dot-delay': '1.0s' } as CSSProperties} />
+              </div>
+            </div>
+
+            {/* Item Bus center */}
+            <div className="pipeline-bus-col" aria-label="Item Bus">
+              <p className="pipeline-col-label">Item Bus</p>
+              <div className="pipeline-bus-node">
+                <strong className="pipeline-bus-count">{topology.totalItems}</strong>
+                <span className="pipeline-bus-label">items</span>
+                {topology.unconsumedCount > 0 ? (
+                  <span className="pipeline-bus-inflight footnote">{topology.unconsumedCount} queued</span>
+                ) : null}
+                {topology.totalItems - topology.unconsumedCount > 0 ? (
+                  <span className="pipeline-bus-consumed footnote">{topology.totalItems - topology.unconsumedCount} consumed</span>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Right flow lane */}
+            <div className="pipeline-lane pipeline-lane-right" aria-hidden>
+              <div className="pipeline-lane-track">
+                <span className="pipeline-dot" style={{ '--dot-delay': '0.25s' } as CSSProperties} />
+                <span className="pipeline-dot" style={{ '--dot-delay': '0.75s' } as CSSProperties} />
+                <span className="pipeline-dot" style={{ '--dot-delay': '1.25s' } as CSSProperties} />
+              </div>
+            </div>
+
+            {/* Consumers */}
+            <div className="pipeline-col pipeline-consumers-col" aria-label="Consumers">
+              <p className="pipeline-col-label">Consumers</p>
+              {topology.consumers.length > 0 ? topology.consumers.map((node) => (
+                <div key={node.workerId} className="pipeline-node pipeline-node-consumer">
+                  <strong className="pipeline-node-name">{node.displayName}</strong>
+                  <span className="pipeline-node-count">{node.count} consumed</span>
+                  <span className="pipeline-node-types footnote">{node.itemTypes.join(' · ')}</span>
+                </div>
+              )) : (
+                <div className="pipeline-node pipeline-node-empty">
+                  <span className="pipeline-node-name muted">No consumers yet</span>
+                  <span className="pipeline-node-types footnote">Items are queued, waiting to be picked up</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <p className="footnote pipeline-graph-footer">
+            Producers left · consumers right · the bus in the middle. Item types and consumer IDs
+            come from the queue — adding a worker that produces or consumes a type updates this graph automatically.
+          </p>
+        </section>
+      )}
+    </section>
+  );
+}
+
 function workerHealthTone(state: WorkerHealthState): 'good' | 'warning' | 'info' | 'muted' {
   if (state === 'healthy') return 'good';
   if (state === 'missing_credentials' || state === 'missing_dependency') return 'warning';
@@ -6096,7 +6396,8 @@ function resolveDashboardTab(value: string | undefined): DashboardTab | null {
     value === 'jobs' ||
     value === 'config' ||
     value === 'chat' ||
-    value === 'system') {
+    value === 'system' ||
+    value === 'pipeline') {
     return value;
   }
   if (value === 'settings' || value === 'configuration') return 'config';

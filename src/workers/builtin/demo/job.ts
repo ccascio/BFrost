@@ -1,15 +1,8 @@
 import { openWorkerKv } from '../../storage';
-import { publishItem } from '../../../jobs/item-bus';
-import { loadQueue, saveQueue, withQueueLock } from '../../../jobs/queue';
+import { buildItemDraft, publishItem, setConsumerMetadata } from '../../../jobs/item-bus';
+import { createQueueItem, loadQueue, saveQueue, withQueueLock } from '../../../jobs/queue';
 import type { WorkerJobRunResult } from '../../types';
 
-/**
- * The demo "run" is invoked from the worker's own onboarding API route (not the scheduler),
- * so it never touches the model-failover runner and works with zero providers configured.
- * One call publishes a handful of realistic sample articles to the Item Bus and synthesizes
- * a research note, with no API key, model, or network call involved — the fastest path from
- * `git clone` to "oh, it actually does something".
- */
 const WORKER_ID = 'core.demo';
 const LAST_RUN_KEY = 'demo.lastRun';
 
@@ -20,9 +13,23 @@ interface DemoArticle {
   source: string;
 }
 
-// Pre-written, plausible sample items. These are obviously fictional on close reading but
-// realistic enough to show what a real news digest would queue. `host` values are example
-// domains so nobody mistakes them for live sources.
+export interface DemoStage {
+  label: string;
+  detail: string;
+}
+
+export interface DemoRecap {
+  headline: string;
+  body: string;
+  ctaText?: string;
+  ctaAction?: string;
+}
+
+export interface DemoRunResult extends WorkerJobRunResult {
+  stages: DemoStage[];
+  recap: DemoRecap;
+}
+
 const DEMO_ARTICLES: DemoArticle[] = [
   {
     title: 'Open-source schedulers gain ground as teams move automations off the cloud',
@@ -54,8 +61,6 @@ const DEMO_ARTICLES: DemoArticle[] = [
   },
 ];
 
-// Canned synthesis of the articles above — the "research" stage of the pipeline, produced
-// without calling a model so the demo is fully self-contained.
 const DEMO_RESEARCH_NOTE = [
   '# Sample research note',
   '',
@@ -76,23 +81,16 @@ export interface DemoRunSnapshot {
   researchNote: string;
 }
 
-/**
- * Run the zero-config demo pipeline. Self-contained: depends on no other worker, no model,
- * and no network. Clears any previous demo items first so repeated clicks show a fresh,
- * clean flow rather than piling up duplicates.
- */
-export async function runDemo(): Promise<WorkerJobRunResult> {
-  // Remove items from a previous demo run so re-running stays tidy. We only ever touch
-  // items this worker produced.
+export async function runDemo(): Promise<DemoRunResult> {
   await withQueueLock(async () => {
     const queue = await loadQueue();
     const filtered = queue.filter((item) => item.producerWorkerId !== WORKER_ID);
-    if (filtered.length !== queue.length) {
-      await saveQueue(filtered);
-    }
+    if (filtered.length !== queue.length) await saveQueue(filtered);
   });
 
   const ranAt = new Date().toISOString();
+
+  // Stage 1: publish news articles to the bus
   for (const article of DEMO_ARTICLES) {
     await publishItem({
       producerWorkerId: WORKER_ID,
@@ -106,18 +104,67 @@ export async function runDemo(): Promise<WorkerJobRunResult> {
     });
   }
 
+  // Stage 2: simulate a research consumer picking up 3 articles and producing a note.
+  // This stamps real consumer metadata into the bus so the Pipeline view can show
+  // the producer → Item Bus → consumer topology from generic metadata keys alone.
+  await withQueueLock(async () => {
+    const queue = await loadQueue();
+    const articles = queue.filter(
+      (item) => item.producerWorkerId === WORKER_ID && item.itemType === 'news.article',
+    );
+    // Mark three of the four articles as consumed by a research worker.
+    for (const item of articles.slice(0, 3)) {
+      setConsumerMetadata(item, 'core.research', { consumedAt: ranAt, synthesized: true });
+    }
+    // Publish the research note as a new item from the same demo producer.
+    const noteDraft = buildItemDraft({
+      producerWorkerId: WORKER_ID,
+      itemType: 'research.note',
+      tags: ['demo'],
+      title: 'Research synthesis: The self-hosted operator stack',
+      shortDesc: "Control is moving back to the operator — self-hosted schedulers, local LLMs, and approval-gated agents all point the same way.",
+      url: 'https://example.com/demo/research-note',
+      selectionReason: 'Synthesized by the demo pipeline from 3 sample news articles.',
+      payload: { demo: true, sourceArticleCount: 3 },
+      addedAt: ranAt,
+    });
+    queue.push(createQueueItem(noteDraft));
+    await saveQueue(queue);
+  });
+
   const snapshot: DemoRunSnapshot = { ranAt, articles: DEMO_ARTICLES, researchNote: DEMO_RESEARCH_NOTE };
   await openWorkerKv(WORKER_ID).set(LAST_RUN_KEY, snapshot);
 
   return {
     summary:
-      `Demo pipeline ran with no setup: published ${DEMO_ARTICLES.length} sample articles to the Item Bus ` +
-      'and synthesized a research note — no API key or model needed. Open the Queue to see the items flow.',
-    itemCount: DEMO_ARTICLES.length,
+      `Demo pipeline ran with no setup: published ${DEMO_ARTICLES.length} sample news articles, ` +
+      'the research worker consumed 3 of them and produced a research note — all with no API key or model.',
+    itemCount: DEMO_ARTICLES.length + 1,
+    stages: [
+      {
+        label: `Step 1 of 3 — News published`,
+        detail: `${DEMO_ARTICLES.length} sample articles landed in the Item Bus as news.article items.`,
+      },
+      {
+        label: 'Step 2 of 3 — Research consumed',
+        detail: '3 articles were picked up by the research worker and synthesized into a note.',
+      },
+      {
+        label: 'Step 3 of 3 — Pipeline complete',
+        detail: `5 items in the bus: 4 news articles (3 consumed) + 1 research.note. Open Pipeline to see the graph.`,
+      },
+    ],
+    recap: {
+      headline: 'The pipeline just ran',
+      body:
+        'News articles arrived as producer items. The research worker consumed three of them and published a synthesis note. ' +
+        "That's the producer → Item Bus → consumer contract — no API key, no model, just workers talking through the bus.",
+      ctaText: 'Plug in a real model →',
+      ctaAction: 'wizard',
+    },
   };
 }
 
-/** Read the last demo run snapshot for the dashboard surface. */
 export async function loadDemoSnapshot(): Promise<DemoRunSnapshot | null> {
   return openWorkerKv(WORKER_ID).get<DemoRunSnapshot>(LAST_RUN_KEY);
 }

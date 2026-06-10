@@ -1359,7 +1359,16 @@ async function recordWorkerHealthEvents(workers: DashboardState['workers']): Pro
         });
         return;
       }
-      if (worker.healthState === 'missing_credentials' || worker.healthState === 'missing_dependency' || worker.healthState === 'degraded') {
+      // Only log health-attention events when a worker that was previously in a known
+      // good/working state degrades — not on first boot where unconfigured optional
+      // workers go straight from "unseen" to "missing_credentials". That first-boot
+      // flood fills the Activity log with errors the user didn't cause.
+      if (
+        previousState !== undefined &&
+        (worker.healthState === 'missing_credentials' ||
+          worker.healthState === 'missing_dependency' ||
+          worker.healthState === 'degraded')
+      ) {
         await recordEventSafe({
           category: 'worker',
           action: 'health_attention',

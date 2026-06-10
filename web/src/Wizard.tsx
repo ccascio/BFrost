@@ -95,6 +95,8 @@ export interface WizardProps {
   onRefreshDashboard: () => Promise<void>;
   /** Navigate to a specific main-app tab (closes wizard first). */
   onNavigate: (tab: string) => void;
+  /** If provided, demo CTA closes the wizard and hands the action to App.tsx for narration. */
+  onRunDemoAction?: (action: { workerId: string; id: string; endpoint?: string; runJob?: string }) => void;
 }
 
 const TOTAL_STEPS = 8;
@@ -195,9 +197,11 @@ async function runOnboardingJob(jobName: string): Promise<OnboardingOutcome> {
 function OnboardingActions({
   dashboard,
   onRefresh,
+  onRunDemoAction,
 }: {
   dashboard: DashboardSnapshot;
   onRefresh: () => Promise<void>;
+  onRunDemoAction?: (action: OnboardingActionEntry) => void;
 }) {
   const actions = collectOnboardingActions(dashboard);
   const [busy, setBusy] = useState<string | null>(null);
@@ -206,6 +210,7 @@ function OnboardingActions({
   if (actions.length === 0) return null;
 
   async function activate(action: OnboardingActionEntry) {
+    if (onRunDemoAction) { onRunDemoAction(action); return; }
     setBusy(action.id);
     setResult(null);
     try {
@@ -253,9 +258,11 @@ function OnboardingActions({
 function StepWelcome({
   dashboard,
   onRefresh,
+  onRunDemoAction,
 }: {
   dashboard: DashboardSnapshot;
   onRefresh: () => Promise<void>;
+  onRunDemoAction?: (action: OnboardingActionEntry) => void;
 }) {
   return (
     <div className="wizard-step-body">
@@ -266,7 +273,7 @@ function StepWelcome({
           BFrost is a <strong>worker-first local AI operations platform</strong>. Every
           capability — news digests, research, publishing — is a worker you install, configure, and schedule. Nothing runs in the cloud unless you choose it.
         </p>
-        <OnboardingActions dashboard={dashboard} onRefresh={onRefresh} />
+        <OnboardingActions dashboard={dashboard} onRefresh={onRefresh} onRunDemoAction={onRunDemoAction} />
         <ul className="wizard-bullets">
           <li>🔒 All data stays on your machine by default</li>
           <li>🤖 Works with local models (LM Studio / Ollama) or cloud APIs (OpenAI, Anthropic)</li>
@@ -997,7 +1004,7 @@ function StepSecurity({ dashboard, onRefresh }: { dashboard: DashboardSnapshot; 
 // Main Wizard component
 // ────────────────────────────────────────────────────────────────────────────
 
-export function Wizard({ dashboard, onDismiss, onComplete, onRefreshDashboard, onNavigate }: WizardProps) {
+export function Wizard({ dashboard, onDismiss, onComplete, onRefreshDashboard, onNavigate, onRunDemoAction }: WizardProps) {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const shellRef = useRef<HTMLDivElement>(null);
@@ -1129,7 +1136,7 @@ export function Wizard({ dashboard, onDismiss, onComplete, onRefreshDashboard, o
 
         {/* Step content — aria-live announces step changes to screen readers */}
         <div className="wizard-content" aria-live="polite" aria-atomic="false">
-          {step === 0 && <StepWelcome dashboard={dashboard} onRefresh={onRefreshDashboard} />}
+          {step === 0 && <StepWelcome dashboard={dashboard} onRefresh={onRefreshDashboard} onRunDemoAction={onRunDemoAction} />}
           {step === 1 && <StepModel dashboard={dashboard} onRefresh={onRefreshDashboard} />}
           {step === 2 && <StepEmbedding dashboard={dashboard} onRefresh={onRefreshDashboard} />}
           {step === 3 && <StepChannels dashboard={dashboard} onRefresh={onRefreshDashboard} />}
