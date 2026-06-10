@@ -5009,6 +5009,33 @@ code {
   align-items: flex-start;
 }
 
+/* ---- LM Studio adoption banner ---- */
+
+.lm-adoption-banner {
+  border: 1px solid var(--good, #1f7a57);
+  background: color-mix(in srgb, var(--good, #1f7a57) 6%, transparent);
+  animation: recap-appear var(--motion-slow, 260ms) ease;
+}
+
+/* ---- Cloud provider quick-connect ---- */
+
+.cloud-connect-panel {
+  border: 1px solid var(--accent, #4f46e5);
+  background: color-mix(in srgb, var(--accent, #4f46e5) 5%, transparent);
+}
+
+.cloud-connect-success {
+  border-color: var(--good, #1f7a57);
+  background: color-mix(in srgb, var(--good, #1f7a57) 6%, transparent);
+  animation: recap-appear var(--motion-slow, 260ms) ease;
+}
+
+.cloud-connect-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
 /* ---- Recipe cards ---- */
 
 .recipes-panel .panel-head {

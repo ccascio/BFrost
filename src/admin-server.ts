@@ -138,6 +138,8 @@ import {
 import { createHash } from 'crypto';
 import { loadKvJson, saveKvJson } from './sqlite';
 import { openWorkerKv } from './workers/storage';
+import { generateText } from 'ai';
+import { getChatModel } from './llm';
 import { publishItem } from './jobs/item-bus';
 
 let server: Server | null = null;
@@ -354,6 +356,24 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         },
       });
       return sendJson(res, 200, { response: response.text, dashboard: await buildDashboardState() });
+    }
+
+    if (url.pathname === '/api/provider-ping' && req.method === 'POST') {
+      const models = availableModels.filter((m) => m.provider !== 'demo');
+      if (models.length === 0) {
+        return sendJson(res, 400, { error: 'No real model provider configured.' });
+      }
+      const model = models[0];
+      try {
+        const result = await generateText({
+          model: getChatModel(model),
+          messages: [{ role: 'user', content: 'Say hello and tell me your name in one short sentence.' }],
+        });
+        return sendJson(res, 200, { ok: true, model: model.label, response: result.text.trim() });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return sendJson(res, 200, { ok: false, error: msg });
+      }
     }
 
     if (url.pathname === '/api/chats' && req.method === 'GET') {

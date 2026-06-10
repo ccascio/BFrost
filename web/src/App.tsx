@@ -758,6 +758,16 @@ export default function App() {
   const [recipeApplied, setRecipeApplied] = useState<Set<string>>(new Set());
   const [recipeApplying, setRecipeApplying] = useState(false);
 
+  // LM Studio psychic adoption — shown once per session when LM Studio is detected running.
+  const [lmAdoptDismissed, setLmAdoptDismissed] = useState(false);
+  const [lmAdopting, setLmAdopting] = useState(false);
+
+  // Cloud provider quick-connect widget state.
+  const [cloudConnectProvider, setCloudConnectProvider] = useState<'openai' | 'anthropic'>('openai');
+  const [cloudConnectKey, setCloudConnectKey] = useState('');
+  const [cloudConnecting, setCloudConnecting] = useState(false);
+  const [cloudTestReply, setCloudTestReply] = useState<string | null>(null);
+
   // Stable handler for the demo action — shared between the Overview hero and the wizard CTA
   // so both paths produce the same narration + recap experience.
   const runDemoAction = async (action: WorkerOnboardingAction & { workerId: string }) => {
@@ -2494,6 +2504,65 @@ export default function App() {
               </section>
             );
           })()}
+          {(() => {
+            const lmRunning = dashboard.lmStudio.running && dashboard.lmStudio.loadedCount > 0;
+            const alreadyAdopted = dashboard.platform.activeLocalProviderId === 'lmstudio' && dashboard.lmStudio.running;
+            if (!lmRunning || alreadyAdopted || lmAdoptDismissed) return null;
+            const count = dashboard.lmStudio.loadedCount;
+            return (
+              <section className="panel lm-adoption-banner" aria-label="LM Studio detected">
+                <div className="panel-head" style={{ alignItems: 'flex-start' }}>
+                  <div>
+                    <p className="panel-kicker" style={{ color: 'var(--good, #1f7a57)' }}>Detected</p>
+                    <h2>Found LM Studio with {count} model{count !== 1 ? 's' : ''} loaded</h2>
+                  </div>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label="Dismiss"
+                    onClick={() => setLmAdoptDismissed(true)}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <p className="footnote">Your jobs can run entirely on your machine — no API key needed.</p>
+                <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={lmAdopting}
+                    onClick={async () => {
+                      setLmAdopting(true);
+                      try {
+                        await fetch('/api/workers/core.providers.lmstudio', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          credentials: 'include',
+                          body: JSON.stringify({ enabled: true }),
+                        });
+                        await fetch('/api/platform-settings', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          credentials: 'include',
+                          body: JSON.stringify({ activeLocalProviderId: 'lmstudio' }),
+                        });
+                        await fetchDashboard(true);
+                        setLmAdoptDismissed(true);
+                      } catch (err) {
+                        setError(toAppError(err));
+                      } finally {
+                        setLmAdopting(false);
+                      }
+                    }}
+                  >
+                    {lmAdopting ? 'Connecting…' : 'Use LM Studio →'}
+                  </button>
+                  <button type="button" onClick={() => setLmAdoptDismissed(true)}>Later</button>
+                </div>
+              </section>
+            );
+          })()}
+
           {demoNarration ? (
             <section className="panel demo-narration-panel" aria-live="polite" aria-label="Pipeline run progress">
               <div className="panel-head">
@@ -2576,6 +2645,111 @@ export default function App() {
               </div>
             </section>
           ) : null}
+
+          {(() => {
+            // Show cloud quick-connect when no real model is configured and LM Studio isn't detected.
+            const hasRealModel = dashboard.models.some((m) => m.provider !== 'demo');
+            const lmRunning = dashboard.lmStudio.running;
+            if (hasRealModel || lmRunning) return null;
+            if (cloudTestReply) {
+              return (
+                <section className="panel cloud-connect-panel cloud-connect-success">
+                  <div className="panel-head">
+                    <div>
+                      <p className="panel-kicker" style={{ color: 'var(--good, #1f7a57)' }}>Connected</p>
+                      <h2>Provider ready</h2>
+                    </div>
+                    <button className="icon-btn" type="button" onClick={() => setCloudTestReply(null)}>✕</button>
+                  </div>
+                  <p className="footnote" style={{ fontStyle: 'italic', margin: '0.25rem 0 0.5rem' }}>
+                    &ldquo;{cloudTestReply}&rdquo;
+                  </p>
+                  <p className="footnote">Your model is responding. Run a recipe below to get your first real result.</p>
+                </section>
+              );
+            }
+            return (
+              <section className="panel cloud-connect-panel">
+                <div className="panel-head">
+                  <div>
+                    <p className="panel-kicker">Model provider</p>
+                    <h2>Paste an API key to get started</h2>
+                  </div>
+                </div>
+                <p className="footnote" style={{ marginBottom: '0.75rem' }}>
+                  No local model detected. Paste a cloud key to run real jobs in seconds.
+                </p>
+                <div className="cloud-connect-form">
+                  <div className="panel-actions" style={{ marginBottom: '0.5rem' }}>
+                    <button
+                      type="button"
+                      className={cloudConnectProvider === 'openai' ? 'primary' : ''}
+                      onClick={() => setCloudConnectProvider('openai')}
+                    >
+                      OpenAI
+                    </button>
+                    <button
+                      type="button"
+                      className={cloudConnectProvider === 'anthropic' ? 'primary' : ''}
+                      onClick={() => setCloudConnectProvider('anthropic')}
+                    >
+                      Anthropic
+                    </button>
+                  </div>
+                  <label className="field" style={{ maxWidth: '380px' }}>
+                    <span>
+                      {cloudConnectProvider === 'openai' ? 'OpenAI API key' : 'Anthropic API key'}
+                    </span>
+                    <input
+                      type="password"
+                      value={cloudConnectKey}
+                      placeholder={cloudConnectProvider === 'openai' ? 'sk-…' : 'sk-ant-…'}
+                      onChange={(e) => setCloudConnectKey(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && cloudConnectKey.trim()) void connectCloud(); }}
+                    />
+                  </label>
+                  <div className="panel-actions" style={{ marginTop: '0.35rem' }}>
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={!cloudConnectKey.trim() || cloudConnecting}
+                      onClick={() => void connectCloud()}
+                    >
+                      {cloudConnecting ? 'Connecting…' : 'Connect →'}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            );
+            async function connectCloud() {
+              setCloudConnecting(true);
+              try {
+                const credPath = cloudConnectProvider === 'openai'
+                  ? '/api/workers/providers-openai/credentials'
+                  : '/api/workers/providers-anthropic/credentials';
+                await fetch(credPath, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'include',
+                  body: JSON.stringify({ apiKey: cloudConnectKey.trim() }),
+                });
+                await fetchDashboard(true);
+                const pingRes = await fetch('/api/provider-ping', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'include',
+                  body: '{}',
+                });
+                const pingData = (await pingRes.json()) as { ok?: boolean; response?: string; error?: string };
+                setCloudTestReply(pingData.response ?? 'Provider connected successfully.');
+                setCloudConnectKey('');
+              } catch (err) {
+                setError(toAppError(err));
+              } finally {
+                setCloudConnecting(false);
+              }
+            }
+          })()}
 
           {(() => {
             const recipes = dashboard?.recipes ?? [];
