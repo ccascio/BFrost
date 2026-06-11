@@ -1034,12 +1034,12 @@ export default function App() {
   // Detect the first successful non-demo job run and surface it inline.
   useEffect(() => {
     if (localStorage.getItem(firstResultShownKey)) return;
-    const jobs = dashboard.cron?.jobs ?? [];
+    const jobs = dashboard?.cron?.jobs ?? [];
     const hit = jobs.find(
       (j) => j.workerId !== 'core.demo' && j.lastStatus === 'success' && j.lastSummary && j.lastFinishedAt,
     );
     if (hit) setFirstResultJob({ label: hit.label, summary: hit.lastSummary!, jobName: hit.name });
-  }, [dashboard.cron?.jobs]);
+  }, [dashboard?.cron?.jobs]);
 
   async function refreshActiveTabSections(): Promise<void> {
     const sections = sectionsForTab(activeTabRef.current);
