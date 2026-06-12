@@ -1,0 +1,25 @@
+services:
+  bfrost:
+    image: ghcr.io/ccascio/bfrost:latest
+    # Or build from a checkout instead of pulling:
+    # build: .
+    container_name: bfrost
+    restart: unless-stopped
+    ports:
+      # Loopback only by default. Change to "3030:3030" to expose on your
+      # network — and set ADMIN_PASSWORD below if you do.
+      - "127.0.0.1:3030:3030"
+    volumes:
+      - bfrost-data:/app/data
+      # Drop local workers here to have BFrost discover them:
+      # - ./my-workers:/app/workers/local
+    # environment:
+    #   - ADMIN_PASSWORD=change-me
+    #   - OLLAMA_BASE_URL=http://host.docker.internal:1234/v1
+    extra_hosts:
+      # Lets the container reach LM Studio / Ollama running on the host
+      # (Linux needs this; Docker Desktop provides it automatically).
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  bfrost-data:

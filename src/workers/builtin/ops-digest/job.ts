@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { openWorkerKv } from '../../storage';
+import { notifyOperatorChannels } from '../../registry';
 import { listSchedulerRuns, type SchedulerRunRecord } from '../../../scheduler-runs';
 import type { WorkerJobRunResult } from '../../types';
 
@@ -19,10 +20,8 @@ const WORKER_ID = 'core.ops-digest';
 const LAST_SENT_KEY = 'digest.lastSentAt';
 const MAX_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
 
-// Lazy-required to avoid registry → builtin/index → ops-digest → registry cycle.
 function notify(text: string): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return (require('../../registry') as typeof import('../../registry')).notifyOperatorChannels(text);
+  return notifyOperatorChannels(text);
 }
 
 export async function runOpsDigest(params: OpsDigestParams): Promise<WorkerJobRunResult> {

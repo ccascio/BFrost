@@ -12,6 +12,7 @@ import type {
   WorkerJobManifest,
   WorkerManifest,
   WorkerProviderManifest,
+  WorkerRecipe,
   WorkerToolManifest,
   RegisteredWorkerJob,
 } from './types';
@@ -194,6 +195,11 @@ export function listWorkers(): WorkerManifest[] {
 
 export function listRegisteredApiRoutes(): AdminApiRoute[] {
   return allModules().flatMap((module) => module.apiRoutes ?? []);
+}
+
+/** Collect all recipes declared across registered worker manifests. */
+export function collectRecipes(): WorkerRecipe[] {
+  return listWorkers().flatMap((w) => w.recipes ?? []);
 }
 
 export function listBuiltInWorkers(): WorkerManifest[] {

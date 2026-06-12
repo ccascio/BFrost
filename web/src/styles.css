@@ -2119,6 +2119,7 @@ h3 {
 }
 
 .config-detail-column,
+.job-detail-column,
 .news-item-detail-column {
   position: sticky;
   top: calc(var(--topbar-height) + 1rem);
@@ -2126,6 +2127,7 @@ h3 {
 }
 
 .config-detail-panel,
+.job-detail-panel,
 .news-item-detail-panel {
   max-height: calc(100vh - var(--topbar-height) - 2rem);
   overflow: auto;
@@ -3093,11 +3095,13 @@ code {
   }
 
   .config-detail-column,
+  .job-detail-column,
   .news-item-detail-column {
     position: static;
   }
 
   .config-detail-panel,
+  .job-detail-panel,
   .news-item-detail-panel {
     max-height: none;
     overflow: visible;
@@ -4930,6 +4934,456 @@ code {
 .demo-notice-banner > button {
   margin-left: auto;
   white-space: nowrap;
+}
+
+/* ---- Demo narration panel ---- */
+
+.demo-narration-panel {
+  border: 1px solid var(--accent, #2271b1);
+  background: var(--accent-muted, rgba(34, 113, 177, 0.06));
+}
+
+.demo-narration-stages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.demo-narration-stage {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.4rem 0;
+  opacity: 0.45;
+  transition: opacity var(--motion-med, 180ms) ease;
+}
+
+.demo-narration-stage.active,
+.demo-narration-stage.completed {
+  opacity: 1;
+}
+
+.demo-narration-stage .stage-icon {
+  font-size: 1rem;
+  line-height: 1.4;
+  flex-shrink: 0;
+  width: 1.2rem;
+  text-align: center;
+}
+
+.demo-narration-stage.completed .stage-icon {
+  color: var(--good, #1f7a57);
+}
+
+.demo-narration-stage.active .stage-icon {
+  animation: stage-pulse 1s ease-in-out infinite;
+}
+
+@keyframes stage-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.demo-narration-stage > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.demo-narration-stage > div span {
+  font-size: 0.85rem;
+  color: var(--muted, #646970);
+}
+
+/* ---- Demo recap panel ---- */
+
+.demo-recap-panel {
+  border: 1px solid var(--good, #1f7a57);
+  background: color-mix(in srgb, var(--good, #1f7a57) 8%, transparent);
+  animation: recap-appear var(--motion-slow, 260ms) ease;
+}
+
+@keyframes recap-appear {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.demo-recap-panel .panel-head {
+  align-items: flex-start;
+}
+
+/* ---- LM Studio adoption banner ---- */
+
+.lm-adoption-banner {
+  border: 1px solid var(--good, #1f7a57);
+  background: color-mix(in srgb, var(--good, #1f7a57) 6%, transparent);
+  animation: recap-appear var(--motion-slow, 260ms) ease;
+}
+
+/* ---- First real result notification ---- */
+
+.first-result-banner {
+  border: 1px solid var(--good, #1f7a57);
+  background: color-mix(in srgb, var(--good, #1f7a57) 8%, transparent);
+  animation: recap-appear var(--motion-slow, 260ms) ease;
+}
+
+.first-result-summary {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0.4rem 0 0;
+  white-space: pre-wrap;
+  max-height: 6rem;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, black 60%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent);
+}
+
+/* ---- Star ask (one-time, at the moment of delight) ---- */
+
+.star-ask-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--accent, #4f46e5);
+  background: color-mix(in srgb, var(--accent, #4f46e5) 6%, transparent);
+  animation: recap-appear var(--motion-slow, 260ms) ease;
+}
+
+.star-ask-banner p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.star-ask-banner a {
+  font-weight: 600;
+}
+
+/* ---- Cloud provider quick-connect ---- */
+
+.cloud-connect-panel {
+  border: 1px solid var(--accent, #4f46e5);
+  background: color-mix(in srgb, var(--accent, #4f46e5) 5%, transparent);
+}
+
+.cloud-connect-success {
+  border-color: var(--good, #1f7a57);
+  background: color-mix(in srgb, var(--good, #1f7a57) 6%, transparent);
+  animation: recap-appear var(--motion-slow, 260ms) ease;
+}
+
+.cloud-connect-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+/* ---- Recipe cards ---- */
+
+.recipes-panel .panel-head {
+  margin-bottom: 0;
+}
+
+.recipes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.875rem;
+}
+
+.recipe-card {
+  border: 1px solid var(--border, #e0e0e0);
+  border-radius: var(--radius, 8px);
+  padding: 1rem;
+  background: var(--surface, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.recipe-card:hover {
+  border-color: var(--accent, #4f46e5);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #4f46e5) 12%, transparent);
+}
+
+.recipe-card.recipe-active {
+  border-color: var(--good, #1f7a57);
+  background: color-mix(in srgb, var(--good, #1f7a57) 5%, transparent);
+}
+
+.recipe-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.recipe-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.recipe-badge {
+  font-size: 0.7rem;
+  padding: 0.15em 0.55em;
+  border-radius: 999px;
+  background: var(--surface-raised, #f3f4f6);
+  color: var(--muted, #666);
+  white-space: nowrap;
+}
+
+.recipe-badge-active {
+  background: color-mix(in srgb, var(--good, #1f7a57) 15%, transparent);
+  color: var(--good, #1f7a57);
+}
+
+.recipe-card-desc {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted, #666);
+  line-height: 1.45;
+}
+
+.recipe-card-actions {
+  margin-top: auto;
+}
+
+.recipe-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.recipe-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.recipe-field > span {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text, #111);
+}
+
+.recipe-field > input {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.82rem;
+  border: 1px solid var(--border, #e0e0e0);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--input-bg, #fafafa);
+  color: var(--text, #111);
+}
+
+.recipe-field > input:focus {
+  outline: none;
+  border-color: var(--accent, #4f46e5);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #4f46e5) 15%, transparent);
+}
+
+.recipe-field > small {
+  font-size: 0.72rem;
+}
+
+/* ---- Pipeline tab ---- */
+
+.pipeline-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  max-width: 1000px;
+}
+
+.pipeline-tab-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.pipeline-tab-header h2 {
+  margin: 0;
+}
+
+.pipeline-graph-card {
+  padding: 1.5rem;
+}
+
+.pipeline-graph {
+  display: grid;
+  grid-template-columns: 1fr 64px minmax(120px, 160px) 64px 1fr;
+  align-items: center;
+  gap: 0;
+  min-height: 160px;
+}
+
+.pipeline-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.pipeline-col-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted, #646970);
+  margin: 0 0 0.25rem 0;
+}
+
+.pipeline-producers-col {
+  align-items: flex-end;
+}
+
+.pipeline-consumers-col {
+  align-items: flex-start;
+}
+
+.pipeline-node {
+  background: var(--surface-raised, var(--panel));
+  border: 1.5px solid var(--border, #dcdcde);
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  max-width: 220px;
+}
+
+.pipeline-node-producer {
+  border-color: var(--accent, #2271b1);
+  background: color-mix(in srgb, var(--accent, #2271b1) 5%, var(--panel));
+}
+
+.pipeline-node-consumer {
+  border-color: var(--good, #1f7a57);
+  background: color-mix(in srgb, var(--good, #1f7a57) 5%, var(--panel));
+}
+
+.pipeline-node-empty {
+  border-style: dashed;
+  opacity: 0.6;
+}
+
+.pipeline-node-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pipeline-node-count {
+  font-size: 0.8rem;
+  color: var(--muted, #646970);
+}
+
+.pipeline-node-types {
+  color: var(--muted, #646970);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The animated lane that connects producers ↔ bus ↔ consumers */
+
+.pipeline-lane {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.pipeline-lane-track {
+  position: relative;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent, #2271b1) 0%, color-mix(in srgb, var(--accent, #2271b1) 40%, transparent) 100%);
+}
+
+.pipeline-lane-right .pipeline-lane-track {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--good, #1f7a57) 40%, transparent) 0%, var(--good, #1f7a57) 100%);
+}
+
+.pipeline-dot {
+  position: absolute;
+  top: -4px;
+  left: -8px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent, #2271b1);
+  animation: dot-flow 1.8s var(--dot-delay, 0s) linear infinite;
+  opacity: 0;
+}
+
+.pipeline-lane-right .pipeline-dot {
+  background: var(--good, #1f7a57);
+}
+
+@keyframes dot-flow {
+  0%   { left: -8px; opacity: 0; }
+  8%   { opacity: 1; }
+  92%  { opacity: 1; }
+  100% { left: calc(100% + 2px); opacity: 0; }
+}
+
+/* Bus center node */
+
+.pipeline-bus-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.pipeline-bus-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.875rem 1rem;
+  border: 2px solid var(--accent, #2271b1);
+  border-radius: 0.625rem;
+  background: color-mix(in srgb, var(--accent, #2271b1) 8%, var(--panel));
+  min-width: 90px;
+  text-align: center;
+  position: relative;
+}
+
+.pipeline-bus-count {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent, #2271b1);
+}
+
+.pipeline-bus-label {
+  font-size: 0.75rem;
+  color: var(--muted, #646970);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pipeline-bus-inflight,
+.pipeline-bus-consumed {
+  font-size: 0.75rem;
+  color: var(--muted, #646970);
+}
+
+.pipeline-bus-consumed {
+  color: var(--good, #1f7a57);
+}
+
+.pipeline-graph-footer {
+  margin-top: 1.25rem;
+  color: var(--muted, #646970);
 }
 
 .wizard-tabs {

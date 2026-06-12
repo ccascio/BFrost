@@ -24,7 +24,7 @@ export const demoWorker: WorkerManifest = {
   builtIn: true,
   deletable: true,
   demoNotice:
-    'Demo mode is on. The “Demo (no setup)” worker is producing sample data so you can try BFrost without any setup. Delete it from the Workers tab to turn the demo off once your own workers are configured.',
+    'Demo mode is on — sample data is being produced so you can explore BFrost without any setup. Delete this worker once your own workers are configured.',
   onboarding: {
     id: 'try-demo',
     title: '▶ Try the live demo — no setup',

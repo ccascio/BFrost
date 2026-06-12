@@ -1,4 +1,4 @@
-import { promises as fs } from 'fs';
+import { promises as fs, existsSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import http, { IncomingMessage, Server, ServerResponse } from 'http';
@@ -21,6 +21,7 @@ import {
 import { refreshActiveLocalProviderModels, refreshCloudProviderModels } from './model-discovery';
 import { upsertEnvValue } from './env-file';
 import {
+  collectRecipes,
   getActiveLocalProvider,
   getRegisteredProvider,
   listRegisteredApiRoutes,
@@ -90,6 +91,7 @@ import {
   QueueSectionSchema,
   ActionDecisionBodySchema,
   JobMetricsResponseSchema,
+  RecipeApplyBodySchema,
   type BackupsSection,
   type CronRunsSection,
   type DashboardState,
@@ -135,6 +137,9 @@ import {
 } from './projects';
 import { createHash } from 'crypto';
 import { loadKvJson, saveKvJson } from './sqlite';
+import { openWorkerKv } from './workers/storage';
+import { generateText } from 'ai';
+import { getChatModel } from './llm';
 import { publishItem } from './jobs/item-bus';
 
 let server: Server | null = null;
@@ -351,6 +356,24 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         },
       });
       return sendJson(res, 200, { response: response.text, dashboard: await buildDashboardState() });
+    }
+
+    if (url.pathname === '/api/provider-ping' && req.method === 'POST') {
+      const models = availableModels.filter((m) => m.provider !== 'demo');
+      if (models.length === 0) {
+        return sendJson(res, 400, { error: 'No real model provider configured.' });
+      }
+      const model = models[0];
+      try {
+        const result = await generateText({
+          model: getChatModel(model),
+          messages: [{ role: 'user', content: 'Say hello and tell me your name in one short sentence.' }],
+        });
+        return sendJson(res, 200, { ok: true, model: model.label, response: result.text.trim() });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return sendJson(res, 200, { ok: false, error: msg });
+      }
     }
 
     if (url.pathname === '/api/chats' && req.method === 'GET') {
@@ -952,6 +975,54 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return sendJson(res, 200, { step: state.step ?? 0, completed });
     }
 
+    if (url.pathname === '/api/recipes/apply' && req.method === 'POST') {
+      const body = await readJsonBody(req, RecipeApplyBodySchema);
+      const recipes = collectRecipes();
+      const recipe = recipes.find((r) => r.id === body.recipeId);
+      if (!recipe) {
+        return sendJson(res, 404, { error: `Recipe "${body.recipeId}" not found.` });
+      }
+
+      // Enable each step's worker (builtins only; local workers are not recipe targets).
+      for (const step of recipe.steps) {
+        await setWorkerEnabled(step.workerId, true, { builtIn: true });
+      }
+      await reloadSchedulerSchedules();
+
+      // Apply provided inputs to their storage targets.
+      const inputs = body.inputs ?? {};
+      const missing: string[] = [];
+      for (const input of recipe.requiredInputs ?? []) {
+        const value = inputs[input.key];
+        if (!value?.trim()) {
+          missing.push(input.key);
+          continue;
+        }
+        if (input.storage.type === 'worker-kv') {
+          const kv = openWorkerKv(input.storage.workerId);
+          const current = (await kv.get<Record<string, string>>(input.storage.kvKey)) ?? {};
+          await kv.set(input.storage.kvKey, { ...current, [input.storage.kvField]: value.trim() });
+        } else if (input.storage.type === 'global-kv-array') {
+          const stored = await loadKvJson<Record<string, unknown>>(input.storage.kvKey) ?? {};
+          const arr = Array.isArray(stored[input.storage.arrayField]) ? stored[input.storage.arrayField] as string[] : [];
+          if (!arr.includes(value.trim())) arr.push(value.trim());
+          await saveKvJson(input.storage.kvKey, { ...stored, [input.storage.arrayField]: arr });
+        }
+      }
+
+      // Apply any platform-level settings.
+      if (recipe.platformSettings?.primaryChannelId) {
+        await updatePlatformSettings({ primaryChannelId: recipe.platformSettings.primaryChannelId });
+      }
+
+      return sendJson(res, 200, {
+        ok: true,
+        applied: missing.length === 0,
+        missing,
+        dashboard: await buildDashboardState(),
+      });
+    }
+
     if (url.pathname === '/api/wizard/state' && req.method === 'POST') {
       const body = await readJsonBody(req, z.object({
         step: z.number().int().min(0).max(5).optional(),
@@ -1082,6 +1153,7 @@ async function buildDashboardState(): Promise<DashboardState> {
     integrations: health.integrations,
     dependencies: health.dependencies,
     workerData: {},
+    recipes: collectRecipes(),
   });
 }
 
@@ -1359,7 +1431,16 @@ async function recordWorkerHealthEvents(workers: DashboardState['workers']): Pro
         });
         return;
       }
-      if (worker.healthState === 'missing_credentials' || worker.healthState === 'missing_dependency' || worker.healthState === 'degraded') {
+      // Only log health-attention events when a worker that was previously in a known
+      // good/working state degrades — not on first boot where unconfigured optional
+      // workers go straight from "unseen" to "missing_credentials". That first-boot
+      // flood fills the Activity log with errors the user didn't cause.
+      if (
+        previousState !== undefined &&
+        (worker.healthState === 'missing_credentials' ||
+          worker.healthState === 'missing_dependency' ||
+          worker.healthState === 'degraded')
+      ) {
         await recordEventSafe({
           category: 'worker',
           action: 'health_attention',
@@ -1965,8 +2046,24 @@ function sendJson(res: ServerResponse, statusCode: number, payload: unknown): vo
   res.end(body);
 }
 
+// The dashboard build lives next to the working directory in a repo checkout, but
+// next to the compiled module when BFrost runs from an installed npm package
+// (where cwd is the user's data home, e.g. ~/.bfrost).
+let cachedFrontendDir: string | undefined;
+function frontendDistDir(): string {
+  if (!cachedFrontendDir) {
+    const candidates = [
+      path.join(process.cwd(), 'web/dist'),
+      path.resolve(__dirname, '..', 'web', 'dist'),
+    ];
+    cachedFrontendDir =
+      candidates.find((dir) => existsSync(path.join(dir, 'index.html'))) ?? candidates[0];
+  }
+  return cachedFrontendDir;
+}
+
 async function serveStatic(requestPath: string, res: ServerResponse): Promise<void> {
-  const frontendDir = path.join(process.cwd(), 'web/dist');
+  const frontendDir = frontendDistDir();
   const assetPath = requestPath === '/' ? 'index.html' : requestPath.replace(/^\/+/, '');
   const normalized = path.normalize(assetPath);
   const resolved = path.resolve(frontendDir, normalized);

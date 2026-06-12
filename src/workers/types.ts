@@ -114,6 +114,67 @@ export interface WorkerManifest {
    * titled, readable results instead of raw field dumps.
    */
   summarizeForAssistant?: (item: Record<string, unknown>) => string;
+  /**
+   * Optional library of one-click outcome presets. A recipe wires this and other workers
+   * into a named workflow and declares exactly what the user must provide before it can run.
+   * Core collects all recipes via the registry and applies them generically — no worker IDs
+   * appear in core code, only in the manifest where they are declared.
+   */
+  recipes?: WorkerRecipe[];
+}
+
+/** How a recipe input's value is persisted when the recipe is applied. */
+export type RecipeInputStorage =
+  | {
+      /** Merge into a JSON object stored under a per-worker KV key. */
+      type: 'worker-kv';
+      workerId: string;
+      kvKey: string;
+      kvField: string;
+    }
+  | {
+      /** Push a string value onto a string array in the global KV store. */
+      type: 'global-kv-array';
+      kvKey: string;
+      arrayField: string;
+    };
+
+/** A single field the user must fill before a recipe can be applied. */
+export interface WorkerRecipeInput {
+  /** Stable key used in the apply payload (e.g. `"botToken"`). */
+  key: string;
+  /** Human-readable label shown in the UI (e.g. `"Telegram Bot Token"`). */
+  label: string;
+  /** One-line hint shown beneath the input (e.g. `"From @BotFather on Telegram"`). */
+  helpText?: string;
+  /** `'password'` renders the input as masked. Defaults to `'text'`. */
+  inputType?: 'text' | 'password';
+  /** Where the collected value is persisted when the recipe is applied. */
+  storage: RecipeInputStorage;
+}
+
+/** One worker this recipe enables as part of the outcome pipeline. */
+export interface WorkerRecipeStep {
+  workerId: string;
+}
+
+/** A one-click outcome preset declared by a worker in its manifest. */
+export interface WorkerRecipe {
+  /** Stable, URL-safe id unique across all recipes (e.g. `"morning-digest-telegram"`). */
+  id: string;
+  /** Short display name shown on the recipe card (e.g. `"Morning digest on Telegram"`). */
+  label: string;
+  /** One-sentence description of the outcome, written for a non-developer reader. */
+  description: string;
+  /** Workers this recipe will enable, in pipeline order. */
+  steps: WorkerRecipeStep[];
+  /** Inputs the user must supply before the recipe can be applied. */
+  requiredInputs?: WorkerRecipeInput[];
+  /** Platform-level settings to configure when applying the recipe. */
+  platformSettings?: {
+    /** Channel worker ID to designate as the primary operator notification channel. */
+    primaryChannelId?: string;
+  };
 }
 
 export interface WorkerChatPromptExample {

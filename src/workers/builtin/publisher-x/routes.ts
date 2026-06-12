@@ -4,6 +4,8 @@ import { BadRequestError, type AdminApiRoute } from '../../../admin-route';
 import { setXCredentials } from '../../../config';
 import { upsertEnvValue } from '../../../env-file';
 import { recordEventSafe } from '../../../event-log';
+import { updateSchedulerJob } from '../../../scheduler';
+import { TweetPostParamsSchema } from './job';
 import { setStoredXCredentials } from './x-client';
 
 export const xPublisherApiRoutes: AdminApiRoute[] = [
@@ -50,6 +52,16 @@ export const xPublisherApiRoutes: AdminApiRoute[] = [
           fields: Object.keys(updates),
         },
       });
+      return { status: 200, body: { ok: true } };
+    },
+  },
+  {
+    method: 'POST',
+    path: '/api/workers/publisher-x/params',
+    workerIds: ['core.publisher.x'],
+    async handle({ req, readJsonBody }) {
+      const raw = await readJsonBody(req, TweetPostParamsSchema);
+      await updateSchedulerJob('tweet-post', { params: raw });
       return { status: 200, body: { ok: true } };
     },
   },

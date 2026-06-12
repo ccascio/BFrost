@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Sidebar, type SidebarEntry } from './Sidebar';
 import { TopBar } from './TopBar';
 import { Markdown } from './Markdown';
@@ -9,7 +9,7 @@ import { AlertDialog, Button, CopyButton, CronBuilder, Dialog, ManagementBar, Pr
 import { workerDashboardUi } from './workers/ui-contract';
 
 type RunStatus = 'idle' | 'success' | 'error' | 'skipped';
-type CoreDashboardTab = 'overview' | 'channels' | 'workers' | 'jobs' | 'config' | 'chat' | 'system' | 'store' | 'actions' | 'health';
+type CoreDashboardTab = 'overview' | 'channels' | 'workers' | 'jobs' | 'config' | 'chat' | 'system' | 'store' | 'actions' | 'health' | 'pipeline';
 
 interface AppError {
   friendly: string;
@@ -108,6 +108,7 @@ const CORE_CHAT_PROMPTS: ChatPromptExample[] = [
 
 const CORE_MENU_ENTRIES: Array<Omit<SidebarEntry<DashboardTab>, 'count'>> = [
   { id: 'overview', label: 'Overview', icon: 'overview', group: 'Workspace', order: 10 },
+  { id: 'pipeline', label: 'Pipeline', icon: 'pipeline', group: 'Workspace', order: 12 },
   { id: 'channels', label: 'Channels', icon: 'channels', group: 'Workspace', order: 15 },
   { id: 'jobs', label: 'Jobs', icon: 'jobs', group: 'Workspace', order: 20 },
   { id: 'workers', label: 'Workers', icon: 'workers', group: 'Workspace', order: 30 },
@@ -560,6 +561,35 @@ interface JobMetricsResponse {
 
 type DashboardSectionName = 'queue' | 'cronRuns' | 'events' | 'backups' | 'workerData' | 'lmStudioModels';
 
+interface RecipeInputStorage {
+  type: 'worker-kv' | 'global-kv-array';
+  workerId?: string;
+  kvKey: string;
+  kvField?: string;
+  arrayField?: string;
+}
+
+interface WorkerRecipeInput {
+  key: string;
+  label: string;
+  helpText?: string;
+  inputType?: 'text' | 'password';
+  storage: RecipeInputStorage;
+}
+
+interface WorkerRecipeStep {
+  workerId: string;
+}
+
+interface WorkerRecipe {
+  id: string;
+  label: string;
+  description: string;
+  steps: WorkerRecipeStep[];
+  requiredInputs?: WorkerRecipeInput[];
+  platformSettings?: { primaryChannelId?: string };
+}
+
 interface DashboardState {
   app: {
     name: string;
@@ -611,6 +641,7 @@ interface DashboardState {
   };
   events: EventLogRecord[];
   backups: AppBackupRecord[];
+  recipes: WorkerRecipe[];
   [key: string]: unknown;
 }
 
@@ -707,6 +738,109 @@ export default function App() {
   // In-product changelog
   const [whatsNew, setWhatsNew] = useState<WhatsNewEntry[] | null>(null);
 
+  // Demo narration: stages that play out after the onboarding demo endpoint returns.
+  const [demoNarration, setDemoNarration] = useState<{
+    stages: Array<{ label: string; detail: string }>;
+    currentIndex: number;
+    done: boolean;
+  } | null>(null);
+  // Recap card shown after the narration finishes.
+  const [demoRecap, setDemoRecap] = useState<{
+    headline: string;
+    body: string;
+    ctaText?: string;
+    ctaAction?: string;
+  } | null>(null);
+
+  // Recipe card state: which recipe is expanded, its current input values, and applied set.
+  const [recipeExpanded, setRecipeExpanded] = useState<string | null>(null);
+  const [recipeInputValues, setRecipeInputValues] = useState<Record<string, string>>({});
+  const [recipeApplied, setRecipeApplied] = useState<Set<string>>(new Set());
+  const [recipeApplying, setRecipeApplying] = useState(false);
+
+  // LM Studio psychic adoption — shown once per session when LM Studio is detected running.
+  const [lmAdoptDismissed, setLmAdoptDismissed] = useState(false);
+  const [lmAdopting, setLmAdopting] = useState(false);
+
+  // Cloud provider quick-connect widget state.
+  const [cloudConnectProvider, setCloudConnectProvider] = useState<'openai' | 'anthropic'>('openai');
+  const [cloudConnectKey, setCloudConnectKey] = useState('');
+  const [cloudConnecting, setCloudConnecting] = useState(false);
+  const [cloudTestReply, setCloudTestReply] = useState<string | null>(null);
+
+  // First real result notification — shown once when the first non-demo job succeeds.
+  const [firstResultJob, setFirstResultJob] = useState<{ label: string; summary: string; jobName: string } | null>(null);
+  const firstResultShownKey = 'bfrost:first-result-shown';
+
+  // One-time star ask, surfaced at the first moment of delight (demo recap or
+  // first real result). Dismissing or clicking it means it never shows again.
+  const starAskKey = 'bfrost:star-ask-shown';
+  const [starAsk, setStarAsk] = useState(false);
+  useEffect(() => {
+    if (!demoRecap && !firstResultJob) return;
+    if (localStorage.getItem(starAskKey)) return;
+    setStarAsk(true);
+  }, [demoRecap, firstResultJob]);
+  const dismissStarAsk = () => {
+    localStorage.setItem(starAskKey, '1');
+    setStarAsk(false);
+  };
+
+  // Stable handler for the demo action — shared between the Overview hero and the wizard CTA
+  // so both paths produce the same narration + recap experience.
+  const runDemoAction = async (action: WorkerOnboardingAction & { workerId: string }) => {
+    setDemoNarration(null);
+    setDemoRecap(null);
+    setActiveTab('overview');
+    setBusyKey(`onboarding:${action.id}`);
+    try {
+      if (action.endpoint) {
+        const res = await fetch(action.endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: '{}',
+        });
+        if (!res.ok) throw new Error((await res.text()) || 'Request failed');
+        const body = (await res.json().catch(() => ({}))) as {
+          summary?: string;
+          stages?: Array<{ label: string; detail: string }>;
+          recap?: { headline: string; body: string; ctaText?: string; ctaAction?: string };
+        };
+        setOnboardingRan(true);
+        if (body.stages && body.stages.length > 0) {
+          setDemoNarration({ stages: body.stages, currentIndex: 0, done: false });
+          for (let i = 0; i < body.stages.length; i++) {
+            setDemoNarration((prev) => prev ? { ...prev, currentIndex: i } : prev);
+            await new Promise((r) => setTimeout(r, 900));
+          }
+          setDemoNarration((prev) => prev ? { ...prev, done: true } : prev);
+        }
+        await fetchDashboard(true);
+        if (body.recap) {
+          setDemoRecap(body.recap);
+        } else {
+          setNotice(body.summary ?? 'Done — open Pipeline to see the items in the bus.');
+        }
+      } else if (action.runJob) {
+        const res = await fetch(`/api/cron-jobs/${encodeURIComponent(action.runJob)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'run' }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        setNotice('Running… results will appear in the Pipeline and Jobs tabs in a moment.');
+        await new Promise((r) => setTimeout(r, 1500));
+        await fetchDashboard(true);
+        setNotice('Done — open Pipeline to see the items in the bus.');
+      }
+    } catch (err) {
+      setError(toAppError(err));
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
   // Actions tab state
   const [pendingActions, setPendingActions] = useState<ActionRequest[]>([]);
   const [actionHistory, setActionHistory] = useState<ActionRequest[]>([]);
@@ -721,6 +855,7 @@ export default function App() {
 
   // First-run wizard state
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardCompleted, setWizardCompleted] = useState(true); // default true avoids flash before data loads
 
   // Preview-before-save for schedule edits: holds job.name when awaiting confirmation
   const [confirmSaveJobName, setConfirmSaveJobName] = useState<string | null>(null);
@@ -895,6 +1030,16 @@ export default function App() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Detect the first successful non-demo job run and surface it inline.
+  useEffect(() => {
+    if (localStorage.getItem(firstResultShownKey)) return;
+    const jobs = dashboard?.cron?.jobs ?? [];
+    const hit = jobs.find(
+      (j) => j.workerId !== 'core.demo' && j.lastStatus === 'success' && j.lastSummary && j.lastFinishedAt,
+    );
+    if (hit) setFirstResultJob({ label: hit.label, summary: hit.lastSummary!, jobName: hit.name });
+  }, [dashboard?.cron?.jobs]);
 
   async function refreshActiveTabSections(): Promise<void> {
     const sections = sectionsForTab(activeTabRef.current);
@@ -1228,6 +1373,7 @@ export default function App() {
         const wizRes = await fetch('/api/wizard/state', { credentials: 'include' });
         if (wizRes.ok) {
           const wizState = await wizRes.json() as { step: number; completed: boolean };
+          setWizardCompleted(wizState.completed);
           if (!wizState.completed) {
             setWizardOpen(true);
           }
@@ -1281,6 +1427,7 @@ export default function App() {
       events: shell.events ?? [],
       backups: shell.backups ?? [],
       workerData: (shell as any).workerData ?? {},
+      recipes: shell.recipes ?? [],
     } as DashboardState;
   }
 
@@ -2291,9 +2438,26 @@ export default function App() {
           <div key={`demo-notice-${w.id}`} className="demo-notice-banner" role="status">
             <span aria-hidden="true">🧪</span>
             <span>{w.demoNotice}</span>
-            <button type="button" onClick={() => setActiveTab('workers')}>
-              Open Workers
-            </button>
+            {w.deletable ? (
+              <button
+                type="button"
+                disabled={busyKey === `banner-delete-${w.id}`}
+                onClick={() => {
+                  if (!window.confirm(`Delete ${w.name}? You can restore it from the Worker store later.`)) return;
+                  setBusyKey(`banner-delete-${w.id}`);
+                  fetch(`/api/workers/${encodeURIComponent(w.id)}`, { method: 'DELETE', credentials: 'include' })
+                    .then(() => fetchDashboard(true))
+                    .catch((err: unknown) => setError(toAppError(err)))
+                    .finally(() => setBusyKey(null));
+                }}
+              >
+                {busyKey === `banner-delete-${w.id}` ? 'Deleting…' : 'Delete'}
+              </button>
+            ) : (
+              <button type="button" onClick={() => setActiveTab('workers')}>
+                Open Workers
+              </button>
+            )}
           </div>
         ))}
 
@@ -2311,40 +2475,29 @@ export default function App() {
               .map((w) => ({ ...(w.onboarding as WorkerOnboardingAction), workerId: w.id }))
               .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
             if (actions.length === 0) return null;
-            const runAction = async (action: WorkerOnboardingAction & { workerId: string }) => {
-              setBusyKey(`onboarding:${action.id}`);
+            const runAction = runDemoAction;
+            const deletableDemoWorkers = actions
+              .map((a) => dashboard.workers.find((w) => w.id === a.workerId))
+              .filter((w): w is NonNullable<typeof w> => Boolean(w?.deletable));
+
+            const dismissDemo = async () => {
+              if (!window.confirm('Delete the demo worker? You can restore it from the Worker store later.')) return;
+              setBusyKey('onboarding:dismiss');
               try {
-                if (action.endpoint) {
-                  // Worker-owned route: runs directly, no model provider required.
-                  const res = await fetch(action.endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                for (const w of deletableDemoWorkers) {
+                  await fetch(`/api/workers/${encodeURIComponent(w.id)}`, {
+                    method: 'DELETE',
                     credentials: 'include',
-                    body: '{}',
                   });
-                  if (!res.ok) throw new Error((await res.text()) || 'Request failed');
-                  const body = (await res.json().catch(() => ({}))) as { summary?: string };
-                  setOnboardingRan(true);
-                  await fetchDashboard(true);
-                  setNotice(body.summary ?? 'Demo finished — open the Jobs tab to see the queued items.');
-                } else if (action.runJob) {
-                  const res = await fetch(`/api/cron-jobs/${encodeURIComponent(action.runJob)}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'run' }),
-                  });
-                  if (!res.ok) throw new Error(await res.text());
-                  setNotice('Running the demo… results will appear in Jobs and Activity in a moment.');
-                  await new Promise((r) => setTimeout(r, 1500));
-                  await fetchDashboard(true);
-                  setNotice('Demo finished — open the Jobs tab to see the queued items.');
                 }
+                await fetchDashboard(true);
               } catch (err) {
                 setError(toAppError(err));
               } finally {
                 setBusyKey(null);
               }
             };
+
             return (
               <section className="panel onboarding-hero">
                 <div className="panel-head">
@@ -2360,16 +2513,459 @@ export default function App() {
                       key={`${action.workerId}:${action.id}`}
                       type="button"
                       className="primary"
-                      disabled={(!action.endpoint && !action.runJob) || busyKey === `onboarding:${action.id}`}
+                      disabled={(!action.endpoint && !action.runJob) || busyKey === `onboarding:${action.id}` || busyKey === 'onboarding:dismiss'}
                       onClick={() => void runAction(action)}
                     >
                       {busyKey === `onboarding:${action.id}` ? 'Running…' : action.title}
                     </button>
                   ))}
+                  {deletableDemoWorkers.length > 0 ? (
+                    <button
+                      type="button"
+                      disabled={busyKey === 'onboarding:dismiss'}
+                      onClick={() => void dismissDemo()}
+                    >
+                      {busyKey === 'onboarding:dismiss' ? 'Deleting…' : 'Not interested — delete demo'}
+                    </button>
+                  ) : null}
                 </div>
               </section>
             );
           })()}
+          {firstResultJob ? (
+            <section className="panel first-result-banner" aria-label="First result delivered" aria-live="polite">
+              <div className="panel-head" style={{ alignItems: 'flex-start' }}>
+                <div>
+                  <p className="panel-kicker" style={{ color: 'var(--good, #1f7a57)' }}>Result ready</p>
+                  <h2>{firstResultJob.label}</h2>
+                </div>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="Dismiss"
+                  onClick={() => {
+                    localStorage.setItem(firstResultShownKey, '1');
+                    setFirstResultJob(null);
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="first-result-summary">{firstResultJob.summary}</p>
+              <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => {
+                    localStorage.setItem(firstResultShownKey, '1');
+                    setFirstResultJob(null);
+                    setActiveTab('pipeline');
+                  }}
+                >
+                  View full result →
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.setItem(firstResultShownKey, '1');
+                    setFirstResultJob(null);
+                  }}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </section>
+          ) : null}
+          {(() => {
+            const lmRunning = dashboard.lmStudio.running && dashboard.lmStudio.loadedCount > 0;
+            const alreadyAdopted = dashboard.platform.activeLocalProviderId === 'lmstudio' && dashboard.lmStudio.running;
+            if (!lmRunning || alreadyAdopted || lmAdoptDismissed) return null;
+            const count = dashboard.lmStudio.loadedCount;
+            return (
+              <section className="panel lm-adoption-banner" aria-label="LM Studio detected">
+                <div className="panel-head" style={{ alignItems: 'flex-start' }}>
+                  <div>
+                    <p className="panel-kicker" style={{ color: 'var(--good, #1f7a57)' }}>Detected</p>
+                    <h2>Found LM Studio with {count} model{count !== 1 ? 's' : ''} loaded</h2>
+                  </div>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label="Dismiss"
+                    onClick={() => setLmAdoptDismissed(true)}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <p className="footnote">Your jobs can run entirely on your machine — no API key needed.</p>
+                <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={lmAdopting}
+                    onClick={async () => {
+                      setLmAdopting(true);
+                      try {
+                        await fetch('/api/workers/core.providers.lmstudio', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          credentials: 'include',
+                          body: JSON.stringify({ enabled: true }),
+                        });
+                        await fetch('/api/platform-settings', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          credentials: 'include',
+                          body: JSON.stringify({ activeLocalProviderId: 'lmstudio' }),
+                        });
+                        await fetchDashboard(true);
+                        setLmAdoptDismissed(true);
+                      } catch (err) {
+                        setError(toAppError(err));
+                      } finally {
+                        setLmAdopting(false);
+                      }
+                    }}
+                  >
+                    {lmAdopting ? 'Connecting…' : 'Use LM Studio →'}
+                  </button>
+                  <button type="button" onClick={() => setLmAdoptDismissed(true)}>Later</button>
+                </div>
+              </section>
+            );
+          })()}
+
+          {demoNarration ? (
+            <section className="panel demo-narration-panel" aria-live="polite" aria-label="Pipeline run progress">
+              <div className="panel-head">
+                <div>
+                  <p className="panel-kicker">Running</p>
+                  <h2>{demoNarration.done ? 'Pipeline ran' : 'Running pipeline…'}</h2>
+                </div>
+              </div>
+              <div className="demo-narration-stages">
+                {demoNarration.stages.map((stage, i) => {
+                  const completed = demoNarration.done || i < demoNarration.currentIndex;
+                  const active = !demoNarration.done && i === demoNarration.currentIndex;
+                  return (
+                    <div
+                      key={stage.label}
+                      className={`demo-narration-stage${completed ? ' completed' : ''}${active ? ' active' : ''}`}
+                    >
+                      <span className="stage-icon" aria-hidden>{completed ? '✓' : active ? '◷' : '○'}</span>
+                      <div>
+                        <strong>{stage.label}</strong>
+                        {(completed || active) ? <span>{stage.detail}</span> : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+
+          {demoRecap ? (
+            <section className="panel demo-recap-panel">
+              <div className="panel-head">
+                <div>
+                  <p className="panel-kicker">What just happened</p>
+                  <h2>{demoRecap.headline}</h2>
+                </div>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="Dismiss recap"
+                  onClick={() => setDemoRecap(null)}
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="footnote">{demoRecap.body}</p>
+              <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+                {demoRecap.ctaAction === 'wizard' ? (
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => { setDemoRecap(null); setWizardOpen(true); }}
+                  >
+                    {demoRecap.ctaText ?? 'Open setup wizard →'}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => { setDemoRecap(null); setActiveTab('pipeline'); }}
+                >
+                  View Pipeline →
+                </button>
+              </div>
+            </section>
+          ) : null}
+
+          {starAsk ? (
+            <section className="panel star-ask-banner" aria-label="Enjoying BFrost?">
+              <p>
+                Enjoying BFrost?{' '}
+                <a
+                  href="https://github.com/ccascio/BFrost"
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={dismissStarAsk}
+                >
+                  Star it on GitHub ⭐
+                </a>{' '}
+                — it&rsquo;s how other people find it.
+              </p>
+              <button type="button" className="icon-btn" aria-label="Dismiss" onClick={dismissStarAsk}>
+                ✕
+              </button>
+            </section>
+          ) : null}
+
+          {!wizardCompleted ? (
+            <section className="panel onboarding-hero">
+              <div className="panel-head">
+                <div>
+                  <p className="panel-kicker">Setup</p>
+                  <h2>Configure BFrost with the setup wizard</h2>
+                </div>
+              </div>
+              <p className="footnote">Connect a model provider, a notification channel, and enable your first worker — guided step by step.</p>
+              <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+                <button type="button" className="primary" onClick={() => setWizardOpen(true)}>
+                  Open setup wizard →
+                </button>
+              </div>
+            </section>
+          ) : null}
+
+          {(() => {
+            // Show cloud quick-connect when no real model is configured and LM Studio isn't detected.
+            const hasRealModel = dashboard.models.some((m) => m.provider !== 'demo');
+            const lmRunning = dashboard.lmStudio.running;
+            if (hasRealModel || lmRunning) return null;
+            if (cloudTestReply) {
+              return (
+                <section className="panel cloud-connect-panel cloud-connect-success">
+                  <div className="panel-head">
+                    <div>
+                      <p className="panel-kicker" style={{ color: 'var(--good, #1f7a57)' }}>Connected</p>
+                      <h2>Provider ready</h2>
+                    </div>
+                    <button className="icon-btn" type="button" onClick={() => setCloudTestReply(null)}>✕</button>
+                  </div>
+                  <p className="footnote" style={{ fontStyle: 'italic', margin: '0.25rem 0 0.5rem' }}>
+                    &ldquo;{cloudTestReply}&rdquo;
+                  </p>
+                  <p className="footnote">Your model is responding. Run a recipe below to get your first real result.</p>
+                </section>
+              );
+            }
+            return (
+              <section className="panel cloud-connect-panel">
+                <div className="panel-head">
+                  <div>
+                    <p className="panel-kicker">Model provider</p>
+                    <h2>Paste an API key to get started</h2>
+                  </div>
+                </div>
+                <p className="footnote" style={{ marginBottom: '0.75rem' }}>
+                  No local model detected. Paste a cloud key to run real jobs in seconds.
+                </p>
+                <div className="cloud-connect-form">
+                  <div className="panel-actions" style={{ marginBottom: '0.5rem' }}>
+                    <button
+                      type="button"
+                      className={cloudConnectProvider === 'openai' ? 'primary' : ''}
+                      onClick={() => setCloudConnectProvider('openai')}
+                    >
+                      OpenAI
+                    </button>
+                    <button
+                      type="button"
+                      className={cloudConnectProvider === 'anthropic' ? 'primary' : ''}
+                      onClick={() => setCloudConnectProvider('anthropic')}
+                    >
+                      Anthropic
+                    </button>
+                  </div>
+                  <label className="field" style={{ maxWidth: '380px' }}>
+                    <span>
+                      {cloudConnectProvider === 'openai' ? 'OpenAI API key' : 'Anthropic API key'}
+                    </span>
+                    <input
+                      type="password"
+                      value={cloudConnectKey}
+                      placeholder={cloudConnectProvider === 'openai' ? 'sk-…' : 'sk-ant-…'}
+                      onChange={(e) => setCloudConnectKey(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && cloudConnectKey.trim()) void connectCloud(); }}
+                    />
+                  </label>
+                  <div className="panel-actions" style={{ marginTop: '0.35rem' }}>
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={!cloudConnectKey.trim() || cloudConnecting}
+                      onClick={() => void connectCloud()}
+                    >
+                      {cloudConnecting ? 'Connecting…' : 'Connect →'}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            );
+            async function connectCloud() {
+              setCloudConnecting(true);
+              try {
+                const credPath = cloudConnectProvider === 'openai'
+                  ? '/api/workers/providers-openai/credentials'
+                  : '/api/workers/providers-anthropic/credentials';
+                await fetch(credPath, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'include',
+                  body: JSON.stringify({ apiKey: cloudConnectKey.trim() }),
+                });
+                await fetchDashboard(true);
+                const pingRes = await fetch('/api/provider-ping', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'include',
+                  body: '{}',
+                });
+                const pingData = (await pingRes.json()) as { ok?: boolean; response?: string; error?: string };
+                setCloudTestReply(pingData.response ?? 'Provider connected successfully.');
+                setCloudConnectKey('');
+              } catch (err) {
+                setError(toAppError(err));
+              } finally {
+                setCloudConnecting(false);
+              }
+            }
+          })()}
+
+          {(() => {
+            const recipes = dashboard?.recipes ?? [];
+            if (recipes.length === 0) return null;
+            return (
+              <section className="panel recipes-panel" aria-label="One-click recipes">
+                <div className="panel-head">
+                  <div>
+                    <p className="panel-kicker">Recipes</p>
+                    <h2>One-click outcomes</h2>
+                  </div>
+                </div>
+                <p className="footnote" style={{ marginBottom: '1rem' }}>
+                  Pick a recipe to wire up a real workflow. You only fill in what's missing.
+                </p>
+                <div className="recipes-grid">
+                  {recipes.map((recipe) => {
+                    const isActive = recipe.steps.every((s) =>
+                      dashboard?.workers.find((w) => w.id === s.workerId)?.enabled,
+                    ) || recipeApplied.has(recipe.id);
+                    const isExpanded = recipeExpanded === recipe.id;
+                    const hasInputs = (recipe.requiredInputs?.length ?? 0) > 0;
+                    return (
+                      <div
+                        key={recipe.id}
+                        className={`recipe-card${isActive ? ' recipe-active' : ''}${isExpanded ? ' recipe-expanded' : ''}`}
+                      >
+                        <div className="recipe-card-header">
+                          <div className="recipe-card-title">
+                            <strong>{recipe.label}</strong>
+                            {isActive ? (
+                              <span className="recipe-badge recipe-badge-active">Active</span>
+                            ) : (
+                              <span className="recipe-badge">{recipe.steps.length} worker{recipe.steps.length !== 1 ? 's' : ''}</span>
+                            )}
+                          </div>
+                          <p className="recipe-card-desc">{recipe.description}</p>
+                        </div>
+                        {!isActive && (
+                          <div className="recipe-card-actions">
+                            {!isExpanded ? (
+                              <button
+                                type="button"
+                                className="primary"
+                                onClick={() => {
+                                  setRecipeExpanded(recipe.id);
+                                  setRecipeInputValues({});
+                                }}
+                              >
+                                {hasInputs ? 'Set up →' : 'Enable →'}
+                              </button>
+                            ) : (
+                              <div className="recipe-form">
+                                {recipe.requiredInputs?.map((input) => (
+                                  <label key={input.key} className="field recipe-field">
+                                    <span>{input.label}</span>
+                                    <input
+                                      type={input.inputType === 'password' ? 'password' : 'text'}
+                                      value={recipeInputValues[input.key] ?? ''}
+                                      placeholder={input.helpText ?? ''}
+                                      onChange={(e) =>
+                                        setRecipeInputValues((prev) => ({ ...prev, [input.key]: e.target.value }))
+                                      }
+                                    />
+                                    {input.helpText ? (
+                                      <small className="footnote">{input.helpText}</small>
+                                    ) : null}
+                                  </label>
+                                ))}
+                                <div className="panel-actions">
+                                  <button
+                                    type="button"
+                                    className="primary"
+                                    disabled={recipeApplying}
+                                    onClick={async () => {
+                                      setRecipeApplying(true);
+                                      try {
+                                        const res = await fetch('/api/recipes/apply', {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          credentials: 'include',
+                                          body: JSON.stringify({ recipeId: recipe.id, inputs: recipeInputValues }),
+                                        });
+                                        const data = (await res.json()) as {
+                                          ok?: boolean;
+                                          applied?: boolean;
+                                          missing?: string[];
+                                          dashboard?: DashboardState;
+                                        };
+                                        if (data.dashboard) {
+                                          setDashboard(data.dashboard);
+                                        }
+                                        if (data.applied) {
+                                          setRecipeApplied((prev) => new Set([...prev, recipe.id]));
+                                          setRecipeExpanded(null);
+                                        }
+                                      } catch (err) {
+                                        setError(toAppError(err));
+                                      } finally {
+                                        setRecipeApplying(false);
+                                      }
+                                    }}
+                                  >
+                                    {recipeApplying ? 'Applying…' : 'Apply recipe'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setRecipeExpanded(null)}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })()}
+
           <section className="overview-chat-panel" aria-label="Dashboard chat quick entry">
             <p className="panel-kicker">Assistant</p>
             <label className="overview-chat-launcher">
@@ -2401,25 +2997,40 @@ export default function App() {
               <div className="panel-head">
                 <div>
                   <p className="panel-kicker">Capabilities</p>
-                  <h2>Installed worker status <HelpTip>Workers are the building blocks of BFrost. Each one does a specific job — fetching news, posting to social media, running research — on a schedule you control. Enable or disable them from the Workers tab. A green "healthy" badge means everything it needs is configured.</HelpTip></h2>
+                  <h2>Active workers <HelpTip>Workers that are healthy and ready to run. Workers missing credentials won't appear here — configure them in the Workers tab, then they'll show up once healthy.</HelpTip></h2>
                 </div>
-                <StatusPill tone={dashboard.workers.some((worker) => worker.healthState !== 'healthy' && worker.healthState !== 'disabled') ? 'warning' : 'good'}>
-                  {dashboard.workers.length} installed
+                <StatusPill tone={dashboard.workers.some((w) => w.healthState === 'healthy') ? 'good' : 'muted'}>
+                  {dashboard.workers.filter((w) => w.healthState === 'healthy').length} healthy
                 </StatusPill>
               </div>
               <div className="stack-list compact">
-                {dashboard.workers.filter((w) => w.enabled).map((worker) => (
-                  <div className="summary-row" key={`${worker.id}-overview`}>
-                    <div>
-                      <strong>{worker.displayName ?? worker.name}</strong>
-                      <span>{worker.tagline ?? worker.description}</span>
-                      <span>{worker.builtIn ? 'built-in' : 'local'} · {worker.jobCount} jobs</span>
+                {dashboard.workers
+                  .filter((w) => w.enabled && (w.healthState === 'healthy' || w.runningJobCount > 0))
+                  .map((worker) => (
+                    <div className="summary-row" key={`${worker.id}-overview`}>
+                      <div>
+                        <strong>{worker.displayName ?? worker.name}</strong>
+                        <span>{worker.tagline ?? worker.description}</span>
+                        <span>{worker.builtIn ? 'built-in' : 'local'} · {worker.jobCount} jobs</span>
+                      </div>
+                      <StatusPill tone={workerHealthTone(worker.healthState)}>
+                        {worker.runningJobCount > 0 ? 'running' : workerHealthLabel(worker.healthState)}
+                      </StatusPill>
                     </div>
-                    <StatusPill tone={workerHealthTone(worker.healthState)}>
-                      {worker.runningJobCount > 0 ? 'running' : workerHealthLabel(worker.healthState)}
-                    </StatusPill>
+                  ))}
+                {dashboard.workers.filter((w) => w.enabled && (w.healthState === 'healthy' || w.runningJobCount > 0)).length === 0 ? (
+                  <div className="empty-state">
+                    <p>No workers are active yet.</p>
+                    <p className="footnote">
+                      Run the demo above to see the pipeline in action, or open Workers to enable and configure your first worker.
+                    </p>
+                    <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+                      <button type="button" onClick={() => setActiveTab('workers')}>
+                        Open Workers
+                      </button>
+                    </div>
                   </div>
-                ))}
+                ) : null}
               </div>
             </article>
 
@@ -2757,8 +3368,8 @@ export default function App() {
               ))}
             </div>
 
-            <aside className="queue-detail-column">
-              <section className="detail-panel">
+            <aside className="queue-detail-column job-detail-column">
+              <section className="detail-panel job-detail-panel">
                 <div className="panel-head">
                   <div>
                     <p className="panel-kicker">Job detail</p>
@@ -3079,6 +3690,8 @@ export default function App() {
 
       {activeTab === 'store' ? renderStoreTab() : null}
 
+      {activeTab === 'pipeline' ? renderPipelineTab(dashboard, () => setActiveTab('overview')) : null}
+
       {activeTab === 'health' ? renderHealthTab() : null}
 
       {activeTab === 'actions' ? renderActionsTab() : null}
@@ -3394,6 +4007,7 @@ export default function App() {
           dashboard={dashboard}
           onDismiss={() => {
             setWizardOpen(false);
+            setWizardCompleted(true);
             void fetch('/api/wizard/state', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -3402,12 +4016,23 @@ export default function App() {
           }}
           onComplete={() => {
             setWizardOpen(false);
+            setWizardCompleted(true);
             void fetchDashboard(true);
           }}
           onRefreshDashboard={() => fetchDashboard(true)}
           onNavigate={(tab) => {
             setWizardOpen(false);
             setActiveTab(tab as CoreDashboardTab);
+          }}
+          onRunDemoAction={(action) => {
+            setWizardOpen(false);
+            setWizardCompleted(true);
+            void fetch('/api/wizard/state', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ completed: true }),
+            });
+            void runDemoAction(action as WorkerOnboardingAction & { workerId: string });
           }}
         />
       ) : null}
@@ -4511,7 +5136,7 @@ export default function App() {
     const pct = Math.round(rate * 100);
     const color = pct >= 90 ? 'var(--health-ok, #22c55e)' : pct >= 70 ? 'var(--health-warn, #f59e0b)' : 'var(--health-err, #ef4444)';
     return (
-      <span className="success-rate-pill" style={{ '--rate-color': color } as React.CSSProperties}>
+      <span className="success-rate-pill" style={{ '--rate-color': color } as CSSProperties}>
         <span className="success-rate-bar" style={{ width: `${pct}%`, background: color }} />
         <span className="success-rate-label">{pct}%</span>
       </span>
@@ -5394,6 +6019,7 @@ function mergeSection(
 // table conservative is safer than under-fetching and showing empty UI.
 function sectionsForTab(tab: DashboardTab): DashboardSectionName[] {
   if (tab === 'overview') return ['queue', 'events', 'lmStudioModels'];
+  if (tab === 'pipeline') return ['queue'];
   if (tab === 'channels') return ['workerData'];
   if (tab === 'jobs') return ['cronRuns', 'queue'];
   if (tab === 'system') return ['events', 'backups'];
@@ -5998,6 +6624,175 @@ function statusTone(status: RunStatus): 'good' | 'warning' | 'info' | 'muted' {
   return 'muted';
 }
 
+// ---------------------------------------------------------------------------
+// Pipeline view — builds a generic producer/consumer graph from Item Bus data
+// ---------------------------------------------------------------------------
+
+interface PipelineNode {
+  workerId: string;
+  displayName: string;
+  count: number;
+  itemTypes: string[];
+}
+
+interface PipelineTopology {
+  producers: PipelineNode[];
+  consumers: PipelineNode[];
+  totalItems: number;
+  unconsumedCount: number;
+}
+
+function buildPipelineTopology(items: QueueItem[], workers: WorkerSummary[]): PipelineTopology {
+  const producerMap = new Map<string, { count: number; types: Set<string> }>();
+  const consumerMap = new Map<string, { count: number; types: Set<string> }>();
+  let unconsumedCount = 0;
+
+  for (const item of items) {
+    if (!item.producerWorkerId) continue;
+    if (!producerMap.has(item.producerWorkerId)) {
+      producerMap.set(item.producerWorkerId, { count: 0, types: new Set() });
+    }
+    const p = producerMap.get(item.producerWorkerId)!;
+    p.count++;
+    if (item.itemType) p.types.add(item.itemType);
+
+    const consumers = Object.keys(item.metadata ?? {});
+    if (consumers.length === 0) unconsumedCount++;
+    for (const cId of consumers) {
+      if (!consumerMap.has(cId)) consumerMap.set(cId, { count: 0, types: new Set() });
+      const c = consumerMap.get(cId)!;
+      c.count++;
+      if (item.itemType) c.types.add(item.itemType);
+    }
+  }
+
+  const label = (id: string) => workers.find((w) => w.id === id)?.displayName ?? id;
+
+  return {
+    producers: [...producerMap.entries()].map(([workerId, d]) => ({
+      workerId,
+      displayName: label(workerId),
+      count: d.count,
+      itemTypes: [...d.types],
+    })),
+    consumers: [...consumerMap.entries()].map(([workerId, d]) => ({
+      workerId,
+      displayName: label(workerId),
+      count: d.count,
+      itemTypes: [...d.types],
+    })),
+    totalItems: items.filter((i) => i.producerWorkerId).length,
+    unconsumedCount,
+  };
+}
+
+function renderPipelineTab(dashboard: DashboardState, onRunDemo: () => void): ReactNode {
+  const topology = buildPipelineTopology(dashboard.queue.recentItems, dashboard.workers);
+  const isEmpty = topology.producers.length === 0 && topology.consumers.length === 0;
+
+  return (
+    <section className="tab-page pipeline-tab">
+      <div className="pipeline-tab-header">
+        <p className="panel-kicker">Live view</p>
+        <h2>Item Bus Pipeline</h2>
+        <p className="footnote">
+          Every item in the bus, organised by who produced it and who consumed it.
+          Producers publish items; consumers stamp their workerId into the metadata —
+          this graph is derived from those stamps alone, with no worker names baked in.
+        </p>
+      </div>
+
+      {isEmpty ? (
+        <section className="panel">
+          <div className="empty-state">
+            <p>The bus is empty — no items have been produced yet.</p>
+            <p className="footnote">
+              Run the demo to see a live producer → bus → consumer graph, or enable the
+              news and research workers to start a real pipeline.
+            </p>
+            <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
+              <button type="button" className="primary" onClick={onRunDemo}>
+                Go to the demo →
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : (
+        <section className="panel pipeline-graph-card">
+          <div className="pipeline-graph">
+            {/* Producers */}
+            <div className="pipeline-col pipeline-producers-col" aria-label="Producers">
+              <p className="pipeline-col-label">Producers</p>
+              {topology.producers.map((node) => (
+                <div key={node.workerId} className="pipeline-node pipeline-node-producer">
+                  <strong className="pipeline-node-name">{node.displayName}</strong>
+                  <span className="pipeline-node-count">{node.count} item{node.count !== 1 ? 's' : ''}</span>
+                  <span className="pipeline-node-types footnote">{node.itemTypes.join(' · ')}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Left flow lane */}
+            <div className="pipeline-lane" aria-hidden>
+              <div className="pipeline-lane-track">
+                <span className="pipeline-dot" style={{ '--dot-delay': '0s' } as CSSProperties} />
+                <span className="pipeline-dot" style={{ '--dot-delay': '0.5s' } as CSSProperties} />
+                <span className="pipeline-dot" style={{ '--dot-delay': '1.0s' } as CSSProperties} />
+              </div>
+            </div>
+
+            {/* Item Bus center */}
+            <div className="pipeline-bus-col" aria-label="Item Bus">
+              <p className="pipeline-col-label">Item Bus</p>
+              <div className="pipeline-bus-node">
+                <strong className="pipeline-bus-count">{topology.totalItems}</strong>
+                <span className="pipeline-bus-label">items</span>
+                {topology.unconsumedCount > 0 ? (
+                  <span className="pipeline-bus-inflight footnote">{topology.unconsumedCount} queued</span>
+                ) : null}
+                {topology.totalItems - topology.unconsumedCount > 0 ? (
+                  <span className="pipeline-bus-consumed footnote">{topology.totalItems - topology.unconsumedCount} consumed</span>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Right flow lane */}
+            <div className="pipeline-lane pipeline-lane-right" aria-hidden>
+              <div className="pipeline-lane-track">
+                <span className="pipeline-dot" style={{ '--dot-delay': '0.25s' } as CSSProperties} />
+                <span className="pipeline-dot" style={{ '--dot-delay': '0.75s' } as CSSProperties} />
+                <span className="pipeline-dot" style={{ '--dot-delay': '1.25s' } as CSSProperties} />
+              </div>
+            </div>
+
+            {/* Consumers */}
+            <div className="pipeline-col pipeline-consumers-col" aria-label="Consumers">
+              <p className="pipeline-col-label">Consumers</p>
+              {topology.consumers.length > 0 ? topology.consumers.map((node) => (
+                <div key={node.workerId} className="pipeline-node pipeline-node-consumer">
+                  <strong className="pipeline-node-name">{node.displayName}</strong>
+                  <span className="pipeline-node-count">{node.count} consumed</span>
+                  <span className="pipeline-node-types footnote">{node.itemTypes.join(' · ')}</span>
+                </div>
+              )) : (
+                <div className="pipeline-node pipeline-node-empty">
+                  <span className="pipeline-node-name muted">No consumers yet</span>
+                  <span className="pipeline-node-types footnote">Items are queued, waiting to be picked up</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <p className="footnote pipeline-graph-footer">
+            Producers left · consumers right · the bus in the middle. Item types and consumer IDs
+            come from the queue — adding a worker that produces or consumes a type updates this graph automatically.
+          </p>
+        </section>
+      )}
+    </section>
+  );
+}
+
 function workerHealthTone(state: WorkerHealthState): 'good' | 'warning' | 'info' | 'muted' {
   if (state === 'healthy') return 'good';
   if (state === 'missing_credentials' || state === 'missing_dependency') return 'warning';
@@ -6027,7 +6822,8 @@ function resolveDashboardTab(value: string | undefined): DashboardTab | null {
     value === 'jobs' ||
     value === 'config' ||
     value === 'chat' ||
-    value === 'system') {
+    value === 'system' ||
+    value === 'pipeline') {
     return value;
   }
   if (value === 'settings' || value === 'configuration') return 'config';

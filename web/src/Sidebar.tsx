@@ -188,8 +188,30 @@ function groupEntries<T extends string>(entries: SidebarEntry<T>[]) {
 
   return Array.from(groups.entries())
     .sort(([a], [b]) => (groupOrder.get(a) ?? 0) - (groupOrder.get(b) ?? 0))
-    .map(([name, groupEntries]) => ({
-      name,
-      entries: [...groupEntries].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.label.localeCompare(b.label)),
-    }));
+    .map(([name, groupEntries]) => {
+      const entryIds = new Set(groupEntries.map((entry) => entry.id));
+      const childrenByParent = new Map<T, SidebarEntry<T>[]>();
+      const roots: SidebarEntry<T>[] = [];
+
+      for (const entry of groupEntries) {
+        if (entry.parentId && entryIds.has(entry.parentId)) {
+          const children = childrenByParent.get(entry.parentId) ?? [];
+          children.push(entry);
+          childrenByParent.set(entry.parentId, children);
+        } else {
+          roots.push(entry);
+        }
+      }
+
+      const sortEntries = (items: SidebarEntry<T>[]) =>
+        items.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.label.localeCompare(b.label));
+
+      return {
+        name,
+        entries: sortEntries(roots).flatMap((entry) => [
+          entry,
+          ...sortEntries(childrenByParent.get(entry.id) ?? []),
+        ]),
+      };
+    });
 }
