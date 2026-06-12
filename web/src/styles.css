@@ -2119,6 +2119,7 @@ h3 {
 }
 
 .config-detail-column,
+.job-detail-column,
 .news-item-detail-column {
   position: sticky;
   top: calc(var(--topbar-height) + 1rem);
@@ -2126,6 +2127,7 @@ h3 {
 }
 
 .config-detail-panel,
+.job-detail-panel,
 .news-item-detail-panel {
   max-height: calc(100vh - var(--topbar-height) - 2rem);
   overflow: auto;
@@ -3093,11 +3095,13 @@ code {
   }
 
   .config-detail-column,
+  .job-detail-column,
   .news-item-detail-column {
     position: static;
   }
 
   .config-detail-panel,
+  .job-detail-panel,
   .news-item-detail-panel {
     max-height: none;
     overflow: visible;

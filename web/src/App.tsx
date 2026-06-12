@@ -3368,8 +3368,8 @@ export default function App() {
               ))}
             </div>
 
-            <aside className="queue-detail-column">
-              <section className="detail-panel">
+            <aside className="queue-detail-column job-detail-column">
+              <section className="detail-panel job-detail-panel">
                 <div className="panel-head">
                   <div>
                     <p className="panel-kicker">Job detail</p>
