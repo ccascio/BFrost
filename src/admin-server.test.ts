@@ -76,6 +76,48 @@ test('assertNoSymlinkEntries accepts files, dirs, and listing headers', () => {
   );
 });
 
+test('router dispatch serves exact routes, static fallback, and 404s over HTTP', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-admin-router-'));
+  const previous = {
+    appDbPath: config.appDbPath,
+    adminPort: config.adminPort,
+    adminHost: config.adminHost,
+    adminPassword: config.adminPassword,
+  };
+  config.appDbPath = path.join(dir, 'app.sqlite');
+  config.adminHost = '127.0.0.1';
+  config.adminPort = await freePort();
+  config.adminPassword = '';
+  const base = `http://127.0.0.1:${config.adminPort}`;
+
+  try {
+    await hydrateThreads();
+    await startAdminServer();
+
+    // Exact core route resolves through the declarative table.
+    const dashboard = await fetch(`${base}/api/dashboard`);
+    assert.equal(dashboard.status, 200);
+    assert.ok((await dashboard.json() as { workers?: unknown }).workers !== undefined);
+
+    // Static fallback for a non-API GET (no router match → serveStatic serves the SPA).
+    assert.notEqual((await fetch(`${base}/`)).status, 404);
+
+    // Unmatched non-GET request → 404 (non-GET never falls through to static).
+    assert.equal((await fetch(`${base}/api/does-not-exist`, { method: 'POST' })).status, 404);
+
+    // Method specificity: /api/dashboard is GET-only, so POST falls through to 404.
+    assert.equal((await fetch(`${base}/api/dashboard`, { method: 'POST' })).status, 404);
+  } finally {
+    await stopAdminServer();
+    config.appDbPath = previous.appDbPath;
+    config.adminPort = previous.adminPort;
+    config.adminHost = previous.adminHost;
+    config.adminPassword = previous.adminPassword;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('chat thread routes list, reopen, rename, and delete over HTTP', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-admin-chats-'));
   const previous = {
