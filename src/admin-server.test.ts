@@ -5,11 +5,10 @@ import path from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 import test from 'node:test';
 import {
-  assertSafeArchiveNames,
-  assertNoSymlinkEntries,
   startAdminServer,
   stopAdminServer,
 } from './admin-server';
+import { assertSafeArchiveNames, assertNoSymlinkEntries } from './admin-worker-ops';
 import { config } from './config';
 import { closeDb } from './sqlite';
 import { createThread, getThread, hydrateThreads } from './chat-threads';
