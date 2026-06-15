@@ -43,6 +43,7 @@
     "build": "npm run clean && tsc && vite build",
     "build:server": "npm run clean:server && tsc",
     "build:web": "vite build",
+    "check:web": "tsc --noEmit -p web/tsconfig.json",
     "start": "node scripts/daemon.mjs",
     "prepack": "npm run build",
     "stop": "node scripts/stop.mjs",

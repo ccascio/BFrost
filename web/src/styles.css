@@ -11,6 +11,7 @@
   --good: #1f7a57;
   --warning: #9a4f00;
   --info: #205c95;
+  --danger: #892f1e;
   --border: var(--line);
   --accent: var(--brand);
   --accent-muted: color-mix(in srgb, var(--brand) 12%, transparent);
@@ -194,7 +195,7 @@ textarea {
 .ui-button-danger {
   border-color: rgba(137, 47, 30, 0.24);
   background: rgba(137, 47, 30, 0.1);
-  color: #892f1e;
+  color: var(--danger);
 }
 
 .ui-button-ghost {
@@ -498,7 +499,7 @@ textarea {
 }
 
 .ui-notification[data-tone="error"] {
-  border-left-color: #892f1e;
+  border-left-color: var(--danger);
 }
 
 .ui-notification[data-tone="info"] {
@@ -921,7 +922,7 @@ textarea {
 
 .error-toast {
   border-left: 4px solid var(--brand);
-  color: #892f1e;
+  color: var(--danger);
   align-items: flex-start;
 }
 
@@ -944,7 +945,7 @@ textarea {
 
 .error-toast-toggle {
   font-size: 0.78rem;
-  color: #892f1e;
+  color: var(--danger);
   background: none;
   border: none;
   padding: 0;
@@ -1988,7 +1989,7 @@ h3 {
 
 .error-box,
 .error-text {
-  color: #892f1e;
+  color: var(--danger);
 }
 
 .error-box {
