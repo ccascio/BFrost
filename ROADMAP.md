@@ -74,14 +74,10 @@ The wow has to be seen to earn stars, and friction kills it before it starts.
 
 ## Carried over from the v1.0 technical roadmap
 
-Still open, unchanged in scope (full context in `git show a293d11:ROADMAP.md`):
+Remaining **launch/distribution** items still tracked here (full original context: `git show a293d11:ROADMAP.md`):
 
-- [ ] Frontend smoke test for schema-rendered job forms (Workstream 6).
-- [ ] Sandbox network-domain and credential-scope allowlists; Playwright session primitive (Workstream 5).
-- [ ] Item Bus multi-consumer fan-out, when a real use case appears (Workstream 3).
-- [ ] Docs site on GitHub Pages (Workstream 7 — now folded into Workstream D above).
+- [ ] Docs site on GitHub Pages (Workstream 7 — folded into Workstream D above).
 - [ ] Scripted demo recording (Workstream 7 — superseded by the hero media refresh in Workstream D).
-- [ ] Channel follow-ups: per-worker secrets/env access for `telegramBotToken` in `src/config.ts` / `src/health.ts` (Workstream 2).
 
 ## Out of scope, unchanged
 
