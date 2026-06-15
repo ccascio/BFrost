@@ -1,4 +1,4 @@
-import { startScheduler, stopScheduler } from './scheduler';
+import { catchUpMissedRunsOnStartup, startScheduler, stopScheduler } from './scheduler';
 import { startAdminServer, stopAdminServer } from './admin-server';
 import { applyPendingRestoreIfAny, startAutoBackup, stopAutoBackup } from './app-backup';
 import { getAppHealthSnapshot, logStartupHealthSummary } from './health';
@@ -11,6 +11,7 @@ import {
   setHiddenBuiltInIds,
 } from './workers/registry';
 import { bootstrapLocalWorkers } from './workers/bootstrap';
+import { startLocalWorkerWatcher, type LocalWorkerWatcher } from './workers/watch';
 import { loadWorkerState } from './workers/state';
 import { builtInWorkers } from './workers/builtin';
 import { applyPlatformSettingsToConfig, loadAdminSettings } from './admin-config';
@@ -122,6 +123,7 @@ async function main(): Promise<void> {
   await startAdminServer();
   await startScheduler();
   await startAutoBackup();
+  const workerWatcher: LocalWorkerWatcher = startLocalWorkerWatcher();
 
   const channels: ChannelAdapter[] = [];
   for (const registered of listRegisteredChannels()) {
@@ -135,12 +137,20 @@ async function main(): Promise<void> {
     console.log(`[BFrost] Channel ${registered.manifest.id} started.`);
   }
 
+  // Recover the most recent scheduled run that elapsed while BFrost was not running
+  // (powered-off / rebooted machine). Runs after channels start so a recovered digest
+  // can actually be delivered to the operator.
+  await catchUpMissedRunsOnStartup().catch((err) => {
+    console.warn('[BFrost] Startup catch-up failed:', err);
+  });
+
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
     let exitCode = 0;
 
+    workerWatcher.stop();
     await stopScheduler().catch((err) => {
       exitCode = 1;
       console.warn('[BFrost] Scheduler stop failed:', err);

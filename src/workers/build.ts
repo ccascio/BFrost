@@ -13,6 +13,17 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { build, type Plugin as EsbuildWorker } from 'esbuild';
 
+/**
+ * The host BFrost installation's node_modules. Worker source may import third-party packages the
+ * host already ships (e.g. `ai`, `zod`) and expect them to bundle in. When a worker lives outside
+ * the repo — under `~/.bfrost/workers/local` for an `npx bfrost` install, or any store/CLI install
+ * — there is no adjacent node_modules for esbuild to walk up to. Adding the host's node_modules to
+ * the resolution path (NODE_PATH-style) lets those bare imports resolve to the host's copy, exactly
+ * as they would when the worker is developed inside the repo. The `bfrost` runtime and node built-ins
+ * stay external; everything else bundles into the worker's single output file.
+ */
+const HOST_NODE_MODULES = path.resolve(__dirname, '..', '..', 'node_modules');
+
 export interface CompileLocalWorkerInput {
   workerDir: string;
   source: string;
@@ -68,6 +79,9 @@ export async function compileLocalWorker(input: CompileLocalWorkerInput): Promis
     // Keep node built-ins and the BFrost runtime module external so the host process owns
     // those singletons. Node modules unrelated to BFrost bundle in normally.
     external: ['bfrost', 'node:*'],
+    // Resolve bare imports (e.g. `ai`, `zod`) against the host install when the worker lives
+    // outside the repo and has no adjacent node_modules.
+    nodePaths: [HOST_NODE_MODULES],
   });
 
   return { outputPath, compiled: true, reason: 'compiled' };
@@ -122,6 +136,7 @@ export async function compileLocalWorkerDashboard(input: CompileLocalWorkerDashb
     sourcemap: 'inline',
     logLevel: 'silent',
     plugins: [reactGlobalsWorker()],
+    nodePaths: [HOST_NODE_MODULES],
   });
 
   return { outputPath, compiled: true, reason: 'compiled' };

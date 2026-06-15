@@ -1,6 +1,6 @@
 # X thread draft
 
-> **Do not post until:** the new hero GIF (Pipeline view) exists — tweet 1 is the GIF. Attach the recap-card screenshot to tweet 3. Post the same week as Show HN / r/selfhosted.
+> **Do not post until:** the new hero GIF (Pipeline view) exists — tweet 1 is the GIF. Attach the recap-card screenshot to tweet 3, and the describe-a-worker clip to tweet 4. Post the same week as Show HN / r/selfhosted.
 
 **1/** (attach hero GIF)
 Your AI morning digest shouldn't need a cloud service.
@@ -21,7 +21,14 @@ First run = a live show, not an empty dashboard.
 
 A built-in zero-credential model runs a sample news → research pipeline, narrates each stage, then shows you what just happened and how to plug in your own model (it auto-detects LM Studio/Ollama).
 
-**4/**
+**4/** (attach describe-a-worker clip)
+Adding a feature feels like asking, not coding.
+
+Type "every morning write me one calm haiku" → BFrost designs the worker, generates the code from a safe template, installs it, and turns it on. Live.
+
+Prefer a terminal? `npx bfrost new worker`. Editing source? Hot reload, no restart.
+
+**5/**
 Local-first means local: SQLite file you own, no telemetry, models via LM Studio/Ollama (or bring a cloud key per-job if you want).
 
 Docker one-liner or `npx bfrost`. MIT.

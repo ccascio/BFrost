@@ -87,6 +87,13 @@ export const config = {
     .filter(Boolean),
   localWorkerCodeEnabled: process.env.BFROST_ENABLE_LOCAL_WORKER_CODE === 'true',
   /**
+   * Watch local worker source dirs and hot-reload an enabled worker when its backend source
+   * changes — recompile and re-register without restarting BFrost. Only ever touches workers
+   * that are already enabled, and is a no-op unless local worker code execution is enabled.
+   * Defaults on; set BFROST_WORKER_HOT_RELOAD=false to disable.
+   */
+  workerHotReloadEnabled: process.env.BFROST_WORKER_HOT_RELOAD !== 'false',
+  /**
    * ID of the active local-runtime provider worker (e.g. 'lmstudio', 'ollama'). When more than
    * one local provider is installed, only this one is treated as the active local runtime.
    * Cloud providers (openai, anthropic) coexist freely via per-model selection — this setting

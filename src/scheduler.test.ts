@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { config } from './config';
 import { closeDb } from './sqlite';
 import { listSchedulerRuns } from './scheduler-runs';
-import { getSchedulerSnapshot, triggerJobNow } from './scheduler';
+import { CATCHUP_WINDOW_MS, getSchedulerSnapshot, isRecoverableSlotAge, triggerJobNow } from './scheduler';
 import { registerLoadedLocalModule, unregisterLocalWorkerModule } from './workers/registry';
 import type { BackendWorkerModule } from './workers/module';
 import type { WorkerManifest } from './workers/types';
@@ -113,6 +113,26 @@ function buildLateWorkerModule(): BackendWorkerModule {
 
   return { manifest };
 }
+
+test('catch-up window — only recovers past slots within the window', () => {
+  const MINUTE = 60 * 1000;
+  const HOUR = 60 * MINUTE;
+
+  // Future or current slots are never recovered (a normal scheduled run handles them).
+  assert.equal(isRecoverableSlotAge(-MINUTE), false);
+  assert.equal(isRecoverableSlotAge(0), false);
+
+  // Recent misses are recovered (e.g. brief sleep, or a daily 8am digest resumed mid-afternoon).
+  assert.equal(isRecoverableSlotAge(MINUTE), true);
+  assert.equal(isRecoverableSlotAge(8 * HOUR), true);
+
+  // The window comfortably covers a daily job missed overnight (>24h is the failure case
+  // the 7h window used to drop), but stops short of replaying stale slots.
+  assert.equal(CATCHUP_WINDOW_MS, 26 * HOUR);
+  assert.equal(isRecoverableSlotAge(24 * HOUR), true);
+  assert.equal(isRecoverableSlotAge(CATCHUP_WINDOW_MS), true);
+  assert.equal(isRecoverableSlotAge(CATCHUP_WINDOW_MS + MINUTE), false);
+});
 
 test('scheduler integration — successful job produces a success run record and correct snapshot state', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-sched-integration-'));

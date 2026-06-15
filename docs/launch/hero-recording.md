@@ -2,10 +2,12 @@
 
 The README hero GIF is the single highest-converting asset in the repo — most visitors star (or leave) without ever installing. Re-record it whenever the first-run experience changes materially (it must always show the current Pipeline view).
 
+> **This is a human-only step.** Everything below is the runbook; the actual recording, narration, and the resulting `assets/bfrost-demo.gif` / video file have to be produced by a person at a screen. Treat the ROADMAP "Hero media refresh" box as done only once the new files are committed and the README points at them.
+
 ## Target
 
 - **GIF:** ≤ 45 seconds real time, ≤ 15 MB, 1280×800 source, no editing tricks — the honesty *is* the pitch. Saved to `assets/bfrost-demo.gif`.
-- **Video (optional, 60–90 s):** same scenes plus a recipe run, narrated. Hosted on the docs site / X, not in the repo.
+- **Video (60–90 s, narrated):** demo → recipe → result, plus the new *describe-a-worker* moment. Hosted on the docs site / X, not in the repo. Full script below.
 
 ## Preparation
 
@@ -24,6 +26,26 @@ The README hero GIF is the single highest-converting asset in the repo — most 
 | 5 | ~5 s | Back to Overview: "What just happened" recap card + (if LM Studio is running) the adoption banner |
 
 End on the recap card, not on a menu.
+
+## Video script (60–90 s, narrated)
+
+Same opening as the GIF, then two payoff scenes the GIF doesn't have: a recipe and the describe-a-worker moment. Keep narration calm and literal — let the product do the talking. Times are cumulative.
+
+| # | At | On screen | Narration (verbatim) |
+|---|----|-----------|----------------------|
+| 1 | 0:00 | Terminal: `npx bfrost`, dashboard URL prints | "BFrost runs scheduled AI pipelines on your own machine. One command." |
+| 2 | 0:06 | Overview — onboarding hero | "First boot isn't an empty dashboard. Click the demo —" |
+| 3 | 0:10 | Click **Try the live demo** — stages narrate | "— a built-in model, no API key, runs a sample news-to-research pipeline." |
+| 4 | 0:18 | **Pipeline** tab, items flowing producer → bus → consumer | "Every feature is a worker. They talk over a typed bus. This is it running live." |
+| 5 | 0:30 | **Recipes** → apply *Morning digest on Telegram*, fill the one missing field | "Want a real outcome? A recipe wires the workers together and asks only for what's missing." |
+| 6 | 0:42 | Result lands — recap card, and the Telegram message if wired | "Run it. The result is delivered, not buried in a table." |
+| 7 | 0:52 | **Workers** tab → type a sentence into *Describe a worker* → Create | "And when you want something new, you describe it." |
+| 8 | 1:02 | The new worker appears enabled; open its dashboard tab | "BFrost designs it, generates the code from a safe template, installs it, turns it on. No file, no restart." |
+| 9 | 1:12 | Back to Overview — recap / adoption banner | "Local. Yours. Extensible by asking. `npx bfrost`." |
+
+Trim to land under 90 s; scenes 5 and 7 are the keepers if you need to cut — they're what the GIF can't show. Scene 7–8 also stands alone as a ~15 s clip for X tweet 4 (export it separately).
+
+> The describe-a-worker scene needs a real model connected (the demo provider is rejected for code-gen). Have LM Studio or Ollama running with a chat model loaded, or an OpenAI/Anthropic key set, before recording scenes 7–8.
 
 ## Recording & conversion
 

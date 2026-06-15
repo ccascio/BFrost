@@ -46,6 +46,13 @@ import { builtInWorkers } from './workers/builtin';
 import { discoverLocalWorkerResult, discoverLocalWorkers, type DiscoveredLocalWorker } from './workers/local';
 import { compileLocalWorkerDashboard } from './workers/build';
 import {
+  normalizeScaffoldSpec,
+  specFromModelOutput,
+  writeWorkerScaffold,
+  workerSlug,
+  type WorkerScaffoldSpec,
+} from './workers/scaffold';
+import {
   forgetWorker,
   isWorkerEnabled,
   loadWorkerState,
@@ -67,6 +74,7 @@ import {
   AutoBackupSettingsSchema,
   BackupsSectionSchema,
   ChatMessageBodySchema,
+  GenerateWorkerBodySchema,
   ChatThreadUpdateBodySchema,
   ProjectCreateBodySchema,
   ProjectRenameBodySchema,
@@ -333,6 +341,24 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         },
       });
       return sendJson(res, 200, await buildDashboardState());
+    }
+
+    if (url.pathname === '/api/workers/generate' && req.method === 'POST') {
+      const body = await readJsonBody(req, GenerateWorkerBodySchema);
+      const result = await generateWorkerFromDescription(body.description);
+      await recordEventSafe({
+        category: 'worker',
+        action: 'worker_generated',
+        summary: `Generated ${result.spec.role} worker "${result.spec.displayName}" from a description.`,
+        metadata: { workerId: result.spec.id, role: result.spec.role, enabled: result.enabled },
+      });
+      return sendJson(res, 200, {
+        worker: { id: result.spec.id, displayName: result.spec.displayName, role: result.spec.role },
+        spec: result.spec,
+        enabled: result.enabled,
+        note: result.note,
+        dashboard: await buildDashboardState(),
+      });
     }
 
     if (url.pathname === '/api/chat' && req.method === 'POST') {
@@ -1541,6 +1567,144 @@ async function uploadLocalWorkerZip(req: IncomingMessage): Promise<DiscoveredLoc
     throw new BadRequestError(`Worker upload failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Describe-a-worker: turn a natural-language description into an installed,
+// enabled local worker. The model only ever emits a constrained JSON spec —
+// the worker's TypeScript is generated deterministically by the scaffolder, so
+// a flaky model can never produce code that fails to compile or load.
+// ---------------------------------------------------------------------------
+
+const WORKER_SPEC_SYSTEM_PROMPT = `You design a single BFrost "local worker" from a user's description.
+
+A worker is one of:
+- "producer": generates content on a schedule and publishes it to the Item Bus.
+- "consumer": reads items of a given type from the Item Bus and acts on each one.
+
+Return ONLY a JSON object — no prose, no markdown code fences — with exactly these fields:
+{
+  "id": "local.<short-kebab-noun>",
+  "name": "<short technical name>",
+  "displayName": "<friendly name a non-developer reads>",
+  "description": "<one sentence: what it does>",
+  "tagline": "<one short pitch sentence>",
+  "role": "producer" or "consumer",
+  "itemType": "<dot.namespaced.type, e.g. local.standup.note>",
+  "cron": "<standard 5-field cron expression>",
+  "prompt": "<the system prompt the worker's model will run on each scheduled turn>"
+}
+
+Rules:
+- Choose "producer" unless the user clearly wants to react to items that already exist.
+- "prompt" must be self-contained and specific to the described task — it is the worker's brain.
+- "cron" must be a valid 5-field expression (default to "0 9 * * *" for a daily morning run).`;
+
+async function requestWorkerSpec(
+  model: (typeof availableModels)[number],
+  description: string,
+  corrective?: string,
+): Promise<string> {
+  const result = await generateText({
+    model: getChatModel(model) as Parameters<typeof generateText>[0]['model'],
+    system: WORKER_SPEC_SYSTEM_PROMPT,
+    prompt:
+      '/no_think\n' +
+      (corrective ? corrective + '\n\n' : '') +
+      'User description of the worker they want:\n' +
+      description,
+  });
+  return result.text ?? '';
+}
+
+/** Append a numeric suffix until the worker id collides with neither a local nor a built-in worker. */
+async function ensureUniqueWorkerId(spec: WorkerScaffoldSpec): Promise<WorkerScaffoldSpec> {
+  const localIds = new Set((await discoverLocalWorkers()).map((w) => w.manifest.id));
+  const builtInIds = new Set(builtInWorkers.map((w) => w.id));
+  const taken = (id: string) => localIds.has(id) || builtInIds.has(id);
+  if (!taken(spec.id)) return spec;
+  for (let n = 2; n < 100; n += 1) {
+    const candidate = normalizeScaffoldSpec({ ...spec, id: `${spec.id}-${n}` });
+    if (!taken(candidate.id)) return candidate;
+  }
+  throw new BadRequestError('Could not find a free worker id — too many similarly-named workers installed.');
+}
+
+async function generateWorkerFromDescription(
+  description: string,
+): Promise<{ spec: WorkerScaffoldSpec; enabled: boolean; note?: string }> {
+  // Code generation needs a capable model; the always-on demo provider is too weak to emit
+  // reliable structured JSON, and a broken spec is the opposite of the "wow" this feature exists for.
+  const realModels = availableModels.filter((m) => m.provider !== 'demo');
+  if (realModels.length === 0) {
+    throw new BadRequestError(
+      'Creating a worker from a description needs a real model. Connect LM Studio or Ollama, ' +
+        'or add a cloud API key in the Models tab, then try again.',
+    );
+  }
+  const preferred = getDefaultModel();
+  const model = preferred && preferred.provider !== 'demo' ? preferred : realModels[0];
+
+  // Parse the model's JSON into a validated, normalized spec, with one corrective retry.
+  let spec: WorkerScaffoldSpec | null = null;
+  let lastError = '';
+  for (let attempt = 0; attempt < 2 && !spec; attempt += 1) {
+    const corrective = attempt === 0 ? undefined : `Your previous reply could not be parsed (${lastError}). Reply with ONLY the JSON object.`;
+    try {
+      const raw = await requestWorkerSpec(model, description, corrective);
+      spec = specFromModelOutput(raw);
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      spec = null;
+    }
+  }
+  if (!spec) {
+    throw new BadRequestError(`The model did not return a usable worker spec (${lastError}). Try rephrasing your description.`);
+  }
+
+  spec = await ensureUniqueWorkerId(spec);
+
+  const installRoot = path.resolve(config.workerPaths[0] || './workers/local');
+  const targetDir = path.join(installRoot, workerSlug(spec.id));
+  if (!isPathInside(installRoot, targetDir) || targetDir === installRoot) {
+    throw new BadRequestError('Invalid worker install path.');
+  }
+
+  await fs.mkdir(targetDir, { recursive: true });
+  try {
+    await writeWorkerScaffold(targetDir, spec);
+    const discovered = (await discoverLocalWorkers([targetDir])).find((w) => w.manifest.id === spec.id);
+    if (!discovered) {
+      throw new Error('Generated worker could not be discovered after writing.');
+    }
+    await rememberSeenWorkers([{ id: spec.id, builtIn: false, sourcePath: discovered.sourcePath }]);
+
+    // Enable + register it live so the user sees a running worker, not just files on disk.
+    if (!config.localWorkerCodeEnabled) {
+      return {
+        spec,
+        enabled: false,
+        note: 'Worker created. Turn on "Allow local worker code" in Platform & Security, then enable it from the Workers tab.',
+      };
+    }
+    try {
+      await activateLocalWorker(discovered, { previousVersion: null });
+      await setWorkerEnabled(spec.id, true, { builtIn: false, sourcePath: discovered.sourcePath });
+      await reloadSchedulerSchedules();
+      return { spec, enabled: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        spec,
+        enabled: false,
+        note: `Worker created but could not be enabled automatically: ${message}. Enable it from the Workers tab.`,
+      };
+    }
+  } catch (err) {
+    await fs.rm(targetDir, { recursive: true, force: true });
+    if (err instanceof BadRequestError) throw err;
+    throw new BadRequestError(`Worker generation failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 

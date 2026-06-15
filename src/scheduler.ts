@@ -17,7 +17,20 @@ import { acquireSchedulerExecutionLock } from './scheduler-locks';
 import { isWorkerEnabled, loadWorkerState, type WorkerStateStore } from './workers/state';
 
 const SCHEDULER_STATE_STORE_KEY = 'scheduler.state';
-const MISSED_CATCHUP_WINDOW_MS = 7 * 60 * 60 * 1000; // 7 hours
+// Recover a missed slot if it elapsed within this window. Sized to cover a daily
+// job (e.g. an 8am digest) after an overnight or full-workday outage/sleep, while
+// still treating older slots as too stale to be worth replaying.
+export const CATCHUP_WINDOW_MS = 26 * 60 * 60 * 1000; // 26 hours
+
+/**
+ * A missed slot is worth recovering only if it is in the past and not older than
+ * the catch-up window. Shared by the node-cron missed-execution path (process alive
+ * but timers froze during sleep) and the startup recovery path (process was not
+ * running at all). `slotAgeMs` is `now - slotTime`.
+ */
+export function isRecoverableSlotAge(slotAgeMs: number): boolean {
+  return slotAgeMs > 0 && slotAgeMs <= CATCHUP_WINDOW_MS;
+}
 
 type SchedulerJobDashboardField = WorkerJobDashboardField;
 
@@ -383,7 +396,7 @@ async function recordSkippedScheduleExecution(
   // Misses are typically caused by macOS sleep freezing setTimeout timers; on wake-up
   // the heartbeat fires late and node-cron emits execution:missed for each skipped slot.
   if (reason === 'missed') {
-    if (slotAgeMs >= 0 && slotAgeMs <= MISSED_CATCHUP_WINDOW_MS) {
+    if (isRecoverableSlotAge(slotAgeMs)) {
       console.log(
         `[Scheduler] Missed ${name} execution (age: ${Math.round(slotAgeMs / 1000)}s) — catching up now.`,
       );
@@ -394,7 +407,7 @@ async function recordSkippedScheduleExecution(
     }
 
     console.warn(
-      `[Scheduler] Missed ${name} execution is ${slotAgeMin}min old — skipping catch-up (window: ${MISSED_CATCHUP_WINDOW_MS / 60000}min). Cause: ${missedCause}.`,
+      `[Scheduler] Missed ${name} execution is ${slotAgeMin}min old — skipping catch-up (window: ${CATCHUP_WINDOW_MS / 60000}min). Cause: ${missedCause}.`,
     );
   }
 
@@ -427,6 +440,77 @@ async function recordSkippedScheduleExecution(
     });
   }
   await persistRuntime();
+}
+
+/**
+ * Recover the most recent missed run for each enabled job once at startup.
+ *
+ * node-cron's execution:missed event only fires while the process is alive (e.g.
+ * macOS sleep freezing setTimeout timers). It can never fire for a slot that
+ * elapsed while BFrost was not running at all — a powered-off or rebooted machine.
+ * That is the gap this closes: after schedules are (re)loaded, for each job we look
+ * at the single most recent scheduled slot and, if it elapsed within
+ * CATCHUP_WINDOW_MS and was never executed, run it now.
+ *
+ * The per-slot execution lock makes this idempotent and mutually exclusive with the
+ * normal scheduled and node-cron missed paths, so a slot is never run twice. We only
+ * recover the latest slot (not every slot in the window) — "at least the last run".
+ *
+ * Call this once at boot *after* channels have started, so a recovered run that
+ * notifies the operator (e.g. a digest) can be delivered. It reads the schedules
+ * populated by `startScheduler`, so it must run after that.
+ */
+export async function catchUpMissedRunsOnStartup(): Promise<void> {
+  const settings = await ensureSettings();
+  const now = new Date();
+
+  for (const name of tasks.keys()) {
+    const jobSettings = settings.jobs[name];
+    if (!jobSettings) continue;
+
+    const slot = getMissedSlotTime(name, now);
+    if (!slot) continue;
+
+    const slotAgeMs = now.getTime() - slot.getTime();
+    if (!isRecoverableSlotAge(slotAgeMs)) continue;
+
+    const scheduledAt = schedulerSlotIso(slot);
+    const acquired = await acquireSchedulerExecutionLock({
+      commandKey: schedulerCommandKey(name),
+      scheduledAt,
+    });
+    if (!acquired) {
+      // The slot already ran (or was recorded as skipped) — nothing to recover.
+      continue;
+    }
+
+    const registered = getRegisteredWorkerJob(name);
+    const slotAgeMin = Math.round(slotAgeMs / 60000);
+    console.log(
+      `[Scheduler] Recovering missed ${name} execution from ${scheduledAt} ` +
+        `(${slotAgeMin} min old) — BFrost was not running at the scheduled time.`,
+    );
+    await recordEventSafe({
+      category: 'job',
+      action: 'missed',
+      severity: 'warning',
+      summary: `${jobLabels()[name]} missed its scheduled execution while BFrost was offline — recovering now.`,
+      metadata: {
+        job: name,
+        workerId: registered.worker.id,
+        workerName: registered.worker.name,
+        trigger: 'schedule',
+        scheduledAt,
+        slotAgeMs,
+        slotAgeMin,
+        recovery: 'startup',
+      },
+    });
+
+    // Reuse the slot lock just acquired so the recovery run stays mutually exclusive
+    // with any concurrent scheduled/missed execution for the same slot.
+    void runJob(name, jobSettings, 'schedule', { scheduledAt, lockAlreadyAcquired: true });
+  }
 }
 
 /**

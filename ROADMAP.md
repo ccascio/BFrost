@@ -47,9 +47,9 @@ The demo proves the machine works; the next five minutes must make it *theirs*.
 
 This is the wow for the developer audience — the ones who write the blog posts.
 
-- [ ] **Create a worker by describing it.** A chat-driven flow (dashboard chat + the existing worker-author skill knowledge) where the user describes a capability and BFrost scaffolds, installs, and enables a local worker. Even a constrained v1 (a scheduled job with a prompt and an Item Bus subscription) is enough to demo "I typed a sentence and got a worker".
-- [ ] **`npx bfrost new worker`** — CLI scaffold for developers who'd rather start from files; mirrors the author skill's templates.
-- [ ] **Hot reload for local workers.** Edit a local worker's source, save, and see it recompile and re-register without restarting BFrost. The esbuild compile-on-load pipeline already exists; add a watcher and a registry swap.
+- [x] **Create a worker by describing it.** A "Describe a worker" panel in the Workers tab (`POST /api/workers/generate`) where the user types a capability in plain English; a real model emits a constrained JSON spec (`src/workers/scaffold.ts`), which is scaffolded deterministically into a runnable producer/consumer worker, installed, and enabled. The model only fills in the design — the TypeScript is generated from a fixed, contract-safe template, so a worker created this way always loads. Demo provider is rejected for code-gen; needs a real model.
+- [x] **`npx bfrost new worker`** — CLI scaffold (`bin/bfrost.mjs new worker`) sharing the same `scaffold.ts` templates as the describe flow, writing into `<home>/workers/local/<id>` without booting the server.
+- [x] **Hot reload for local workers.** `src/workers/watch.ts` watches the local worker roots; editing an *enabled* worker's source forces a recompile (busting the esbuild mtime cache and the require cache) and re-registers it through the existing enable/disable lifecycle — no restart. Gated by `BFROST_WORKER_HOT_RELOAD` (default on) + local worker code execution. Also fixed esbuild to resolve bundled deps (`ai`, `zod`) against the host's `node_modules` so workers load from any install location, not just the repo.
 
 **Exit criterion:** the "describe → worker running" flow is a 30-second clip that developers share on its own.
 
@@ -58,10 +58,10 @@ This is the wow for the developer audience — the ones who write the blog posts
 The wow has to be seen to earn stars, and friction kills it before it starts.
 
 - [x] **Zero-friction install.** `npx bfrost` (bin entry + publishable package, state in `~/.bfrost`) and a Docker one-liner (`Dockerfile`, `docker-compose.yml`, ghcr publish via the Release workflow). First publish: push a `v*` tag with the `NPM_TOKEN` secret configured. Homebrew tap deliberately deferred — npx + Docker cover the audiences that convert.
-- [ ] **Hero media refresh.** Re-record the README GIF the moment the Pipeline view lands; add a 60–90 second narrated video (demo → recipe → result).
-- [ ] **Docs site with a 5-minute quickstart** (carried over from the v1.0 roadmap) whose steps match the wizard exactly — no drift between docs and product.
+- [ ] **Hero media refresh.** Runbook + full 60–90 s narrated video script (demo → recipe → result → describe-a-worker) are ready in [`docs/launch/hero-recording.md`](./docs/launch/hero-recording.md). Remaining: the actual recording is a **human-only** step — record once the Pipeline view is final and commit `assets/bfrost-demo.gif` + the video.
+- [x] **Docs site with a 5-minute quickstart** whose steps match the wizard exactly — [`docs/quickstart.md`](./docs/quickstart.md) mirrors all 8 wizard steps and carries a "keep in sync with `web/src/Wizard.tsx`" note so there's no drift. Mirror this page onto the standalone docs site (separate repo) at publish time.
 - [x] **Ask at the moment of delight.** After the first successful demo or recipe run, a dismissible, once-ever "Enjoying BFrost? Star it on GitHub ⭐" banner shows on the Overview (`bfrost:star-ask-shown` localStorage key).
-- [ ] **Launch beats.** Time Show HN / r/selfhosted / X posts to the Pipeline view + recipes landing together, not to incremental releases. Drafts ready in `docs/launch/`.
+- [x] **Launch beats.** Drafts ready and coordinated in [`docs/launch/`](./docs/launch/) (`show-hn.md`, `reddit-selfhosted.md`, `x-thread.md`), each with explicit "do not post until" gates and refreshed to feature the describe-a-worker / `npx bfrost new worker` / hot-reload story. Time all channels to the Pipeline view + recipes landing together, not to incremental releases.
 
 ---
 

@@ -16,6 +16,12 @@ The design rule that shaped everything: **every capability is a worker.** The co
 
 Workers talk through a typed pub/sub Item Bus backed by SQLite: producers publish items, consumers subscribe and write their outcome into their own metadata slice. Adding "publish to Mastodon" is a new consumer, not a core change. Local workers can ship TypeScript source — esbuild compiles them on first load, and their dashboard panels share the host's React at runtime.
 
+Because the contract is that strict, extending the platform feels less like coding and more like asking. Three ways in, all on the same scaffold:
+
+- **Describe it.** Type "every morning write me one calm haiku" into the Workers tab. A model fills in a constrained JSON spec — id, schedule, item type, prompt — and BFrost generates the worker's TypeScript from a fixed, contract-safe template, installs it, and enables it. The model never writes code, so a flaky model can't produce a worker that fails to load.
+- **Scaffold from the CLI.** `npx bfrost new worker "Daily standup summary"` writes the same files for developers who'd rather start from source.
+- **Hot reload.** Edit a local worker's source, save, and it recompiles and re-registers in place — no restart.
+
 Try it without configuring anything:
 
     npx bfrost

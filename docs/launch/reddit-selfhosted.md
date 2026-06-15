@@ -18,7 +18,7 @@ I've been building BFrost, a self-hosted platform for scheduled AI pipelines —
 - **No telemetry, no phone-home, no hosted service.** Models run via LM Studio or Ollama on your host (the compose file includes the host-gateway mapping), or bring an OpenAI/Anthropic key if you want cloud models for specific jobs.
 - **Resource footprint is small** — it's a Node scheduler + dashboard; the heavy lifting is whatever model server you point it at.
 
-**What it actually is:** every capability is a pluggable worker (news harvester, research writer, Telegram/Discord/email channels, X/WordPress publishers, model providers). Workers communicate over a typed pub/sub queue, so adding "also publish to Mastodon" is a new worker, not a fork. There's a zero-credential live demo on first boot so you can see the pipeline run before configuring anything.
+**What it actually is:** every capability is a pluggable worker (news harvester, research writer, Telegram/Discord/email channels, X/WordPress publishers, model providers). Workers communicate over a typed pub/sub queue, so adding "also publish to Mastodon" is a new worker, not a fork. You can even add one by describing it in plain English (or `npx bfrost new worker`) — BFrost scaffolds and enables it from a safe template. There's a zero-credential live demo on first boot so you can see the pipeline run before configuring anything.
 
 **Honest limitations:** single-user by design. Local worker code you enable runs unsandboxed (file/shell actions go through an approval queue with diff previews, but it's not a jail) — treat third-party workers like you'd treat any self-hosted plugin. Voice features need ffmpeg/whisper on the host.
 

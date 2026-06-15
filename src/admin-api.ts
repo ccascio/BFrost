@@ -100,6 +100,10 @@ export const ChatMessageBodySchema = z.object({
   projectId: z.string().min(1).max(120).nullable().optional(),
 }).strict();
 
+export const GenerateWorkerBodySchema = z.object({
+  description: z.string().min(8).max(2000),
+}).strict();
+
 export const ChatThreadUpdateBodySchema = z.object({
   title: z.string().min(1).max(120).optional(),
   projectId: z.string().min(1).max(120).nullable().optional(),

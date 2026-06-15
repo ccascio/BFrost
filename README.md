@@ -84,7 +84,7 @@ Or with Docker:
 docker run -d --name bfrost -p 127.0.0.1:3030:3030 -v bfrost-data:/app/data ghcr.io/ccascio/bfrost
 ```
 
-Open <http://127.0.0.1:3030> and click **“Try the live demo — no setup”** to watch a sample news → research pipeline run on the Item Bus with no API key or model. Then wire up your own workers.
+Open <http://127.0.0.1:3030> and click **“Try the live demo — no setup”** to watch a sample news → research pipeline run on the Item Bus with no API key or model. Then wire up your own workers — the setup wizard opens on first boot, or follow the [5-minute quickstart](./docs/quickstart.md).
 
 With npx, state lives in `~/.bfrost` (override with `--home <dir>`; `bfrost --help` lists the flags). The repo also ships a [`docker-compose.yml`](./docker-compose.yml) with the host-gateway mapping needed to reach an LM Studio / Ollama instance on the host and a commented `ADMIN_PASSWORD` slot for network exposure.
 
@@ -232,6 +232,7 @@ Join the [LLM Productivity Reddit community](https://www.reddit.com/r/LLM_Produc
 
 ## Documentation
 
+- [`docs/quickstart.md`](./docs/quickstart.md) — 5-minute quickstart that mirrors the setup wizard step for step.
 - [`docs/worker-authoring.md`](./docs/worker-authoring.md) — consolidated worker authoring guide.
 - [`docs/item-bus.md`](./docs/item-bus.md) — Item Bus and per-worker storage reference.
 - [`workers/README.md`](./workers/README.md) — manifest contract reference.

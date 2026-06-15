@@ -717,6 +717,12 @@ export default function App() {
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [workerUploadFile, setWorkerUploadFile] = useState<File | null>(null);
 
+  // Describe-a-worker state
+  const [workerDescription, setWorkerDescription] = useState<string>('');
+  const [generatedWorker, setGeneratedWorker] = useState<
+    { id: string; displayName: string; role: string; enabled: boolean; note?: string } | null
+  >(null);
+
   // Store tab state
   const [storeWorkers, setStoreWorkers] = useState<StoreWorkerListing[] | null>(null);
   const [storeLoading, setStoreLoading] = useState(false);
@@ -1617,6 +1623,56 @@ export default function App() {
       }
       setWorkerUploadFile(null);
       setNotice('Worker uploaded.');
+      await fetchDashboard(true);
+    } catch (err) {
+      setError(toAppError(err));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function generateWorkerFromDescription() {
+    const description = workerDescription.trim();
+    if (description.length < 8) {
+      setError({ friendly: 'Describe the worker you want in a sentence or two first.' });
+      return;
+    }
+    setBusyKey('worker-generate');
+    setError(null);
+    try {
+      const response = await fetch('/api/workers/generate', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description }),
+      });
+      const payload = (await response.json()) as {
+        error?: string;
+        worker?: { id: string; displayName: string; role: string };
+        enabled?: boolean;
+        note?: string;
+        dashboard?: DashboardState;
+      };
+      if (!response.ok || 'error' in payload) {
+        if (response.status === 401) setSession({ authenticated: false, authEnabled: true });
+        throw new Error(payload.error ?? 'Worker generation failed');
+      }
+      if (payload.dashboard) setDashboard(payload.dashboard);
+      if (payload.worker) {
+        setGeneratedWorker({
+          id: payload.worker.id,
+          displayName: payload.worker.displayName,
+          role: payload.worker.role,
+          enabled: Boolean(payload.enabled),
+          note: payload.note,
+        });
+        setWorkerDescription('');
+        setNotice(
+          payload.enabled
+            ? `Created and enabled "${payload.worker.displayName}". Open the Jobs tab and Run now to see it work.`
+            : `Created "${payload.worker.displayName}". ${payload.note ?? ''}`,
+        );
+      }
       await fetchDashboard(true);
     } catch (err) {
       setError(toAppError(err));
@@ -3618,6 +3674,66 @@ export default function App() {
       })() : null}
 
       {activeTab === 'workers' ? (
+        <>
+        <section className="panel tab-page">
+          <div className="panel-head">
+            <div>
+              <p className="panel-kicker">Describe a worker</p>
+              <h2>Create a worker by describing it <HelpTip>Type what you want a worker to do in plain English. BFrost asks your model to design it, scaffolds the code, installs it, and enables it — no files, no restart. Needs a real model connected (LM Studio, Ollama, or a cloud key).</HelpTip></h2>
+            </div>
+          </div>
+          <div className="stack-list">
+            <textarea
+              rows={3}
+              placeholder='e.g. "Every morning, write me one calm haiku about the day ahead."'
+              value={workerDescription}
+              onChange={(event) => setWorkerDescription(event.target.value)}
+              disabled={busyKey === 'worker-generate'}
+            />
+            <div className="panel-actions">
+              <button
+                type="button"
+                className="primary"
+                disabled={busyKey === 'worker-generate' || workerDescription.trim().length < 8}
+                onClick={() => void generateWorkerFromDescription()}
+              >
+                {busyKey === 'worker-generate' ? 'Designing…' : 'Create worker'}
+              </button>
+              {(['Write me one calm haiku every morning.', 'Summarize each new news article into three bullet points.', 'Draft a daily gratitude journal prompt.'] as const).map((example) => (
+                <button
+                  key={example}
+                  type="button"
+                  className="chip"
+                  disabled={busyKey === 'worker-generate'}
+                  onClick={() => setWorkerDescription(example)}
+                >
+                  {example}
+                </button>
+              ))}
+            </div>
+            {generatedWorker ? (
+              <div className="summary-row">
+                <div>
+                  <strong>{generatedWorker.displayName}</strong>
+                  <span>{generatedWorker.id} · {generatedWorker.role}</span>
+                  <span>
+                    {generatedWorker.enabled
+                      ? 'Created and enabled. Open the Jobs tab and click Run now to see it work.'
+                      : (generatedWorker.note ?? 'Created. Enable it below.')}
+                  </span>
+                </div>
+                <StatusPill tone={generatedWorker.enabled ? 'good' : 'warning'}>
+                  {generatedWorker.enabled ? 'enabled' : 'created'}
+                </StatusPill>
+              </div>
+            ) : (
+              <p className="footnote">
+                The model only fills in the worker's design — the code is generated from a fixed,
+                contract-safe template, so a worker created this way always loads.
+              </p>
+            )}
+          </div>
+        </section>
         <section className="panel tab-page">
           <div className="panel-head">
             <div>
@@ -3686,6 +3802,7 @@ export default function App() {
             renderWorkerGroups(dashboard.workers)
           )}
         </section>
+        </>
       ) : null}
 
       {activeTab === 'store' ? renderStoreTab() : null}
