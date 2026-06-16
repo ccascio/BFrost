@@ -14,6 +14,22 @@ import {
   StatusPill,
   RunError,
 } from '../app-helpers';
+import { ActionsTab } from '../tabs/ActionsTab';
+import type { ActionRequest } from '../app-types';
+
+const mockAction: ActionRequest = {
+  id: 'a1',
+  workerId: 'core.demo',
+  actionClass: 'approved-write',
+  label: 'Write file',
+  rationale: 'because',
+  payload: {},
+  preview: 'diff --git a b',
+  state: 'pending',
+  createdAt: new Date().toISOString(),
+  decidedAt: null,
+  executedAt: null,
+};
 
 interface SmokeCase {
   name: string;
@@ -33,6 +49,19 @@ const cases: SmokeCase[] = [
   { name: 'StoreTrustBadge', el: createElement(StoreTrustBadge, { trust: 'community' }) },
   { name: 'StatusPill', el: createElement(StatusPill, { tone: 'good', children: 'OK' }) },
   { name: 'RunError', el: createElement(RunError, { message: 'boom' }) },
+  {
+    name: 'ActionsTab',
+    el: createElement(ActionsTab, {
+      pendingActions: [mockAction],
+      actionHistory: [mockAction],
+      actionsLoading: false,
+      selectedActionId: null,
+      setSelectedActionId: () => {},
+      busyKey: null,
+      decideAction: () => {},
+      fetchPendingActions: () => {},
+    }),
+  },
 ];
 
 export interface SmokeResult {
