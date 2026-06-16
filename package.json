@@ -44,6 +44,7 @@
     "build:server": "npm run clean:server && tsc",
     "build:web": "vite build",
     "check:web": "tsc --noEmit -p web/tsconfig.json",
+    "smoke:web": "node scripts/web-smoke.mjs",
     "start": "node scripts/daemon.mjs",
     "prepack": "npm run build",
     "stop": "node scripts/stop.mjs",
