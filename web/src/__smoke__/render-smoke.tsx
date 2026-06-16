@@ -17,6 +17,7 @@ import {
 import { ActionsTab } from '../tabs/ActionsTab';
 import { HealthTab } from '../tabs/HealthTab';
 import { StoreTab } from '../tabs/StoreTab';
+import { ChannelsTab } from '../tabs/ChannelsTab';
 import type { ActionRequest, DashboardState } from '../app-types';
 
 // Minimal dashboard mock for tabs that read a few fields. Cast: a render smoke only
@@ -107,6 +108,16 @@ const cases: SmokeCase[] = [
       installFromStore: () => {},
       sideloadWorkerZip: () => {},
       mutate: () => {},
+    }),
+  },
+  {
+    name: 'ChannelsTab (empty)',
+    el: createElement(ChannelsTab, {
+      dashboard: mockDashboard,
+      expandedChannelId: null,
+      setExpandedChannelId: () => {},
+      dashboardViews: [],
+      fetchDashboard: () => {},
     }),
   },
 ];
