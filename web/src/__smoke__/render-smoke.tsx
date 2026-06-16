@@ -16,7 +16,12 @@ import {
 } from '../app-helpers';
 import { ActionsTab } from '../tabs/ActionsTab';
 import { HealthTab } from '../tabs/HealthTab';
-import type { ActionRequest } from '../app-types';
+import { StoreTab } from '../tabs/StoreTab';
+import type { ActionRequest, DashboardState } from '../app-types';
+
+// Minimal dashboard mock for tabs that read a few fields. Cast: a render smoke only
+// needs the fields a tab actually touches, not a full valid DashboardState.
+const mockDashboard = { workers: [] } as unknown as DashboardState;
 
 const mockAction: ActionRequest = {
   id: 'a1',
@@ -73,6 +78,35 @@ const cases: SmokeCase[] = [
       expandedWorkerIds: new Set<string>(),
       setExpandedWorkerIds: () => {},
       setActiveTab: () => {},
+    }),
+  },
+  {
+    name: 'StoreTab (empty)',
+    el: createElement(StoreTab, {
+      dashboard: mockDashboard,
+      storeWorkers: null,
+      storeLoading: false,
+      storeError: null,
+      storeQuery: '',
+      setStoreQuery: () => {},
+      storeQueryInput: '',
+      setStoreQueryInput: () => {},
+      storeCategoryFilter: 'all',
+      setStoreCategoryFilter: () => {},
+      storeSelectedId: null,
+      setStoreSelectedId: () => {},
+      storeDetail: null,
+      setStoreDetail: () => {},
+      storeDetailLoading: false,
+      sideloadFile: null,
+      setSideloadFile: () => {},
+      setConsentTarget: () => {},
+      busyKey: null,
+      fetchStoreCatalog: () => {},
+      fetchStoreDetail: () => {},
+      installFromStore: () => {},
+      sideloadWorkerZip: () => {},
+      mutate: () => {},
     }),
   },
 ];
