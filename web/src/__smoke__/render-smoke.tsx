@@ -19,6 +19,7 @@ import { HealthTab } from '../tabs/HealthTab';
 import { StoreTab } from '../tabs/StoreTab';
 import { ChannelsTab } from '../tabs/ChannelsTab';
 import { ChatTab } from '../tabs/ChatTab';
+import { WorkersTab } from '../tabs/WorkersTab';
 import type { RefObject } from 'react';
 import type { ActionRequest, DashboardState } from '../app-types';
 
@@ -28,6 +29,7 @@ const nullRef = { current: null } as RefObject<never>;
 // needs the fields a tab actually touches, not a full valid DashboardState.
 const mockDashboard = {
   workers: [],
+  workerIssues: [],
   defaultModel: { alias: 'local', provider: 'local' },
 } as unknown as DashboardState;
 
@@ -158,6 +160,23 @@ const cases: SmokeCase[] = [
       deleteChatThread: () => {},
       sendDashboardChat: () => {},
       fillChatDraft: () => {},
+    }),
+  },
+  {
+    name: 'WorkersTab (empty)',
+    el: createElement(WorkersTab, {
+      dashboard: mockDashboard,
+      busyKey: null,
+      workerDescription: '',
+      setWorkerDescription: () => {},
+      generatedWorker: null,
+      workerUploadFile: null,
+      setWorkerUploadFile: () => {},
+      storeUpdates: new Map<string, string>(),
+      generateWorkerFromDescription: () => {},
+      uploadWorkerZip: () => {},
+      deleteWorker: () => {},
+      mutate: () => {},
     }),
   },
 ];
