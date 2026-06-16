@@ -15,6 +15,7 @@ import {
   RunError,
 } from '../app-helpers';
 import { ActionsTab } from '../tabs/ActionsTab';
+import { HealthTab } from '../tabs/HealthTab';
 import type { ActionRequest } from '../app-types';
 
 const mockAction: ActionRequest = {
@@ -60,6 +61,18 @@ const cases: SmokeCase[] = [
       busyKey: null,
       decideAction: () => {},
       fetchPendingActions: () => {},
+    }),
+  },
+  {
+    name: 'HealthTab (empty)',
+    el: createElement(HealthTab, {
+      jobMetrics: null,
+      jobMetricsLoading: false,
+      jobMetricsError: null,
+      fetchJobMetrics: () => {},
+      expandedWorkerIds: new Set<string>(),
+      setExpandedWorkerIds: () => {},
+      setActiveTab: () => {},
     }),
   },
 ];
