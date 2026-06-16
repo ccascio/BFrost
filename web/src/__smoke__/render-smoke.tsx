@@ -18,11 +18,18 @@ import { ActionsTab } from '../tabs/ActionsTab';
 import { HealthTab } from '../tabs/HealthTab';
 import { StoreTab } from '../tabs/StoreTab';
 import { ChannelsTab } from '../tabs/ChannelsTab';
+import { ChatTab } from '../tabs/ChatTab';
+import type { RefObject } from 'react';
 import type { ActionRequest, DashboardState } from '../app-types';
+
+const nullRef = { current: null } as RefObject<never>;
 
 // Minimal dashboard mock for tabs that read a few fields. Cast: a render smoke only
 // needs the fields a tab actually touches, not a full valid DashboardState.
-const mockDashboard = { workers: [] } as unknown as DashboardState;
+const mockDashboard = {
+  workers: [],
+  defaultModel: { alias: 'local', provider: 'local' },
+} as unknown as DashboardState;
 
 const mockAction: ActionRequest = {
   id: 'a1',
@@ -118,6 +125,39 @@ const cases: SmokeCase[] = [
       setExpandedChannelId: () => {},
       dashboardViews: [],
       fetchDashboard: () => {},
+    }),
+  },
+  {
+    name: 'ChatTab (empty)',
+    el: createElement(ChatTab, {
+      dashboard: mockDashboard,
+      dashboardViews: [],
+      busyKey: null,
+      chatDraft: '',
+      setChatDraft: () => {},
+      chatTurns: [],
+      chatThreads: [],
+      chatProjects: [],
+      activeProjectId: null,
+      setActiveProjectId: () => {},
+      activeConversationId: null,
+      chatArrivingFromOverview: false,
+      chatQuery: '',
+      setChatQuery: () => {},
+      projectComboOpen: false,
+      setProjectComboOpen: () => {},
+      projectComboQuery: '',
+      setProjectComboQuery: () => {},
+      projectComboRef: nullRef,
+      chatLogRef: nullRef,
+      chatInputRef: nullRef,
+      createChatProject: () => {},
+      startNewChat: () => {},
+      openChatThread: () => {},
+      renameChatThread: () => {},
+      deleteChatThread: () => {},
+      sendDashboardChat: () => {},
+      fillChatDraft: () => {},
     }),
   },
 ];
