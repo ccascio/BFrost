@@ -29,6 +29,7 @@ import { DashboardFieldEditor } from '../tabs/DashboardFieldEditor';
 import { JobOperationsPanel } from '../tabs/JobOperationsPanel';
 import { PlatformRoutingPanel, PlatformSecurityPanel } from '../tabs/PlatformConfigPanels';
 import { WorkerConfigPage } from '../tabs/WorkerConfigPage';
+import { Wizard } from '../Wizard';
 import type { RefObject } from 'react';
 import type {
   ActionRequest,
@@ -324,6 +325,17 @@ const cases: SmokeCase[] = [
       busyKey: null,
       fetchDashboard: noopAsync,
       saveWorkerConfigurationSurface: noop,
+    }),
+  },
+  {
+    name: 'Wizard',
+    el: createElement(Wizard, {
+      dashboard: overviewDashboard as never,
+      onDismiss: noop,
+      onComplete: noop,
+      onRefreshDashboard: noopAsync,
+      onNavigate: noop,
+      onRunDemoAction: noop,
     }),
   },
   {

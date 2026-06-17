@@ -3,6 +3,7 @@
 // them in one 7k-line file. (CODE_ROADMAP Phase 1.2)
 import type { SidebarEntry } from './Sidebar';
 import type { WorkerDashboardViewDefinition } from './workers/types';
+export * from './app-types/store';
 
 export type RunStatus = 'idle' | 'success' | 'error' | 'skipped';
 export type CoreDashboardTab = 'overview' | 'channels' | 'workers' | 'jobs' | 'config' | 'chat' | 'system' | 'store' | 'actions' | 'health' | 'pipeline';
@@ -414,91 +415,6 @@ export interface AppBackupRecord {
 export interface AutoBackupSettings {
   enabled: boolean;
   retentionDays: number;
-}
-
-// Plain-language labels and descriptions for each store-level permission category.
-// Mirrors PERMISSION_INFO in BFrost-Website (kept in sync by scripts/check-manifest-enums.js).
-export const PERMISSION_INFO: Record<string, { label: string; description: string }> = {
-  'network:http': {
-    label: 'HTTP network access',
-    description: 'Can make outbound HTTP requests (unencrypted). Only needed for local or legacy endpoints.',
-  },
-  'network:https': {
-    label: 'HTTPS network access',
-    description: 'Can make outbound HTTPS requests to the internet.',
-  },
-  'storage:worker-kv': {
-    label: 'Worker key-value storage',
-    description: 'Can read and write its own namespaced key-value store inside BFrost.',
-  },
-  'filesystem:scoped-read': {
-    label: 'Scoped filesystem read',
-    description: 'Can read files within a specific folder you approve at install time.',
-  },
-  'filesystem:scoped-write': {
-    label: 'Scoped filesystem write',
-    description: 'Can create or modify files within a specific folder you approve at install time.',
-  },
-  'filesystem:workspace-read': {
-    label: 'Workspace filesystem read',
-    description: 'Can read any file in the configured workspace directory.',
-  },
-  'operator-notify': {
-    label: 'Operator notifications',
-    description: 'Can send you notifications via configured channels (e.g. Telegram).',
-  },
-  'local-process': {
-    label: 'Local process execution',
-    description: 'Can spawn shell commands or subprocesses on this machine.',
-  },
-};
-
-// Community store types (mirrors api.bfrost.net schema)
-export interface StoreWorkerListing {
-  id: string;
-  name: string;
-  tagline: string;
-  author: string;
-  category: string;
-  tags: string[];
-  trust: string;
-  latestVersion: string;
-  bfrostEngine: string;
-  permissions: string[];
-  capabilities: {
-    jobs: string[];
-    tools: string[];
-    channels: string[];
-    providers: string[];
-    itemProduces: string[];
-    itemConsumes: string[];
-  };
-  downloadCount: number;
-  updatedAt: string;
-  /** True for workers that ship with BFrost. Infrastructure workers are always included;
-   *  plugin workers (news, publisher-x, research) can be deleted and restored. */
-  builtIn?: boolean;
-}
-
-export interface StoreWorkerVersion {
-  version: string;
-  bfrostEngine: string;
-  releaseUrl?: string;
-  bundleUrl?: string;
-  bundleSha256?: string;
-  bundleSizeBytes?: number;
-  changelog?: string;
-  publishedAt: string;
-  yanked: boolean;
-  yankReason?: string;
-}
-
-export interface StoreWorkerDetail extends StoreWorkerListing {
-  description: string;
-  repoUrl: string;
-  readmeUrl?: string;
-  license: string;
-  versions: StoreWorkerVersion[];
 }
 
 export interface WhatsNewEntry {
