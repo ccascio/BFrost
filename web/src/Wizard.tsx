@@ -304,13 +304,13 @@ function StepModel({ dashboard, onRefresh }: { dashboard: DashboardSnapshot; onR
     setSaving(true);
     setError(null);
     try {
-      const body = provider === 'openai'
-        ? { openaiApiKey: key.trim() }
-        : { anthropicApiKey: key.trim() };
-      const res = await fetch('/api/cloud-api-keys', {
+      const endpoint = provider === 'openai'
+        ? '/api/workers/providers-openai/credentials'
+        : '/api/workers/providers-anthropic/credentials';
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ apiKey: key.trim() }),
       });
       if (!res.ok) throw new Error(await res.text());
       setSaved(provider);
