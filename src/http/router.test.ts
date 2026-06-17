@@ -91,6 +91,26 @@ test('dispatch runs the handler and reports a match; misses return false', async
   assert.equal(missed, false);
 });
 
+test('router rejects a duplicate pattern on add', () => {
+  const r = new HttpRouter();
+  r.add('POST', '/api/workers/:id', noop);
+  // Same method + identical pattern (different param name) → duplicate
+  assert.throws(() => r.add('POST', '/api/workers/:userId', noop), /Duplicate route/);
+  // Different method → not a duplicate
+  assert.doesNotThrow(() => r.add('GET', '/api/workers/:id', noop));
+  // Literal vs param at same position → not a duplicate
+  assert.doesNotThrow(() => r.add('POST', '/api/workers/rescan', noop));
+});
+
+test('router does not flag specificity pairs as duplicates', () => {
+  // The rescan/memory-cleanup pair from the lmstudio worker
+  const r = new HttpRouter();
+  assert.doesNotThrow(() => {
+    r.add('GET', '/api/workers/:id/dashboard.js', noop);
+    r.add('GET', '/api/workers/lmstudio/memory-cleanup', noop);
+  });
+});
+
 test('dispatch propagates handler errors to the caller', async () => {
   const r = new HttpRouter();
   r.add('GET', '/api/boom', () => {

@@ -62,10 +62,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return sendJson(res, 401, { error: 'Authentication required', authRequired: true });
     }
 
-    // Declarative dispatch: core routes, then worker apiRoutes (same matcher),
-    // then the static/404 fallback.
-    if (await getCoreRouter().dispatch(req, res, url)) return;
-    if (await dispatchWorkerRoutes(req, res, url)) return;
+    // Unified dispatch: core and worker routes share one router table per request
+    // (rebuilt each time because workers toggle at runtime). Core registers first
+    // so it always wins a collision; colliding worker routes are logged, not served.
+    if (await buildRequestRouter().dispatch(req, res, url)) return;
     if (req.method === 'GET') {
       return serveStatic(url.pathname, res);
     }
@@ -81,38 +81,47 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
   }
 }
 
-// Core endpoints register once at startup.
-let coreRouter: HttpRouter | null = null;
-function getCoreRouter(): HttpRouter {
-  if (!coreRouter) {
-    coreRouter = new HttpRouter();
-    registerCoreRoutes(coreRouter);
-  }
-  return coreRouter;
-}
+// Worker apiRoutes toggle at runtime, so the combined table must be rebuilt each
+// request. Core routes register first (they always win on collision). Worker routes
+// that duplicate a core route are skipped and logged once per route-set change.
+let lastWorkerRouteSig = '';
+const reportedCollisions = new Set<string>();
 
-// Worker apiRoutes are dynamic (registered/removed as workers toggle), so they
-// are matched per-request against the current registry.
-async function dispatchWorkerRoutes(
-  req: IncomingMessage,
-  res: ServerResponse,
-  url: URL,
-): Promise<boolean> {
-  const routes = listRegisteredApiRoutes();
-  if (routes.length === 0) return false;
-  const router = new HttpRouter();
-  for (const route of routes) {
-    router.add(route.method, route.path, async (rq, rs, ctx) => {
-      const response = await route.handle({
-        req: rq,
-        url: ctx.url,
-        readJsonBody,
-        getDashboardState: buildDashboardState,
-      });
-      sendJson(rs, response.status, response.body);
-    });
+function buildRequestRouter(): HttpRouter {
+  const workerRoutes = listRegisteredApiRoutes();
+  const workerSig = workerRoutes.map((r) => `${r.method} ${r.path}`).join('\n');
+  if (workerSig !== lastWorkerRouteSig) {
+    lastWorkerRouteSig = workerSig;
+    reportedCollisions.clear();
   }
-  return router.dispatch(req, res, url);
+
+  const router = new HttpRouter();
+  registerCoreRoutes(router);
+
+  for (const route of workerRoutes) {
+    try {
+      router.add(route.method, route.path, async (rq, rs, ctx) => {
+        const response = await route.handle({
+          req: rq,
+          url: ctx.url,
+          readJsonBody,
+          getDashboardState: buildDashboardState,
+        });
+        sendJson(rs, response.status, response.body);
+      });
+    } catch {
+      const sig = `${route.method.toUpperCase()} ${route.path}`;
+      if (!reportedCollisions.has(sig)) {
+        reportedCollisions.add(sig);
+        console.warn(
+          `[Router] Worker route conflicts with an existing route and will be ignored: ${sig}` +
+          ` (owner: ${route.workerIds.join(', ')})`,
+        );
+      }
+    }
+  }
+
+  return router;
 }
 
 // The dashboard build lives next to the working directory in a repo checkout, but

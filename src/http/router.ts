@@ -53,10 +53,23 @@ function compilePath(path: string): { segments: Segment[]; literalCount: number 
 
 export class HttpRouter {
   private routes: CompiledRoute[] = [];
+  // Canonical pattern per registered route: METHOD + per-segment tokens where
+  // literals are "L:value" and params collapse to "P" (name ignored, so
+  // :id and :userId are treated as the same slot).
+  private patternSigs = new Set<string>();
+
+  private patternKey(method: string, segments: Segment[]): string {
+    return method + ':' + segments.map((s) => (s.kind === 'literal' ? `L:${s.value}` : 'P')).join('/');
+  }
 
   /** Register a route. Chainable. Re-sorts so the most specific route matches first. */
   add(method: string, path: string, handler: RouteHandler): this {
     const { segments, literalCount } = compilePath(path);
+    const sig = this.patternKey(method.toUpperCase(), segments);
+    if (this.patternSigs.has(sig)) {
+      throw new Error(`Duplicate route: ${method.toUpperCase()} ${path}`);
+    }
+    this.patternSigs.add(sig);
     this.routes.push({ method: method.toUpperCase(), segments, literalCount, handler });
     // Most literal segments first → exact routes beat param routes of equal length.
     // Stable enough: ties keep registration order.
