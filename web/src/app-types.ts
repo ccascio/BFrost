@@ -600,6 +600,7 @@ export interface DashboardState {
     running: boolean;
     loadedModels: string[];
     loadedCount: number;
+    pinnedModelId: string | null;
   };
   cron: {
     timezone: string;
@@ -638,6 +639,7 @@ export interface DashboardState {
   events: EventLogRecord[];
   backups: AppBackupRecord[];
   recipes: WorkerRecipe[];
+  workerData: Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -673,4 +675,3 @@ export interface ChatProject {
   name: string;
   createdAt: string;
 }
-

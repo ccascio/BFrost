@@ -21,10 +21,26 @@ import { ChannelsTab } from '../tabs/ChannelsTab';
 import { ChatTab } from '../tabs/ChatTab';
 import { WorkersTab } from '../tabs/WorkersTab';
 import { SystemTab } from '../tabs/SystemTab';
+import { OverviewTab } from '../tabs/OverviewTab';
+import { OverviewSetupPanels } from '../tabs/OverviewSetupPanels';
+import { OverviewRecipesPanel } from '../tabs/OverviewRecipesPanel';
+import { OverviewModelPanel } from '../tabs/OverviewModelPanel';
+import { DashboardFieldEditor } from '../tabs/DashboardFieldEditor';
+import { JobOperationsPanel } from '../tabs/JobOperationsPanel';
+import { PlatformRoutingPanel, PlatformSecurityPanel } from '../tabs/PlatformConfigPanels';
+import { WorkerConfigPage } from '../tabs/WorkerConfigPage';
 import type { RefObject } from 'react';
-import type { ActionRequest, DashboardState } from '../app-types';
+import type {
+  ActionRequest,
+  DashboardState,
+  SchedulerJobState,
+  WorkerDashboardSurface,
+  WorkerSummary,
+} from '../app-types';
 
 const nullRef = { current: null } as RefObject<never>;
+const noop = () => {};
+const noopAsync = async () => {};
 
 // Minimal dashboard mock for tabs that read a few fields. Cast: a render smoke only
 // needs the fields a tab actually touches, not a full valid DashboardState.
@@ -33,6 +49,126 @@ const mockDashboard = {
   workerIssues: [],
   defaultModel: { alias: 'local', provider: 'local' },
 } as unknown as DashboardState;
+
+const overviewDashboard = {
+  app: {
+    name: 'BFrost',
+    adminUrl: 'http://127.0.0.1:3030',
+    timezone: 'UTC',
+    now: new Date().toISOString(),
+    pid: 123,
+  },
+  models: [{ alias: 'demo', id: 'demo-model', label: 'Demo model', provider: 'demo' }],
+  defaultModel: { alias: 'demo', id: 'demo-model', label: 'Demo model', provider: 'demo' },
+  lmStudio: { running: false, loadedModels: [], loadedCount: 0, pinnedModelId: null },
+  cron: { timezone: 'UTC', jobs: [], runs: [] },
+  workers: [
+    {
+      id: 'local.digest',
+      name: 'Digest',
+      displayName: 'Digest',
+      description: 'Creates a digest',
+      tagline: 'Summarize items',
+      builtIn: false,
+      enabled: false,
+      deletable: true,
+      jobCount: 0,
+      runningJobCount: 0,
+      healthState: 'disabled',
+      health: [],
+      dashboard: { views: [], settings: [] },
+    },
+  ],
+  workerIssues: [],
+  platform: {
+    activeLocalProviderId: '',
+    primaryChannelId: '',
+    embeddingProvider: '',
+    embeddingModel: '',
+    adminPasswordSet: false,
+    localWorkerCodeEnabled: false,
+    adminSessionTtlHours: 24,
+    jobLlmTimeoutMs: 120000,
+    adminHost: '127.0.0.1',
+    adminPort: 3030,
+  },
+  availableLocalProviders: [],
+  availableChannels: [],
+  queue: {
+    total: 0,
+    queued: 0,
+    approved: 0,
+    posted: 0,
+    rejected: 0,
+    failed: 0,
+    seen: 0,
+    retrying: 0,
+    recentItems: [],
+  },
+  integrations: {},
+  dependencies: {
+    lmStudioCli: { ok: true, detail: 'ok' },
+    sqliteCli: { ok: true, detail: 'ok' },
+    ffmpeg: { ok: true, detail: 'ok' },
+    whisperCli: { ok: true, detail: 'ok' },
+    whisperModel: { ok: true, detail: 'ok' },
+    embeddingModelReachable: { ok: true, detail: 'ok' },
+  },
+  events: [],
+  backups: [],
+  recipes: [
+    {
+      id: 'digest-recipe',
+      label: 'Digest recipe',
+      description: 'Enable a digest workflow',
+      steps: [{ workerId: 'local.digest' }],
+      requiredInputs: [],
+    },
+  ],
+} as unknown as DashboardState;
+
+const overviewSetupProps = {
+  dashboard: overviewDashboard,
+  busyKey: null,
+  setBusyKey: noop,
+  setError: noop,
+  setDashboard: noop,
+  setActiveTab: noop,
+  onboardingRan: true,
+  runDemoAction: noopAsync,
+  fetchDashboard: noopAsync,
+  firstResultJob: null,
+  firstResultShownKey: 'smoke:first-result',
+  setFirstResultJob: noop,
+  lmAdoptDismissed: false,
+  setLmAdoptDismissed: noop,
+  lmAdopting: false,
+  setLmAdopting: noop,
+  demoNarration: null,
+  demoRecap: null,
+  setDemoRecap: noop,
+  setWizardOpen: noop,
+  starAsk: false,
+  dismissStarAsk: noop,
+  wizardCompleted: true,
+  cloudTestReply: null,
+  setCloudTestReply: noop,
+  cloudConnectProvider: '',
+  setCloudConnectProvider: noop,
+  cloudConnectKey: '',
+  setCloudConnectKey: noop,
+  cloudConnecting: false,
+  setCloudConnecting: noop,
+  recipeApplied: new Set<string>(),
+  setRecipeApplied: noop,
+  recipeExpanded: null,
+  setRecipeExpanded: noop,
+  recipeInputValues: {},
+  setRecipeInputValues: noop,
+  recipeApplying: false,
+  setRecipeApplying: noop,
+  renderStuckDetectorBanner: () => null,
+};
 
 const mockAction: ActionRequest = {
   id: 'a1',
@@ -46,6 +182,52 @@ const mockAction: ActionRequest = {
   createdAt: new Date().toISOString(),
   decidedAt: null,
   executedAt: null,
+};
+
+const mockJob: SchedulerJobState = {
+  name: 'digest',
+  label: 'Digest job',
+  description: 'Runs a digest',
+  workerId: 'local.digest',
+  workerName: 'Digest',
+  workerBuiltIn: false,
+  workerEnabled: true,
+  approvalRequiredEditable: true,
+  enabled: true,
+  cron: '0 9 * * *',
+  modelAlias: 'demo',
+  approvalRequired: false,
+  promptEditable: true,
+  prompt: 'Summarize.',
+  params: {},
+  dashboardFields: [],
+  presets: [],
+  effectiveModelAlias: 'demo',
+  running: false,
+  lastStartedAt: null,
+  lastFinishedAt: null,
+  lastStatus: 'idle',
+  lastSummary: null,
+  lastError: null,
+  lastTrigger: null,
+};
+
+const mockWorker = overviewDashboard.workers[0] as unknown as WorkerSummary;
+
+const mockWorkerSurface: WorkerDashboardSurface = {
+  id: 'settings',
+  label: 'Settings',
+  description: 'Worker settings',
+  path: '/api/workers/local.digest/settings',
+  tab: 'config',
+  fields: [
+    {
+      key: 'topic',
+      label: 'Topic',
+      type: 'text',
+      defaultValue: 'AI',
+    },
+  ],
 };
 
 interface SmokeCase {
@@ -66,6 +248,84 @@ const cases: SmokeCase[] = [
   { name: 'StoreTrustBadge', el: createElement(StoreTrustBadge, { trust: 'community' }) },
   { name: 'StatusPill', el: createElement(StatusPill, { tone: 'good', children: 'OK' }) },
   { name: 'RunError', el: createElement(RunError, { message: 'boom' }) },
+  {
+    name: 'DashboardFieldEditor',
+    el: createElement(DashboardFieldEditor, {
+      field: {
+        key: 'topics',
+        label: 'Topics',
+        type: 'string-list',
+        defaultValue: [],
+        suggestions: ['AI', 'Markets'],
+      },
+      value: 'AI',
+      onChange: noop,
+      customListItemDrafts: {},
+      setCustomListItemDrafts: noop,
+      draftKey: 'smoke.topics',
+    }),
+  },
+  {
+    name: 'JobOperationsPanel',
+    el: createElement(JobOperationsPanel, {
+      dashboard: overviewDashboard,
+      job: mockJob,
+      runs: [],
+      busyKey: null,
+      jobDrafts: {},
+      setJobDrafts: noop,
+      confirmSaveJobName: null,
+      setConfirmSaveJobName: noop,
+      openPromptEditors: {},
+      setOpenPromptEditors: noop,
+      customListItemDrafts: {},
+      setCustomListItemDrafts: noop,
+      mutate: noop,
+      triggerRun: noop,
+    }),
+  },
+  {
+    name: 'PlatformRoutingPanel',
+    el: createElement(PlatformRoutingPanel, {
+      dashboard: overviewDashboard,
+      busyKey: null,
+      activeLocalProviderDraft: '',
+      setActiveLocalProviderDraft: noop,
+      primaryChannelDraft: '',
+      setPrimaryChannelDraft: noop,
+      savePlatformRouting: noop,
+    }),
+  },
+  {
+    name: 'PlatformSecurityPanel',
+    el: createElement(PlatformSecurityPanel, {
+      dashboard: overviewDashboard,
+      busyKey: null,
+      adminPasswordDraft: '',
+      setAdminPasswordDraft: noop,
+      sessionTtlDraft: null,
+      setSessionTtlDraft: noop,
+      jobTimeoutDraft: null,
+      setJobTimeoutDraft: noop,
+      saveCoreSettings: noop,
+    }),
+  },
+  {
+    name: 'WorkerConfigPage',
+    el: createElement(WorkerConfigPage, {
+      worker: mockWorker,
+      surfaces: [mockWorkerSurface],
+      dashboard: overviewDashboard,
+      dashboardViews: [],
+      surfaceDrafts: {},
+      setSurfaceDrafts: noop,
+      customListItemDrafts: {},
+      setCustomListItemDrafts: noop,
+      busyKey: null,
+      fetchDashboard: noopAsync,
+      saveWorkerConfigurationSurface: noop,
+    }),
+  },
   {
     name: 'ActionsTab',
     el: createElement(ActionsTab, {
@@ -211,6 +471,49 @@ const cases: SmokeCase[] = [
       uploadWorkerZip: () => {},
       deleteWorker: () => {},
       mutate: () => {},
+    }),
+  },
+  {
+    name: 'OverviewModelPanel',
+    el: createElement(OverviewModelPanel, {
+      dashboard: overviewDashboard,
+      busyKey: null,
+      selectedModelAlias: 'demo',
+      setSelectedModelAlias: noop,
+      saveDefaultModel: noop,
+    }),
+  },
+  {
+    name: 'OverviewRecipesPanel',
+    el: createElement(OverviewRecipesPanel, {
+      dashboard: overviewDashboard,
+      setDashboard: noop,
+      setError: noop,
+      recipeApplied: new Set<string>(),
+      setRecipeApplied: noop,
+      recipeExpanded: null,
+      setRecipeExpanded: noop,
+      recipeInputValues: {},
+      setRecipeInputValues: noop,
+      recipeApplying: false,
+      setRecipeApplying: noop,
+    }),
+  },
+  {
+    name: 'OverviewSetupPanels',
+    el: createElement(OverviewSetupPanels, overviewSetupProps),
+  },
+  {
+    name: 'OverviewTab',
+    el: createElement(OverviewTab, {
+      ...overviewSetupProps,
+      openChatFromOverview: noop,
+      dashboardViews: [],
+      workerViewContext: {},
+      selectedModelAlias: 'demo',
+      setSelectedModelAlias: noop,
+      saveDefaultModel: noop,
+      setNotice: noop,
     }),
   },
 ];

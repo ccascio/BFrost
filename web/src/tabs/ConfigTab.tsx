@@ -8,12 +8,10 @@ interface ConfigTabProps {
   configCoreCount: number;
   selectedCoreConfigKey: CoreConfigKey | null;
   setSelectedCoreConfigKey: Dispatch<SetStateAction<CoreConfigKey | null>>;
-  setSelectedConfigSurfaceKey: Dispatch<SetStateAction<string | null>>;
-  setSelectedConfigJobName: Dispatch<SetStateAction<string | null>>;
   dashboardViews: WorkerDashboardViewDefinition[];
   workerViewContext: unknown;
-  renderPlatformRoutingConfiguration: () => ReactNode;
-  renderPlatformSecurityConfiguration: () => ReactNode;
+  platformRoutingPanel: ReactNode;
+  platformSecurityPanel: ReactNode;
   setActiveTab: (tab: DashboardTab) => void;
   setWizardOpen: Dispatch<SetStateAction<boolean>>;
 }
@@ -24,12 +22,10 @@ export function ConfigTab(props: ConfigTabProps) {
     configCoreCount,
     selectedCoreConfigKey,
     setSelectedCoreConfigKey,
-    setSelectedConfigSurfaceKey,
-    setSelectedConfigJobName,
     dashboardViews,
     workerViewContext,
-    renderPlatformRoutingConfiguration,
-    renderPlatformSecurityConfiguration,
+    platformRoutingPanel,
+    platformSecurityPanel,
     setActiveTab,
     setWizardOpen,
   } = props;
@@ -88,8 +84,6 @@ export function ConfigTab(props: ConfigTabProps) {
                   aria-pressed={selectedCoreConfigKey === 'platform-routing'}
                   onClick={() => {
                     setSelectedCoreConfigKey('platform-routing');
-                    setSelectedConfigSurfaceKey(null);
-                    setSelectedConfigJobName(null);
                   }}
                 >
                   <div>
@@ -105,8 +99,6 @@ export function ConfigTab(props: ConfigTabProps) {
                   aria-pressed={selectedCoreConfigKey === 'embedding-model'}
                   onClick={() => {
                     setSelectedCoreConfigKey('embedding-model');
-                    setSelectedConfigSurfaceKey(null);
-                    setSelectedConfigJobName(null);
                   }}
                 >
                   <div>
@@ -140,8 +132,6 @@ export function ConfigTab(props: ConfigTabProps) {
                   aria-pressed={selectedCoreConfigKey === 'platform-security'}
                   onClick={() => {
                     setSelectedCoreConfigKey('platform-security');
-                    setSelectedConfigSurfaceKey(null);
-                    setSelectedConfigJobName(null);
                   }}
                 >
                   <div>
@@ -168,11 +158,11 @@ export function ConfigTab(props: ConfigTabProps) {
                 {selectedCoreConfigKey ? <StatusPill tone="muted">Platform</StatusPill> : null}
               </div>
 
-              {selectedCoreConfigKey === 'platform-routing' ? renderPlatformRoutingConfiguration() : null}
+              {selectedCoreConfigKey === 'platform-routing' ? platformRoutingPanel : null}
               {selectedCoreConfigKey === 'embedding-model'
                 ? (dashboardViews.find((v) => v.kind === 'embedding-config')?.render?.(workerViewContext as Parameters<NonNullable<WorkerDashboardViewDefinition['render']>>[0]) ?? null)
                 : null}
-              {selectedCoreConfigKey === 'platform-security' ? renderPlatformSecurityConfiguration() : null}
+              {selectedCoreConfigKey === 'platform-security' ? platformSecurityPanel : null}
               {!selectedCoreConfigKey ? (
                 <p className="empty-state">Select a platform setting on the left to configure it. Worker settings are in each worker's Config subtab.</p>
               ) : null}

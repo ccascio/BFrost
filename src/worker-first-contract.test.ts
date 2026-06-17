@@ -35,11 +35,18 @@ const PHASE_1_CORE_SURFACES = [
   'web/src/tabs/ChannelsTab.tsx',
   'web/src/tabs/ChatTab.tsx',
   'web/src/tabs/ConfigTab.tsx',
+  'web/src/tabs/DashboardFieldEditor.tsx',
   'web/src/tabs/HealthTab.tsx',
+  'web/src/tabs/JobOperationsPanel.tsx',
   'web/src/tabs/JobsTab.tsx',
+  'web/src/tabs/OverviewModelPanel.tsx',
+  'web/src/tabs/OverviewRecipesPanel.tsx',
+  'web/src/tabs/OverviewSetupPanels.tsx',
   'web/src/tabs/OverviewTab.tsx',
+  'web/src/tabs/PlatformConfigPanels.tsx',
   'web/src/tabs/StoreTab.tsx',
   'web/src/tabs/SystemTab.tsx',
+  'web/src/tabs/WorkerConfigPage.tsx',
   'web/src/tabs/WorkersTab.tsx',
 ];
 

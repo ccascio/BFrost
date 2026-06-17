@@ -5,13 +5,13 @@ import { Markdown } from './Markdown';
 import { loadRuntimeWorkerBundle, workerQueueItemDetails, useWorkerDashboardViews } from './workers/registry';
 import type { WorkerDashboardViewDefinition } from './workers/types';
 import { Wizard } from './Wizard';
-import { AlertDialog, Button, CopyButton, CronBuilder, Dialog, ManagementBar, PreviewLinkCard, Progress, Sheet } from './ui';
+import { AlertDialog, Button, CopyButton, Dialog, ManagementBar, PreviewLinkCard, Sheet } from './ui';
 import { workerDashboardUi } from './workers/ui-contract';
 import {
   ActionClass, ActionRequest, ActionState, AppBackupRecord, AppError, AuthSession, AutoBackupSettings, CORE_CHAT_PROMPTS, CORE_MENU_ENTRIES, ChatProject, ChatPromptButton, ChatPromptExample, ChatThread, ChatTurn, CoreConfigKey, CoreDashboardTab, DASHBOARD_REFRESH_INTERVAL_MS, DashboardSectionName, DashboardState, DashboardTab, EventLogRecord, HealthStatus, JOBS_REFRESH_INTERVAL_MS, JobBaseField, JobBooleanField, JobDashboardField, JobDraft, JobMetricsResponse, JobNumberField, JobParamDraftValue, JobPreset, JobRunMetrics, JobSecretReferenceField, JobSelectField, JobStringListField, JobTextField, JobTextareaField, ModelOption, PERMISSION_INFO, PlatformSettings, QueueFilter, QueueItem, RecipeInputStorage, RegisteredPlatformEntry, RunStatus, SchedulerJobState, SchedulerRunRecord, SourceQualityRules, StoreWorkerDetail, StoreWorkerListing, StoreWorkerVersion, WhatsNewEntry, WorkerDashboardManifest, WorkerDashboardSurface, WorkerHealthRequirementStatus, WorkerHealthState, WorkerJobSummary, WorkerKind, WorkerLoadIssue, WorkerOnboardingAction, WorkerOwnedSetting, WorkerRecipe, WorkerRecipeInput, WorkerRecipeStep, WorkerRunMetrics, WorkerSummary, WorkerTabDefinition, toAppError,
 } from './app-types';
 import {
-  ChatSuggestions, ChatWelcome, Detail, DetailBlock, HealthRow, HelpTip, Metric, PipelineNode, PipelineTopology, RUN_ERROR_PREVIEW_CHARS, RunError, STORE_PALETTE_COUNT, STORE_VISUAL_RULES, StatusPill, StoreTrustBadge, StoreVisualWorker, StoreWorkerLogo, addStringListDraftValue, buildChatPromptButtons, buildJobParamsDraft, buildPipelineTopology, buildSurfaceDraft, buildWorkerTabDefinitions, configSurfaceKey, coreMenuCount, draftToHosts, eventSeverityTone, fieldDefaultDraftValue, fieldListPlaceholder, formatBytes, formatDate, formatDuration, formatRelativeTime, formatTime, hostsToDraft, jobConfigSummary, jobScheduleChanges, mergeSection, normalizeStringListItem, providerLabel, queueItemReason, queueItemTone, renderPipelineTab, renderWorkerDashboardView, resolveDashboardTab, resolveSeedPath, runDuration, runSeverity, runStatusSummary, runStatusTone, safeHost, safeWorkerViewCount, sectionEndpoint, sectionsForTab, serializeDashboardFields, serializeJobParams, statusTone, storeAuthorHandle, storeCategoryKey, storeCategoryLabel, storePaletteIndex, storeTrustTone, storeWorkerIcon, stringListDraftIncludes, stringListDraftItems, stringListDraftRows, surfaceDraftHasValue, toggleStringListDraftValue, workerDeclaresView, workerHealthLabel, workerHealthTone, workerOwnsEvent, workerTabId,
+  ChatSuggestions, ChatWelcome, Detail, DetailBlock, HealthRow, HelpTip, Metric, PipelineNode, PipelineTopology, RUN_ERROR_PREVIEW_CHARS, RunError, STORE_PALETTE_COUNT, STORE_VISUAL_RULES, StatusPill, StoreTrustBadge, StoreVisualWorker, StoreWorkerLogo, buildChatPromptButtons, buildJobParamsDraft, buildPipelineTopology, buildSurfaceDraft, buildWorkerTabDefinitions, configSurfaceKey, coreMenuCount, draftToHosts, eventSeverityTone, formatBytes, formatDate, formatDuration, formatRelativeTime, formatTime, hostsToDraft, jobConfigSummary, jobScheduleChanges, mergeSection, normalizeStringListItem, queueItemReason, queueItemTone, renderPipelineTab, renderWorkerDashboardView, resolveDashboardTab, resolveSeedPath, runDuration, runSeverity, runStatusSummary, runStatusTone, safeHost, safeWorkerViewCount, sectionEndpoint, sectionsForTab, serializeDashboardFields, serializeJobParams, statusTone, storeAuthorHandle, storeCategoryKey, storeCategoryLabel, storePaletteIndex, storeTrustTone, storeWorkerIcon, workerDeclaresView, workerOwnsEvent, workerTabId,
 } from './app-helpers';
 import { ActionsTab } from './tabs/ActionsTab';
 import { HealthTab } from './tabs/HealthTab';
@@ -23,6 +23,9 @@ import { SystemTab } from './tabs/SystemTab';
 import { OverviewTab } from './tabs/OverviewTab';
 import { JobsTab } from './tabs/JobsTab';
 import { ConfigTab } from './tabs/ConfigTab';
+import { JobOperationsPanel } from './tabs/JobOperationsPanel';
+import { PlatformRoutingPanel, PlatformSecurityPanel } from './tabs/PlatformConfigPanels';
+import { WorkerConfigPage } from './tabs/WorkerConfigPage';
 
 export default function App() {
   const [dashboard, setDashboard] = useState<DashboardState | null>(null);
@@ -39,8 +42,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [selectedJobName, setSelectedJobName] = useState<string | null>(null);
   const [selectedCoreConfigKey, setSelectedCoreConfigKey] = useState<CoreConfigKey | null>(null);
-  const [selectedConfigJobName, setSelectedConfigJobName] = useState<string | null>(null);
-  const [selectedConfigSurfaceKey, setSelectedConfigSurfaceKey] = useState<string | null>(null);
   const [surfaceDrafts, setSurfaceDrafts] = useState<Record<string, Record<string, JobParamDraftValue>>>({});
   const [openPromptEditors, setOpenPromptEditors] = useState<Record<string, boolean>>({});
   const [expandedChannelId, setExpandedChannelId] = useState<string | null>(null);
@@ -792,7 +793,7 @@ export default function App() {
           setSession({ authenticated: false, authEnabled: true });
           setDashboard(null);
         }
-        throw new Error('error' in payload ? payload.error : 'Failed to load dashboard');
+        throw new Error('error' in payload ? String(payload.error) : 'Failed to load dashboard');
       }
 
       setDashboard((prev) => {
@@ -1357,7 +1358,7 @@ export default function App() {
           <p className="eyebrow">BFrost</p>
           <h1>Control Room</h1>
           <p className="hero-copy">Checking authentication status.</p>
-          {error ? <p className="error-text">{error}</p> : null}
+          {error ? <p className="error-text">{error.friendly}</p> : null}
         </section>
       </main>
     );
@@ -1456,13 +1457,6 @@ export default function App() {
   const configJobCount = 0;
   const configSurfaceCount = 0; // worker surfaces now live in per-worker Config tabs
   const configCoreCount = 3; // platform routing + embedding + security
-  const selectedConfigJob =
-    selectedConfigJobName ? dashboard.cron.jobs.find((job) => job.name === selectedConfigJobName) ?? null : null;
-  const selectedConfigSurface = selectedConfigSurfaceKey
-    ? configGroupsByWorker
-      .flatMap(({ worker, surfaces }) => surfaces.map((surface) => ({ worker, surface })))
-      .find(({ worker, surface }) => configSurfaceKey(worker.id, surface.id) === selectedConfigSurfaceKey) ?? null
-    : null;
   const workerTabDefinitions = buildWorkerTabDefinitions(dashboard.workers, dashboardViews);
   const activeWorkerTab = workerTabDefinitions.find((tab) => tab.id === activeTab) ?? null;
   const workerViewContext = {
@@ -1541,223 +1535,6 @@ export default function App() {
     }),
   ];
 
-  function updateJobDraftParam(jobName: string, draft: JobDraft, key: string, value: JobParamDraftValue) {
-    setJobDrafts((current) => ({
-      ...current,
-      [jobName]: {
-        ...draft,
-        params: {
-          ...draft.params,
-          [key]: value,
-        },
-      },
-    }));
-  }
-
-  function updateSurfaceDraftParam(surfaceKey: string, key: string, value: JobParamDraftValue) {
-    setSurfaceDrafts((current) => ({
-      ...current,
-      [surfaceKey]: {
-        ...(current[surfaceKey] ?? {}),
-        [key]: value,
-      },
-    }));
-  }
-
-  function renderDashboardField(
-    field: JobDashboardField,
-    value: JobParamDraftValue,
-    onChange: (value: JobParamDraftValue) => void,
-    options: { draftKey?: string } = {},
-  ) {
-    if (field.type === 'boolean') {
-      return (
-        <label className="field checkbox" key={field.key}>
-          <span>{field.label}</span>
-          <input
-            type="checkbox"
-            checked={typeof value === 'boolean' ? value : field.defaultValue}
-            onChange={(event) => onChange(event.target.checked)}
-          />
-          {field.helpText ? <small>{field.helpText}</small> : null}
-        </label>
-      );
-    }
-
-    if (field.type === 'string-list') {
-      const rows = stringListDraftRows(value);
-      const suggestions = field.suggestions ?? [];
-      const draftKey = options.draftKey ?? field.key;
-      const customDraft = customListItemDrafts[draftKey] ?? '';
-      const placeholder = field.placeholder ?? fieldListPlaceholder(field);
-
-      function addCustomItem() {
-        const item = customDraft.trim();
-        if (!item) return;
-        onChange(addStringListDraftValue(value, item));
-        setCustomListItemDrafts((current) => ({ ...current, [draftKey]: '' }));
-      }
-
-      return (
-        <div className={`field list-field${suggestions.length > 0 ? ' has-suggestions' : ''}`} key={field.key}>
-          <span>{field.label}</span>
-          {field.helpText ? <small>{field.helpText}</small> : null}
-
-          {suggestions.length > 0 ? (
-            <div className="suggestion-picker">
-              <span>Suggestions</span>
-              <div className="suggestion-chip-grid">
-                {suggestions.map((suggestion) => {
-                  const selected = stringListDraftIncludes(value, suggestion);
-                  return (
-                    <button
-                      key={suggestion}
-                      type="button"
-                      className={`suggestion-chip${selected ? ' selected' : ''}`}
-                      aria-pressed={selected}
-                      onClick={() => onChange(toggleStringListDraftValue(value, suggestion))}
-                    >
-                      {suggestion}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-
-          {/* For suggestion-based fields, hide the editor until at least one item is selected.
-              Items arrive via chip clicks or the custom-entry below, not by typing in an empty row. */}
-          {(suggestions.length === 0 || stringListDraftItems(value).length > 0) ? (
-            <div className="list-editor">
-              {suggestions.length > 0 ? (
-                <span className="list-editor-label">Selected</span>
-              ) : null}
-              {rows.map((item, index) => (
-                <div className="list-editor-row" key={`${field.key}-${index}`}>
-                  <input
-                    type="text"
-                    value={item}
-                    placeholder={placeholder}
-                    onChange={(event) => {
-                      const nextRows = rows.slice();
-                      nextRows[index] = event.target.value;
-                      onChange(nextRows.join('\n'));
-                    }}
-                  />
-                  <button
-                    type="button"
-                    aria-label={`Remove ${field.label.toLowerCase()} item ${index + 1}`}
-                    title="Remove item"
-                    onClick={() => {
-                      const nextRows = rows.slice();
-                      nextRows.splice(index, 1);
-                      onChange(nextRows.join('\n'));
-                    }}
-                    disabled={rows.length <= 1 && item.trim().length === 0}
-                  >
-                    -
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {suggestions.length > 0 ? (
-            <div className="list-custom-entry">
-              <input
-                type="text"
-                value={customDraft}
-                placeholder={placeholder}
-                onChange={(event) =>
-                  setCustomListItemDrafts((current) => ({ ...current, [draftKey]: event.target.value }))
-                }
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    addCustomItem();
-                  }
-                }}
-              />
-              <button type="button" onClick={addCustomItem} disabled={!customDraft.trim()}>
-                Add item
-              </button>
-            </div>
-          ) : (
-            <div className="field-actions">
-              <button
-                type="button"
-                onClick={() => onChange([...rows, ''].join('\n'))}
-              >
-                Add item
-              </button>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    if (field.type === 'textarea') {
-      return (
-        <label className="field prompt-field" key={field.key}>
-          <span>{field.label}</span>
-          <textarea
-            value={String(value)}
-            rows={field.rows ?? 4}
-            placeholder={field.placeholder}
-            onChange={(event) => onChange(event.target.value)}
-          />
-          {field.helpText ? <small>{field.helpText}</small> : null}
-        </label>
-      );
-    }
-
-    if (field.type === 'select') {
-      return (
-        <label className="field" key={field.key}>
-          <span>{field.label}</span>
-          <select
-            value={String(value)}
-            onChange={(event) => onChange(event.target.value)}
-          >
-            {field.options.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          {field.helpText ? <small>{field.helpText}</small> : null}
-        </label>
-      );
-    }
-
-    return (
-      <label className="field" key={field.key}>
-        <span>{field.label}</span>
-        <input
-          type={field.type === 'number' ? 'number' : field.type === 'secret-reference' ? 'password' : 'text'}
-          value={value as string | number}
-          placeholder={field.type === 'secret-reference' || field.type === 'text' ? field.placeholder : undefined}
-          min={field.type === 'number' ? field.min : undefined}
-          max={field.type === 'number' ? field.max : undefined}
-          step={field.type === 'number' ? field.step : undefined}
-          autoComplete={field.type === 'secret-reference' ? 'off' : undefined}
-          onChange={(event) => onChange(field.type === 'number' ? Number(event.target.value) : event.target.value)}
-        />
-        {field.helpText ? <small>{field.helpText}</small> : null}
-      </label>
-    );
-  }
-
-  function renderJobParamField(job: SchedulerJobState, draft: JobDraft, field: JobDashboardField) {
-    const value = draft.params[field.key] ?? fieldDefaultDraftValue(field);
-    return renderDashboardField(
-      field,
-      value,
-      (nextValue) => updateJobDraftParam(job.name, draft, field.key, nextValue),
-      { draftKey: `${job.name}.${field.key}` },
-    );
-  }
-
   return (
     <div className={`dashboard-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}${sidebarMobileOpen ? ' sidebar-mobile-open' : ''}`}>
       <TopBar
@@ -1783,17 +1560,7 @@ export default function App() {
         logoutBusy={busyKey === 'logout'}
         onOpenNavigation={() => setSidebarMobileOpen(true)}
         onModelChange={(event) => setSelectedModelAlias(event.target.value)}
-        onSaveModel={() =>
-          void mutate(
-            'save-model',
-            '/api/default-model',
-            {
-              method: 'POST',
-              body: JSON.stringify({ alias: selectedModelAlias }),
-            },
-            'Default model updated.',
-          )
-        }
+        onSaveModel={() => saveDefaultModel(selectedModelAlias)}
         onTogglePin={() => {
           const isPinned =
             !!dashboard.lmStudio.pinnedModelId &&
@@ -1905,10 +1672,12 @@ export default function App() {
           recipeApplying={recipeApplying}
           setRecipeApplying={setRecipeApplying}
           openChatFromOverview={openChatFromOverview}
-          renderModelPanel={renderModelPanel}
           renderStuckDetectorBanner={renderStuckDetectorBanner}
           dashboardViews={dashboardViews}
           workerViewContext={workerViewContext}
+          selectedModelAlias={selectedModelAlias}
+          setSelectedModelAlias={setSelectedModelAlias}
+          saveDefaultModel={saveDefaultModel}
           setNotice={setNotice}
         />
       ) : null}
@@ -1964,7 +1733,24 @@ export default function App() {
           selectedJob={selectedJob}
           selectedJobRuns={selectedJobRuns}
           setSelectedJobName={setSelectedJobName}
-          renderJobOperations={renderJobOperations}
+          renderJobOperations={(job, runs) => (
+            <JobOperationsPanel
+              dashboard={dashboard}
+              job={job}
+              runs={runs}
+              busyKey={busyKey}
+              jobDrafts={jobDrafts}
+              setJobDrafts={setJobDrafts}
+              confirmSaveJobName={confirmSaveJobName}
+              setConfirmSaveJobName={setConfirmSaveJobName}
+              openPromptEditors={openPromptEditors}
+              setOpenPromptEditors={setOpenPromptEditors}
+              customListItemDrafts={customListItemDrafts}
+              setCustomListItemDrafts={setCustomListItemDrafts}
+              mutate={mutate}
+              triggerRun={triggerRun}
+            />
+          )}
         />
       ) : null}
 
@@ -1974,12 +1760,32 @@ export default function App() {
           configCoreCount={configCoreCount}
           selectedCoreConfigKey={selectedCoreConfigKey}
           setSelectedCoreConfigKey={setSelectedCoreConfigKey}
-          setSelectedConfigSurfaceKey={setSelectedConfigSurfaceKey}
-          setSelectedConfigJobName={setSelectedConfigJobName}
           dashboardViews={dashboardViews}
           workerViewContext={workerViewContext}
-          renderPlatformRoutingConfiguration={renderPlatformRoutingConfiguration}
-          renderPlatformSecurityConfiguration={renderPlatformSecurityConfiguration}
+          platformRoutingPanel={
+            <PlatformRoutingPanel
+              dashboard={dashboard}
+              busyKey={busyKey}
+              activeLocalProviderDraft={activeLocalProviderDraft}
+              setActiveLocalProviderDraft={setActiveLocalProviderDraft}
+              primaryChannelDraft={primaryChannelDraft}
+              setPrimaryChannelDraft={setPrimaryChannelDraft}
+              savePlatformRouting={savePlatformRouting}
+            />
+          }
+          platformSecurityPanel={
+            <PlatformSecurityPanel
+              dashboard={dashboard}
+              busyKey={busyKey}
+              adminPasswordDraft={adminPasswordDraft}
+              setAdminPasswordDraft={setAdminPasswordDraft}
+              sessionTtlDraft={sessionTtlDraft}
+              setSessionTtlDraft={setSessionTtlDraft}
+              jobTimeoutDraft={jobTimeoutDraft}
+              setJobTimeoutDraft={setJobTimeoutDraft}
+              saveCoreSettings={saveCoreSettings}
+            />
+          }
           setActiveTab={setActiveTab}
           setWizardOpen={setWizardOpen}
         />
@@ -1991,36 +1797,20 @@ export default function App() {
         const workerId = activeTab.slice('worker-config:'.length);
         const group = configGroupsByWorker.find((g) => g.worker.id === workerId);
         if (!group) return null;
-        const { worker, surfaces } = group;
         return (
-          <section className="panel tab-page">
-            <div className="panel-head">
-              <div>
-                <p className="panel-kicker">{worker.builtIn ? 'Built-in worker' : 'Local worker'}</p>
-                <h2>{worker.displayName ?? worker.name} — Config</h2>
-              </div>
-              <StatusPill tone={workerHealthTone(worker.healthState)}>
-                {workerHealthLabel(worker.healthState)}
-              </StatusPill>
-            </div>
-
-            {surfaces.length === 0 ? (
-              <p className="empty-state">No configurable settings declared for this worker.</p>
-            ) : null}
-
-            {surfaces.map((surface) => (
-              <div key={surface.id} className="detail-panel config-detail-panel" style={{ marginTop: '1rem' }}>
-                <div className="panel-head section-break">
-                  <div>
-                    <p className="panel-kicker">Worker setting</p>
-                    <h2>{surface.label}</h2>
-                    {surface.description ? <p className="footnote">{surface.description}</p> : null}
-                  </div>
-                </div>
-                {renderWorkerConfigurationSurface({ worker, surface })}
-              </div>
-            ))}
-          </section>
+          <WorkerConfigPage
+            worker={group.worker}
+            surfaces={group.surfaces}
+            dashboard={dashboard}
+            dashboardViews={dashboardViews}
+            surfaceDrafts={surfaceDrafts}
+            setSurfaceDrafts={setSurfaceDrafts}
+            customListItemDrafts={customListItemDrafts}
+            setCustomListItemDrafts={setCustomListItemDrafts}
+            busyKey={busyKey}
+            fetchDashboard={fetchDashboard}
+            saveWorkerConfigurationSurface={saveWorkerConfigurationSurface}
+          />
         );
       })() : null}
 
@@ -2210,87 +2000,15 @@ export default function App() {
     </div>
   );
 
-  function renderModelPanel() {
-    const providersInUse = Array.from(new Set(dashboard.models.map((model) => model.provider)));
-    const currentModel =
-      dashboard.models.find((model) => model.alias === selectedModelAlias) ?? dashboard.defaultModel;
-    const selectedProvider = currentModel.provider;
-    const modelsForProvider = dashboard.models.filter((model) => model.provider === selectedProvider);
-
-    function changeProvider(nextProvider: string) {
-      const firstForProvider = dashboard.models.find((model) => model.provider === nextProvider);
-      if (firstForProvider) setSelectedModelAlias(firstForProvider.alias);
-    }
-
-    return (
-      <article className="panel">
-        <div className="panel-head">
-          <div>
-            <p className="panel-kicker">Default model</p>
-            <h2>Assistant baseline</h2>
-          </div>
-          <StatusPill tone="info">{dashboard.defaultModel.label}</StatusPill>
-        </div>
-
-        <div className="form-grid">
-          <label className="field">
-            <span>Provider</span>
-            <select
-              value={selectedProvider}
-              onChange={(event) => changeProvider(event.target.value)}
-            >
-              {providersInUse.map((provider) => (
-                <option key={provider} value={provider}>
-                  {providerLabel(provider, dashboard.workers)}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="field">
-            <span>Model</span>
-            <select
-              value={selectedModelAlias}
-              onChange={(event) => setSelectedModelAlias(event.target.value)}
-              disabled={modelsForProvider.length === 0}
-            >
-              {modelsForProvider.length === 0 ? (
-                <option value="">(no models available for this provider)</option>
-              ) : null}
-              {modelsForProvider.map((model) => (
-                <option key={model.alias} value={model.alias}>
-                  {model.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <p className="footnote">
-          Pick the provider first, then the model. Cloud provider lists are refreshed from the API
-          when you save an API key; local lists come from your active runtime.
-        </p>
-
-        <div className="panel-actions">
-          <button
-            className="primary"
-            disabled={busyKey === 'save-model'}
-            onClick={() =>
-              void mutate(
-                'save-model',
-                '/api/default-model',
-                {
-                  method: 'POST',
-                  body: JSON.stringify({ alias: selectedModelAlias }),
-                },
-                'Default model updated.',
-              )
-            }
-          >
-            {busyKey === 'save-model' ? 'Saving...' : 'Save default model'}
-          </button>
-        </div>
-      </article>
+  function saveDefaultModel(alias: string) {
+    void mutate(
+      'save-model',
+      '/api/default-model',
+      {
+        method: 'POST',
+        body: JSON.stringify({ alias }),
+      },
+      'Default model updated.',
     );
   }
 
@@ -2346,687 +2064,13 @@ export default function App() {
     );
   }
 
-  function renderJobOperations(job: SchedulerJobState, runs: SchedulerRunRecord[]) {
-    const draft = jobDrafts[job.name] ?? {
-      enabled: job.enabled,
-      cron: job.cron,
-      modelAlias: job.modelAlias,
-      approvalRequired: job.approvalRequired,
-      prompt: job.prompt,
-      params: buildJobParamsDraft(job),
-    };
-    const changes = jobScheduleChanges(job, draft);
-    const runningRun = job.running
-      ? runs.find((run) => run.status === 'running' || run.finishedAt === null)
-      : null;
-
-    return (
-      <div className="detail-body">
-        {!job.workerEnabled ? <p className="error-box">Worker disabled. Enable it from Workers to run this job.</p> : null}
-        {job.running ? (
-          <div className="job-running-progress">
-            <Progress
-              value={null}
-              label={runningRun?.startedAt ? `Running since ${formatDate(runningRun.startedAt)}` : 'Job running'}
-              tone="warning"
-            />
-          </div>
-        ) : null}
-
-        <div className="job-grid standard-job-grid">
-          <label className="field checkbox">
-            <span>Enabled</span>
-            <input
-              type="checkbox"
-              checked={draft.enabled}
-              onChange={(event) =>
-                setJobDrafts((current) => ({
-                  ...current,
-                  [job.name]: { ...draft, enabled: event.target.checked },
-                }))
-              }
-            />
-          </label>
-
-          <div className="field cron-builder-field">
-            <span>Schedule</span>
-            <CronBuilder
-              value={draft.cron}
-              onChange={(cron) =>
-                setJobDrafts((current) => ({
-                  ...current,
-                  [job.name]: { ...draft, cron },
-                }))
-              }
-            />
-          </div>
-
-          <label className="field">
-            <span>Model override</span>
-            <select
-              value={draft.modelAlias}
-              onChange={(event) =>
-                setJobDrafts((current) => ({
-                  ...current,
-                  [job.name]: { ...draft, modelAlias: event.target.value },
-                }))
-              }
-            >
-              <option value="">Use default model</option>
-              {dashboard.models.map((model) => (
-                <option key={model.alias} value={model.alias}>
-                  {model.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {job.approvalRequiredEditable ? (
-            <label className="field checkbox">
-              <span>Require approval</span>
-              <input
-                type="checkbox"
-                checked={draft.approvalRequired}
-                onChange={(event) =>
-                  setJobDrafts((current) => ({
-                    ...current,
-                    [job.name]: { ...draft, approvalRequired: event.target.checked },
-                  }))
-                }
-              />
-            </label>
-          ) : null}
-        </div>
-
-        <div className="panel-actions wrap">
-          <button
-            className="primary"
-            disabled={jobDrafts[job.name] === undefined || confirmSaveJobName === job.name}
-            onClick={() => setConfirmSaveJobName(job.name)}
-          >
-            Save schedule
-          </button>
-          <button
-            disabled={busyKey === `run-${job.name}` || job.running || !job.workerEnabled}
-            onClick={() =>
-              void triggerRun(
-                `run-${job.name}`,
-                `/api/cron-jobs/${job.name}/run`,
-                `${job.label} started.`,
-              )
-            }
-          >
-            {job.running ? 'Running...' : 'Run now'}
-          </button>
-          {jobDrafts[job.name] !== undefined ? (
-            <button
-              type="button"
-              onClick={() => {
-                setConfirmSaveJobName(null);
-                setJobDrafts((current) => {
-                  const next = { ...current };
-                  delete next[job.name];
-                  return next;
-                });
-              }}
-            >
-              Discard changes
-            </button>
-          ) : null}
-        </div>
-
-        {(job.dashboardFields.length > 0 || job.promptEditable) ? renderJobConfiguration(job) : null}
-
-        {renderJobDetail(job, runs)}
-
-        <AlertDialog
-          open={confirmSaveJobName === job.name}
-          onOpenChange={(open) => {
-            if (!open) setConfirmSaveJobName(null);
-          }}
-          title={`Save schedule for ${job.label}?`}
-          description="Review the operational changes before they affect future runs."
-          footer={
-            <>
-              <Button variant="ghost" onClick={() => setConfirmSaveJobName(null)}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                disabled={busyKey === `save-${job.name}` || changes.length === 0}
-                onClick={() => {
-                  setConfirmSaveJobName(null);
-                  void mutate(
-                    `save-${job.name}`,
-                    `/api/cron-jobs/${job.name}`,
-                    {
-                      method: 'POST',
-                      body: JSON.stringify({
-                        enabled: draft.enabled,
-                        cron: draft.cron,
-                        modelAlias: draft.modelAlias,
-                        approvalRequired: draft.approvalRequired,
-                      }),
-                    },
-                    `${job.label} schedule saved.`,
-                  );
-                }}
-              >
-                Confirm save
-              </Button>
-            </>
-          }
-        >
-          {changes.length === 0 ? (
-            <p className="schedule-preview-no-changes">No changes to save.</p>
-          ) : (
-            <table className="schedule-preview-table">
-              <thead>
-                <tr><th>Field</th><th>Current</th><th>New value</th></tr>
-              </thead>
-              <tbody>
-                {changes.map((change) => (
-                  <tr key={change.field}>
-                    <td>{change.field}</td>
-                    <td className="schedule-preview-old">{change.from}</td>
-                    <td className="schedule-preview-new">{change.to}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </AlertDialog>
-      </div>
-    );
-  }
-
-  function renderJobConfiguration(job: SchedulerJobState) {
-    const draft = jobDrafts[job.name] ?? {
-      enabled: job.enabled,
-      cron: job.cron,
-      modelAlias: job.modelAlias,
-      approvalRequired: job.approvalRequired,
-      prompt: job.prompt,
-      params: buildJobParamsDraft(job),
-    };
-    const promptEditorOpen = openPromptEditors[job.name] ?? false;
-
-    function applyPreset(preset: JobPreset) {
-      setJobDrafts((current) => ({
-        ...current,
-        [job.name]: {
-          ...draft,
-          cron: preset.cron ?? draft.cron,
-          params: { ...(draft.params ?? {}), ...(preset.params ?? {}) },
-        },
-      }));
-    }
-
-    return (
-      <div className="detail-body">
-        {job.presets.length > 0 ? (
-          <div className="panel-actions wrap" style={{ marginBottom: '0.75rem' }}>
-            <span className="footnote" style={{ marginRight: '0.25rem' }}>Recipes:</span>
-            {job.presets.map((preset) => {
-              const presetApplied =
-                (preset.cron === undefined || preset.cron === draft.cron) &&
-                Object.entries(preset.params ?? {}).every(([key, value]) => draft.params[key] === value);
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className={`preset-chip${presetApplied ? ' active' : ''}`}
-                  aria-pressed={presetApplied}
-                  title={preset.description}
-                  onClick={() => applyPreset(preset)}
-                >
-                  {preset.label}
-                </button>
-              );
-            })}
-            <span className="footnote" style={{ flexBasis: '100%', marginTop: '0.25rem' }}>
-              Click a recipe to fill the form. Nothing saves until you press Save below.
-            </span>
-          </div>
-        ) : null}
-
-        <div className="job-grid config-field-grid">
-          {job.dashboardFields.map((field) => renderJobParamField(job, draft, field))}
-        </div>
-
-        {job.promptEditable ? (
-          <section className="advanced-settings">
-            <button
-              type="button"
-              className="advanced-settings-toggle"
-              aria-expanded={promptEditorOpen}
-              onClick={() =>
-                setOpenPromptEditors((current) => ({
-                  ...current,
-                  [job.name]: !promptEditorOpen,
-                }))
-              }
-            >
-              <span>
-                <strong>Advanced writing instructions</strong>
-                <small>Keep this closed to use the saved prompt.</small>
-              </span>
-              <span aria-hidden="true">{promptEditorOpen ? 'Hide' : 'Edit'}</span>
-            </button>
-            {promptEditorOpen ? (
-              <label className="field prompt-field advanced-prompt-field">
-                <span>Writing instructions</span>
-                <textarea
-                  value={draft.prompt}
-                  onChange={(event) =>
-                    setJobDrafts((current) => ({
-                      ...current,
-                      [job.name]: { ...draft, prompt: event.target.value },
-                    }))
-                  }
-                  rows={13}
-                />
-                {job.promptHelpText ? <small>{job.promptHelpText}</small> : null}
-                {job.promptExamples && job.promptExamples.length > 0 ? (
-                  <div className="prompt-examples">
-                    <small>Start from an example:</small>
-                    <div className="prompt-example-chips">
-                      {job.promptExamples.map((ex) => (
-                        <button
-                          key={ex.label}
-                          type="button"
-                          className="chip"
-                          title={ex.description}
-                          onClick={() =>
-                            setJobDrafts((current) => ({
-                              ...current,
-                              [job.name]: { ...draft, prompt: ex.value },
-                            }))
-                          }
-                        >
-                          {ex.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-                <button
-                  type="button"
-                  className="secondary-inline"
-                  onClick={() =>
-                    setJobDrafts((current) => ({
-                      ...current,
-                      [job.name]: { ...draft, prompt: job.prompt },
-                    }))
-                  }
-                >
-                  Restore saved instructions
-                </button>
-              </label>
-            ) : null}
-          </section>
-        ) : null}
-
-        <div className="panel-actions wrap">
-          <button
-            className="primary"
-            disabled={busyKey === `config-${job.name}`}
-            onClick={() =>
-              void mutate(
-                `config-${job.name}`,
-                `/api/cron-jobs/${job.name}`,
-                {
-                  method: 'POST',
-                  body: JSON.stringify({
-                    modelAlias: draft.modelAlias,
-                    prompt: draft.prompt,
-                    params: serializeJobParams(job, draft),
-                  }),
-                },
-                `${job.label} configuration saved.`,
-              )
-            }
-          >
-            Save configuration
-          </button>
-          {jobDrafts[job.name] !== undefined ? (
-            <button
-              type="button"
-              onClick={() =>
-                setJobDrafts((current) => {
-                  const next = { ...current };
-                  delete next[job.name];
-                  return next;
-                })
-              }
-            >
-              Discard changes
-            </button>
-          ) : null}
-        </div>
-      </div>
-    );
-  }
-
-
-
-  function renderPlatformRoutingConfiguration() {
-    const providers = dashboard.availableLocalProviders;
-    const channels = dashboard.availableChannels;
-    const activeProviderValue = activeLocalProviderDraft || dashboard.platform.activeLocalProviderId;
-    const primaryChannelValue = primaryChannelDraft || dashboard.platform.primaryChannelId;
-    const dirty =
-      (activeLocalProviderDraft && activeLocalProviderDraft !== dashboard.platform.activeLocalProviderId) ||
-      (primaryChannelDraft && primaryChannelDraft !== dashboard.platform.primaryChannelId);
-
-    return (
-      <div className="detail-body">
-        <p className="footnote">
-          Pick which installed component drives each platform role. Switching does not enable or disable workers —
-          enable/disable lives in the Workers tab.
-        </p>
-
-        <div className="form-grid">
-          <label className="field">
-            <span>Active local LLM platform</span>
-            <select
-              value={activeProviderValue}
-              onChange={(event) => setActiveLocalProviderDraft(event.target.value)}
-            >
-              {providers.length === 0 ? <option value="">(no local providers installed)</option> : null}
-              {providers.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.label} ({entry.id})
-                </option>
-              ))}
-            </select>
-            <span className="footnote">
-              Used by cron jobs and the assistant when running local models. Cloud models keep using their per-model provider.
-            </span>
-          </label>
-
-          <label className="field">
-            <span>Primary channel for notifications</span>
-            <select
-              value={primaryChannelValue}
-              onChange={(event) => setPrimaryChannelDraft(event.target.value)}
-            >
-              {channels.length === 0 ? <option value="">(no channels installed)</option> : null}
-              {channels.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.label} ({entry.id})
-                </option>
-              ))}
-            </select>
-            <span className="footnote">
-              Outbound operator notifications (cron-run outcomes, errors) go here. Inbound user messages still flow through every enabled channel.
-            </span>
-          </label>
-        </div>
-
-        <div className="panel-actions">
-          <button
-            className="primary"
-            disabled={busyKey === 'save-platform-routing' || !dirty}
-            onClick={() => void savePlatformRouting()}
-          >
-            {busyKey === 'save-platform-routing' ? 'Saving...' : 'Save routing'}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  function renderPlatformSecurityConfiguration() {
-    const platform = dashboard.platform;
-    const saving = busyKey === 'save-core-settings';
-    const ttlValue = sessionTtlDraft ?? String(platform.adminSessionTtlHours);
-    const timeoutValue = jobTimeoutDraft ?? String(platform.jobLlmTimeoutMs);
-    const ttlNum = Number(ttlValue);
-    const timeoutNum = Number(timeoutValue);
-    const ttlDirty = Number.isFinite(ttlNum) && ttlNum > 0 && ttlNum !== platform.adminSessionTtlHours;
-    const timeoutDirty = Number.isFinite(timeoutNum) && timeoutNum > 0 && timeoutNum !== platform.jobLlmTimeoutMs;
-
-    return (
-      <div className="detail-body">
-        <p className="footnote">
-          Core platform and security settings. Changes are written to your <code>.env</code> and applied
-          immediately (no restart) unless noted. The admin password itself is never displayed here.
-        </p>
-
-        <div className="form-grid">
-          <label className="field">
-            <span>Admin password {platform.adminPasswordSet ? '(currently set)' : '(not set — dashboard is open)'}</span>
-            <input
-              type="password"
-              value={adminPasswordDraft}
-              placeholder={platform.adminPasswordSet ? 'Enter a new password to change it' : 'Set a password to require login'}
-              onChange={(event) => setAdminPasswordDraft(event.target.value)}
-            />
-            <span className="footnote">
-              Setting or changing the password logs out every session (including this one) — you will be
-              asked to log in again. Minimum 4 characters. Leave the dashboard unprotected only on a
-              machine you fully trust.
-            </span>
-            <div className="panel-actions">
-              <button
-                className="primary"
-                disabled={saving || adminPasswordDraft.trim().length < 4}
-                onClick={() => void saveCoreSettings({ adminPassword: adminPasswordDraft })}
-              >
-                {saving ? 'Saving...' : platform.adminPasswordSet ? 'Change password' : 'Set password'}
-              </button>
-              {platform.adminPasswordSet ? (
-                <button
-                  className="ghost"
-                  disabled={saving}
-                  onClick={() => {
-                    if (window.confirm('Remove the admin password and disable login? Anyone who can reach the dashboard will have full control.')) {
-                      void saveCoreSettings({ adminPassword: '' });
-                    }
-                  }}
-                >
-                  Disable login
-                </button>
-              ) : null}
-            </div>
-          </label>
-
-          <label className="field checkbox">
-            <span>Allow local worker code execution ({platform.localWorkerCodeEnabled ? 'allowed' : 'blocked — recommended'})</span>
-            <input
-              type="checkbox"
-              checked={platform.localWorkerCodeEnabled}
-              disabled={saving}
-              onChange={(event) => void saveCoreSettings({ localWorkerCodeEnabled: event.target.checked })}
-            />
-            <span className="footnote">
-              When off, local workers that ship executable code are not compiled or run — only built-in
-              workers and manifest-only local workers load. Turn this on solely for worker code you have
-              reviewed and trust. After enabling, re-enable affected workers from the Workers tab (or
-              restart) so they load.
-            </span>
-          </label>
-
-          <label className="field">
-            <span>Login session length (hours)</span>
-            <input
-              type="number"
-              min={1}
-              value={ttlValue}
-              onChange={(event) => setSessionTtlDraft(event.target.value)}
-            />
-            <span className="footnote">How long a login stays valid before re-authentication is required.</span>
-            <div className="panel-actions">
-              <button
-                className="primary"
-                disabled={saving || !ttlDirty}
-                onClick={() => void saveCoreSettings({ adminSessionTtlHours: ttlNum })}
-              >
-                {saving ? 'Saving...' : 'Save session length'}
-              </button>
-            </div>
-          </label>
-
-          <label className="field">
-            <span>Job model timeout (ms)</span>
-            <input
-              type="number"
-              min={1}
-              value={timeoutValue}
-              onChange={(event) => setJobTimeoutDraft(event.target.value)}
-            />
-            <span className="footnote">Maximum time a scheduled job's model call may run before it is aborted.</span>
-            <div className="panel-actions">
-              <button
-                className="primary"
-                disabled={saving || !timeoutDirty}
-                onClick={() => void saveCoreSettings({ jobLlmTimeoutMs: timeoutNum })}
-              >
-                {saving ? 'Saving...' : 'Save timeout'}
-              </button>
-            </div>
-          </label>
-
-          <label className="field">
-            <span>Dashboard bind address</span>
-            <input type="text" value={`${platform.adminHost}:${platform.adminPort}`} readOnly disabled />
-            <span className="footnote">
-              Read-only. Changing the host or port requires editing <code>ADMIN_HOST</code> / <code>ADMIN_PORT</code>{' '}
-              in <code>.env</code> and restarting. Keep it on <code>127.0.0.1</code> unless you understand the
-              exposure — a non-loopback bind makes the dashboard reachable from your network.
-            </span>
-          </label>
-        </div>
-      </div>
-    );
-  }
-
-  function renderWorkerConfigurationSurface({
-    worker,
-    surface,
-  }: {
-    worker: WorkerSummary;
-    surface: WorkerDashboardSurface;
-  }) {
-    // Channel workers register a 'channel-connect' view that covers their credential
-    // surface(s). Render it generically — no worker ids hard-coded here.
-    const connectView = dashboardViews.find(
-      (v) => v.workerId === worker.id && v.kind === 'channel-connect' && v.surfaceIds.includes(surface.id),
-    );
-    if (connectView) {
-      return <>{connectView.render({ onSaved: () => void fetchDashboard(true) })}</>;
-    }
-
-    const key = configSurfaceKey(worker.id, surface.id);
-    const fields = surface.fields ?? [];
-    const draft = surfaceDrafts[key] ?? buildSurfaceDraft(surface, dashboard.workerData);
-    const canPersist = Boolean(surface.path && !surface.path.includes('#'));
-    const canSubmit = canPersist && surfaceDraftHasValue(fields, draft);
-
-    if (fields.length === 0) {
-      return (
-        <div className="detail-body">
-          <p className="empty-state">
-            {worker.name} declares {surface.label}, but it does not expose manifest fields yet.
-          </p>
-        </div>
-      );
-    }
-
-    return (
-      <div className="detail-body">
-        <div className="job-grid config-field-grid">
-          {fields.map((field) =>
-            renderDashboardField(
-              field,
-              draft[field.key] ?? fieldDefaultDraftValue(field, dashboard.workerData),
-              (nextValue) => updateSurfaceDraftParam(key, field.key, nextValue),
-              { draftKey: `${key}.${field.key}` },
-            ),
-          )}
-        </div>
-
-        <div className="panel-actions wrap">
-          <button
-            className="primary"
-            disabled={busyKey === `config-surface-${key}` || !canSubmit}
-            onClick={() => void saveWorkerConfigurationSurface(worker, surface)}
-          >
-            {busyKey === `config-surface-${key}` ? 'Saving...' : 'Save configuration'}
-          </button>
-          {surfaceDrafts[key] !== undefined ? (
-            <button
-              type="button"
-              onClick={() =>
-                setSurfaceDrafts((current) => {
-                  const next = { ...current };
-                  delete next[key];
-                  return next;
-                })
-              }
-            >
-              Discard changes
-            </button>
-          ) : null}
-          {!canPersist ? <span className="footnote">This manifest declares defaults, but no save endpoint.</span> : null}
-        </div>
-      </div>
-    );
-  }
-
-  function renderJobDetail(job: SchedulerJobState, runs: SchedulerRunRecord[]) {
-    const latestFinished = runs.find((run) => run.finishedAt);
-
-    return (
-      <div className="detail-body">
-        <div className="detail-grid">
-          <Detail label="Worker" value={`${job.workerName} (${job.workerId})`} />
-          <Detail label="Worker type" value={job.workerBuiltIn ? 'built-in' : 'local'} />
-          <Detail label="Enabled" value={job.enabled ? 'yes' : 'no'} />
-          <Detail label="Cron" value={job.cron} />
-          <Detail label="Effective model" value={job.effectiveModelAlias} />
-          <Detail label="Last trigger" value={job.lastTrigger ?? 'n/a'} />
-          <Detail label="Last started" value={formatDate(job.lastStartedAt)} />
-          <Detail label="Last finished" value={formatDate(job.lastFinishedAt)} />
-          <Detail label="Last duration" value={runDuration(latestFinished) ?? 'n/a'} />
-          <Detail label="Stored runs" value={String(runs.length)} />
-        </div>
-
-        <DetailBlock label="Last summary" value={job.lastSummary ?? undefined} />
-        <DetailBlock label="Last error" value={job.lastError ?? undefined} tone="error" />
-
-        <div className="timeline">
-          {runs.map((run) => (
-            <div className={`timeline-event ${runSeverity(run)}`} key={run.id}>
-              <div>
-                <strong>{run.summary ?? runStatusSummary(run)}</strong>
-                <span>{run.status} · {formatDate(run.startedAt)}</span>
-                <span>{run.trigger} · {run.modelAlias}{typeof run.itemCount === 'number' ? ` · ${run.itemCount} items` : ''}{runDuration(run) ? ` · ${runDuration(run)}` : ''}</span>
-                {run.error ? <RunError message={run.error} /> : null}
-              </div>
-              <StatusPill tone={runStatusTone(run.status)}>{run.status}</StatusPill>
-            </div>
-          ))}
-          {runs.length === 0 ? (
-            <div className="empty-state">
-              <p>This job has not run yet.</p>
-              <p className="footnote">
-                Click <strong>Run now</strong> in the job row above to trigger it once, or wait for
-                its next scheduled time. Runs appear here as soon as the job finishes.
-              </p>
-            </div>
-          ) : null}
-        </div>
-      </div>
-    );
-  }
-
   // ── Stuck detector banner ─────────────────────────────────────────────────
 
   function renderStuckDetectorBanner() {
+    const currentDashboard = dashboard;
+    if (!currentDashboard) return null;
     const STUCK_THRESHOLD = 3;
-    const stuckJobs = dashboard.cron.jobs.filter(
+    const stuckJobs = currentDashboard.cron.jobs.filter(
       (j) => j.enabled && j.workerEnabled && (j.consecutiveErrors ?? 0) >= STUCK_THRESHOLD,
     );
     if (stuckJobs.length === 0) return null;
@@ -3066,16 +2110,18 @@ export default function App() {
 
 
   function renderQueueMetrics(interactive: boolean) {
+    const currentDashboard = dashboard;
+    if (!currentDashboard) return null;
     return (
       <div className="metric-row">
-        <Metric label="Total" value={String(dashboard.queue.total)} active={queueFilter === 'all'} onClick={interactive ? () => setQueueFilter('all') : undefined} />
-        <Metric label="Queued" value={String(dashboard.queue.queued)} active={queueFilter === 'queued'} onClick={interactive ? () => setQueueFilter('queued') : undefined} />
-        <Metric label="Approved" value={String(dashboard.queue.approved)} active={queueFilter === 'approved'} onClick={interactive ? () => setQueueFilter('approved') : undefined} />
-        <Metric label="Posted" value={String(dashboard.queue.posted)} active={queueFilter === 'posted'} onClick={interactive ? () => setQueueFilter('posted') : undefined} />
-        <Metric label="Rejected" value={String(dashboard.queue.rejected)} active={queueFilter === 'rejected'} onClick={interactive ? () => setQueueFilter('rejected') : undefined} />
-        <Metric label="Failed" value={String(dashboard.queue.failed)} active={queueFilter === 'failed'} onClick={interactive ? () => setQueueFilter('failed') : undefined} />
-        <Metric label="Seen" value={String(dashboard.queue.seen)} active={queueFilter === 'seen'} onClick={interactive ? () => setQueueFilter('seen') : undefined} />
-        <Metric label="Retrying" value={String(dashboard.queue.retrying)} active={queueFilter === 'retrying'} onClick={interactive ? () => setQueueFilter('retrying') : undefined} />
+        <Metric label="Total" value={String(currentDashboard.queue.total)} active={queueFilter === 'all'} onClick={interactive ? () => setQueueFilter('all') : undefined} />
+        <Metric label="Queued" value={String(currentDashboard.queue.queued)} active={queueFilter === 'queued'} onClick={interactive ? () => setQueueFilter('queued') : undefined} />
+        <Metric label="Approved" value={String(currentDashboard.queue.approved)} active={queueFilter === 'approved'} onClick={interactive ? () => setQueueFilter('approved') : undefined} />
+        <Metric label="Posted" value={String(currentDashboard.queue.posted)} active={queueFilter === 'posted'} onClick={interactive ? () => setQueueFilter('posted') : undefined} />
+        <Metric label="Rejected" value={String(currentDashboard.queue.rejected)} active={queueFilter === 'rejected'} onClick={interactive ? () => setQueueFilter('rejected') : undefined} />
+        <Metric label="Failed" value={String(currentDashboard.queue.failed)} active={queueFilter === 'failed'} onClick={interactive ? () => setQueueFilter('failed') : undefined} />
+        <Metric label="Seen" value={String(currentDashboard.queue.seen)} active={queueFilter === 'seen'} onClick={interactive ? () => setQueueFilter('seen') : undefined} />
+        <Metric label="Retrying" value={String(currentDashboard.queue.retrying)} active={queueFilter === 'retrying'} onClick={interactive ? () => setQueueFilter('retrying') : undefined} />
       </div>
     );
   }

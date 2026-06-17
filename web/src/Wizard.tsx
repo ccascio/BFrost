@@ -21,7 +21,14 @@ import { useState, useEffect, useRef } from 'react';
 // ── Shared types (duplicated from App.tsx to keep the component self-contained)
 
 type WorkerKind = 'feature' | 'channel' | 'provider';
-type WorkerHealthState = 'healthy' | 'degraded' | 'missing' | 'unconfigured' | 'disabled';
+type WorkerHealthState =
+  | 'healthy'
+  | 'degraded'
+  | 'missing'
+  | 'unconfigured'
+  | 'missing_credentials'
+  | 'missing_dependency'
+  | 'disabled';
 
 interface WorkerSummary {
   id: string;

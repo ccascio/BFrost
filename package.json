@@ -51,7 +51,7 @@
     "logs": "node scripts/logs.mjs",
     "install-service": "node scripts/install-service.mjs",
     "uninstall-service": "node scripts/uninstall-service.mjs",
-    "test": "rm -rf dist && tsc && node --test $(find dist -name '*.test.js' -print | sort)",
+    "test": "rm -rf dist && tsc && node --test $(find dist -name '*.test.js' -print | sort) && npm run check:web",
     "task": "node dist/cron.js",
     "dev": "node scripts/dev.mjs",
     "dev:watch": "tsc --watch",

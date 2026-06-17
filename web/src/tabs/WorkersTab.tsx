@@ -46,7 +46,7 @@ export function WorkersTab(props: WorkersTabProps) {
                   <p className="panel-kicker">{group.label}</p>
                   <span className="footnote">{group.description}</span>
                 </div>
-                <StatusPill tone="muted">{groupWorkers.length}</StatusPill>
+                <StatusPill tone="muted">{String(groupWorkers.length)}</StatusPill>
               </div>
               {groupWorkers.map((worker) => renderWorkerRow(worker))}
             </div>
@@ -57,6 +57,7 @@ export function WorkersTab(props: WorkersTabProps) {
   }
 
   function renderWorkerRow(worker: WorkerSummary) {
+    const updateVersion = storeUpdates.get(worker.id);
     return (
       <div className="summary-row" key={worker.id}>
         <div>
@@ -72,8 +73,8 @@ export function WorkersTab(props: WorkersTabProps) {
           <StatusPill tone={workerHealthTone(worker.healthState)}>
             {worker.runningJobCount > 0 ? 'running' : workerHealthLabel(worker.healthState)}
           </StatusPill>
-          {storeUpdates.has(worker.id) ? (
-            <StatusPill tone="info">v{storeUpdates.get(worker.id)} available</StatusPill>
+          {updateVersion ? (
+            <StatusPill tone="info">{`v${updateVersion} available`}</StatusPill>
           ) : null}
           <button
             type="button"
@@ -198,7 +199,7 @@ export function WorkersTab(props: WorkersTabProps) {
               >
                 Rescan
               </button>
-              <StatusPill tone="muted">{dashboard.workers.length} loaded</StatusPill>
+              <StatusPill tone="muted">{`${dashboard.workers.length} loaded`}</StatusPill>
             </div>
           </div>
 
