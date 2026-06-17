@@ -4,7 +4,6 @@ import {
   CronJobUpdateBodySchema,
   DashboardStateSchema,
   ChatMessageBodySchema,
-  CloudApiKeysBodySchema,
   DefaultModelBodySchema,
   JobDashboardFieldSchema,
   LmStudioActionBodySchema,
@@ -21,10 +20,6 @@ test('admin API schemas accept expected dashboard payloads', () => {
   assert.deepEqual(
     DefaultModelBodySchema.parse({ alias: 'local-model' }),
     { alias: 'local-model' },
-  );
-  assert.deepEqual(
-    CloudApiKeysBodySchema.parse({ openaiApiKey: 'sk-test', anthropicApiKey: 'sk-ant-test' }),
-    { openaiApiKey: 'sk-test', anthropicApiKey: 'sk-ant-test' },
   );
   assert.deepEqual(
     CronJobUpdateBodySchema.parse({
@@ -134,7 +129,6 @@ test('admin API schemas reject unexpected actions and keys', () => {
   assert.equal(QueueItemActionBodySchema.safeParse({ id: 'q_123', action: 'delete' }).success, false);
   assert.equal(LmStudioActionBodySchema.safeParse({ action: 'restart' }).success, false);
   assert.equal(DefaultModelBodySchema.safeParse({ alias: 'local-model', extra: true }).success, false);
-  assert.equal(CloudApiKeysBodySchema.safeParse({ openaiApiKey: 'sk-test', extra: true }).success, false);
 });
 
 test('dashboard response schema accepts the control-room payload shape', () => {

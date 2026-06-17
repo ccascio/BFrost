@@ -9,11 +9,6 @@ export const DefaultModelBodySchema = z.object({
   alias: z.string().min(1),
 }).strict();
 
-export const CloudApiKeysBodySchema = z.object({
-  openaiApiKey: z.string().optional(),
-  anthropicApiKey: z.string().optional(),
-}).strict();
-
 export const PlatformSettingsBodySchema = z.object({
   activeLocalProviderId: z.string().optional(),
   primaryChannelId: z.string().optional(),
