@@ -120,7 +120,21 @@ export interface WorkerManifest {
    * Core collects all recipes via the registry and applies them generically — no worker IDs
    * appear in core code, only in the manifest where they are declared.
    */
+  /**
+   * Optional sample items published by `/api/admin/seed-sample-data` on first boot.
+   * Core iterates all workers' sample items generically — no worker ids appear in core code.
+   */
+  sampleItems?: WorkerSampleItem[];
   recipes?: WorkerRecipe[];
+}
+
+export interface WorkerSampleItem {
+  itemType: string;
+  title: string;
+  shortDesc: string;
+  url: string;
+  tags?: string[];
+  state?: string;
 }
 
 /** How a recipe input's value is persisted when the recipe is applied. */

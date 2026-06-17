@@ -3,7 +3,8 @@ import { BadRequestError } from '../../../admin-route';
 import { getDefaultModel } from '../../../config';
 import { recordEventSafe } from '../../../event-log';
 import { refreshActiveLocalProviderModels } from '../../../model-discovery';
-import { LmStudioActionBodySchema } from '../../../admin-api';
+import { LmStudioActionBodySchema, LmStudioModelsSectionSchema } from '../../../admin-api';
+import { getActiveLocalProvider } from '../../../workers/registry';
 import { getMemoryCleanupSpec, probeMemoryCleanup, runMemoryCleanup } from './runtime';
 
 const WORKER_ID = 'core.providers.lmstudio';
@@ -22,6 +23,24 @@ async function buildStatus() {
 }
 
 export const lmStudioProviderApiRoutes: AdminApiRoute[] = [
+  {
+    method: 'GET',
+    path: '/api/dashboard/lmstudio-models',
+    workerIds: [WORKER_ID],
+    async handle() {
+      const localProvider = getActiveLocalProvider();
+      if (!localProvider?.listLoadedModels) {
+        return { status: 200, body: LmStudioModelsSectionSchema.parse({ loadedModels: [] }) };
+      }
+      const loaded = await localProvider.listLoadedModels();
+      return {
+        status: 200,
+        body: LmStudioModelsSectionSchema.parse({
+          loadedModels: loaded.map((item) => item.modelKey || item.identifier || 'unknown'),
+        }),
+      };
+    },
+  },
   {
     method: 'POST',
     path: '/api/lmstudio',

@@ -57,8 +57,8 @@ interface OverviewTabProps {
   wizardCompleted: boolean;
   cloudTestReply: string | null;
   setCloudTestReply: Dispatch<SetStateAction<string | null>>;
-  cloudConnectProvider: 'openai' | 'anthropic';
-  setCloudConnectProvider: Dispatch<SetStateAction<'openai' | 'anthropic'>>;
+  cloudConnectProvider: string;
+  setCloudConnectProvider: Dispatch<SetStateAction<string>>;
   cloudConnectKey: string;
   setCloudConnectKey: Dispatch<SetStateAction<string>>;
   cloudConnecting: boolean;
@@ -127,6 +127,7 @@ export function OverviewTab(props: OverviewTabProps) {
     workerViewContext,
     setNotice,
   } = props;
+  const localProviderWorkerIds = new Set(dashboard.availableLocalProviders.map((provider) => provider.workerId));
 
   return (
     <section className="tab-page">
@@ -244,16 +245,20 @@ export function OverviewTab(props: OverviewTabProps) {
         </section>
       ) : null}
       {(() => {
-        const lmRunning = dashboard.lmStudio.running && dashboard.lmStudio.loadedCount > 0;
-        const alreadyAdopted = dashboard.platform.activeLocalProviderId === 'lmstudio' && dashboard.lmStudio.running;
-        if (!lmRunning || alreadyAdopted || lmAdoptDismissed) return null;
+        const detectedProvider = dashboard.availableLocalProviders[0];
+        const localRuntimeRunning = dashboard.lmStudio.running && dashboard.lmStudio.loadedCount > 0;
+        const alreadyAdopted =
+          detectedProvider &&
+          dashboard.platform.activeLocalProviderId === detectedProvider.id &&
+          localRuntimeRunning;
+        if (!detectedProvider || !localRuntimeRunning || alreadyAdopted || lmAdoptDismissed) return null;
         const count = dashboard.lmStudio.loadedCount;
         return (
-          <section className="panel lm-adoption-banner" aria-label="LM Studio detected">
+          <section className="panel lm-adoption-banner" aria-label="Local model provider detected">
             <div className="panel-head" style={{ alignItems: 'flex-start' }}>
               <div>
                 <p className="panel-kicker" style={{ color: 'var(--good, #1f7a57)' }}>Detected</p>
-                <h2>Found LM Studio with {count} model{count !== 1 ? 's' : ''} loaded</h2>
+                <h2>Found {detectedProvider.label} with {count} model{count !== 1 ? 's' : ''} loaded</h2>
               </div>
               <button
                 type="button"
@@ -273,7 +278,7 @@ export function OverviewTab(props: OverviewTabProps) {
                 onClick={async () => {
                   setLmAdopting(true);
                   try {
-                    await fetch('/api/workers/core.providers.lmstudio', {
+                    await fetch(`/api/workers/${encodeURIComponent(detectedProvider.workerId)}`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       credentials: 'include',
@@ -283,7 +288,7 @@ export function OverviewTab(props: OverviewTabProps) {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       credentials: 'include',
-                      body: JSON.stringify({ activeLocalProviderId: 'lmstudio' }),
+                      body: JSON.stringify({ activeLocalProviderId: detectedProvider.id }),
                     });
                     await fetchDashboard(true);
                     setLmAdoptDismissed(true);
@@ -294,7 +299,7 @@ export function OverviewTab(props: OverviewTabProps) {
                   }
                 }}
               >
-                {lmAdopting ? 'Connecting…' : 'Use LM Studio →'}
+                {lmAdopting ? 'Connecting…' : `Use ${detectedProvider.label} →`}
               </button>
               <button type="button" onClick={() => setLmAdoptDismissed(true)}>Later</button>
             </div>
@@ -406,10 +411,36 @@ export function OverviewTab(props: OverviewTabProps) {
       ) : null}
 
       {(() => {
-        // Show cloud quick-connect when no real model is configured and LM Studio isn't detected.
+        const credentialProviders = dashboard.workers
+          .filter((worker) => worker.kind === 'provider' && !localProviderWorkerIds.has(worker.id))
+          .map((worker) => {
+            const surface = worker.dashboard.settings.find((setting) =>
+              setting.path &&
+              setting.fields?.some((field) => field.type === 'secret-reference' && field.key === 'apiKey'),
+            );
+            return surface?.path
+              ? {
+                  id: worker.id,
+                  label: worker.displayName ?? worker.name,
+                  fieldLabel:
+                    surface.fields?.find((field) => field.type === 'secret-reference' && field.key === 'apiKey')?.label ??
+                    `${worker.displayName ?? worker.name} API key`,
+                  placeholder:
+                    surface.fields?.find((field) => field.type === 'secret-reference' && field.key === 'apiKey')?.placeholder ??
+                    '',
+                  path: surface.path,
+                }
+              : null;
+          })
+          .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+        const selectedCredentialProvider =
+          credentialProviders.find((provider) => provider.id === cloudConnectProvider) ??
+          credentialProviders[0];
+
+        // Show cloud quick-connect when no real model is configured and no local runtime is detected.
         const hasRealModel = dashboard.models.some((m) => m.provider !== 'demo');
-        const lmRunning = dashboard.lmStudio.running;
-        if (hasRealModel || lmRunning) return null;
+        const localRuntimeRunning = dashboard.lmStudio.running;
+        if (hasRealModel || localRuntimeRunning || !selectedCredentialProvider) return null;
         if (cloudTestReply) {
           return (
             <section className="panel cloud-connect-panel cloud-connect-success">
@@ -440,29 +471,23 @@ export function OverviewTab(props: OverviewTabProps) {
             </p>
             <div className="cloud-connect-form">
               <div className="panel-actions" style={{ marginBottom: '0.5rem' }}>
-                <button
-                  type="button"
-                  className={cloudConnectProvider === 'openai' ? 'primary' : ''}
-                  onClick={() => setCloudConnectProvider('openai')}
-                >
-                  OpenAI
-                </button>
-                <button
-                  type="button"
-                  className={cloudConnectProvider === 'anthropic' ? 'primary' : ''}
-                  onClick={() => setCloudConnectProvider('anthropic')}
-                >
-                  Anthropic
-                </button>
+                {credentialProviders.map((provider) => (
+                  <button
+                    key={provider.id}
+                    type="button"
+                    className={selectedCredentialProvider.id === provider.id ? 'primary' : ''}
+                    onClick={() => setCloudConnectProvider(provider.id)}
+                  >
+                    {provider.label}
+                  </button>
+                ))}
               </div>
               <label className="field" style={{ maxWidth: '380px' }}>
-                <span>
-                  {cloudConnectProvider === 'openai' ? 'OpenAI API key' : 'Anthropic API key'}
-                </span>
+                <span>{selectedCredentialProvider.fieldLabel}</span>
                 <input
                   type="password"
                   value={cloudConnectKey}
-                  placeholder={cloudConnectProvider === 'openai' ? 'sk-…' : 'sk-ant-…'}
+                  placeholder={selectedCredentialProvider.placeholder}
                   onChange={(e) => setCloudConnectKey(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && cloudConnectKey.trim()) void connectCloud(); }}
                 />
@@ -483,10 +508,7 @@ export function OverviewTab(props: OverviewTabProps) {
         async function connectCloud() {
           setCloudConnecting(true);
           try {
-            const credPath = cloudConnectProvider === 'openai'
-              ? '/api/workers/providers-openai/credentials'
-              : '/api/workers/providers-anthropic/credentials';
-            await fetch(credPath, {
+            await fetch(selectedCredentialProvider.path, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               credentials: 'include',
@@ -651,10 +673,17 @@ export function OverviewTab(props: OverviewTabProps) {
         {renderModelPanel()}
         {(() => {
           // Render the active local provider's runtime panel from its worker bundle.
-          const lmView = dashboardViews.find((v) => v.workerId === 'core.providers.lmstudio');
-          const lmWorker = dashboard.workers.find((w) => w.id === 'core.providers.lmstudio');
-          if (!lmView || !lmWorker || !lmWorker.enabled) return null;
-          return lmView.render!(workerViewContext as Parameters<NonNullable<typeof lmView.render>>[0]);
+          const localProvider = dashboard.availableLocalProviders.find(
+            (provider) => provider.id === dashboard.platform.activeLocalProviderId,
+          );
+          const localProviderWorker = localProvider
+            ? dashboard.workers.find((worker) => worker.id === localProvider.workerId)
+            : undefined;
+          const localProviderView = localProvider
+            ? dashboardViews.find((view) => view.workerId === localProvider.workerId)
+            : undefined;
+          if (!localProviderView?.render || !localProviderWorker?.enabled) return null;
+          return localProviderView.render(workerViewContext as Parameters<NonNullable<typeof localProviderView.render>>[0]);
         })()}
       </section>
 

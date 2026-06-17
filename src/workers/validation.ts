@@ -54,6 +54,7 @@ export function validateBackendWorkerModules(modules: BackendWorkerModule[]): vo
 export function validateAdminApiRoutes(routes: AdminApiRoute[], workerIds: Iterable<string>): void {
   const knownWorkerIds = new Set(workerIds);
   const routeKeys = new Set<string>();
+  const routePatterns = new Set<string>();
 
   for (const route of routes) {
     const key = `${route.method.toUpperCase()} ${route.path}`;
@@ -61,6 +62,12 @@ export function validateAdminApiRoutes(routes: AdminApiRoute[], workerIds: Itera
       throw new WorkerModuleValidationError(`Duplicate admin API route: ${key}`);
     }
     routeKeys.add(key);
+
+    const pattern = adminRoutePatternKey(route.method, route.path);
+    if (routePatterns.has(pattern)) {
+      throw new WorkerModuleValidationError(`Duplicate admin API route pattern: ${key}`);
+    }
+    routePatterns.add(pattern);
 
     if (route.workerIds.length === 0) {
       throw new WorkerModuleValidationError(`Admin API route ${key} must declare at least one worker owner.`);
@@ -71,6 +78,14 @@ export function validateAdminApiRoutes(routes: AdminApiRoute[], workerIds: Itera
       }
     }
   }
+}
+
+function adminRoutePatternKey(method: string, routePath: string): string {
+  const segments = routePath
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => (segment.startsWith(':') ? ':' : segment));
+  return `${method.toUpperCase()} ${segments.join('/')}`;
 }
 
 function validateWorkerManifest(worker: WorkerManifest): void {

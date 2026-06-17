@@ -139,4 +139,8 @@ Cite sources inline. Return Markdown only.`,
       run: (modelId, params) => runPersonalResearch(modelId, PersonalResearchParamsSchema.parse(params ?? {})),
     },
   ],
+  sampleItems: [
+    { itemType: 'research.note', title: 'Research Note: Local AI Trends 2026', url: 'https://example.com/research/local-ai', shortDesc: 'An analysis of on-device model inference improvements over the past 12 months.' },
+    { itemType: 'research.note', title: 'Research Note: Privacy-preserving Architectures', url: 'https://example.com/research/privacy', shortDesc: 'Survey of approaches that minimise data leaving the device without sacrificing capability.' },
+  ],
 };

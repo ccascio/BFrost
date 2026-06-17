@@ -63,8 +63,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     }
 
     // Unified dispatch: core and worker routes share one router table per request
-    // (rebuilt each time because workers toggle at runtime). Core registers first
-    // so it always wins a collision; colliding worker routes are logged, not served.
+    // (rebuilt each time because workers toggle at runtime). Duplicate route
+    // patterns fail registration so worker/core ownership conflicts are visible.
     if (await buildRequestRouter().dispatch(req, res, url)) return;
     if (req.method === 'GET') {
       return serveStatic(url.pathname, res);
@@ -81,44 +81,21 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
   }
 }
 
-// Worker apiRoutes toggle at runtime, so the combined table must be rebuilt each
-// request. Core routes register first (they always win on collision). Worker routes
-// that duplicate a core route are skipped and logged once per route-set change.
-let lastWorkerRouteSig = '';
-const reportedCollisions = new Set<string>();
-
 function buildRequestRouter(): HttpRouter {
   const workerRoutes = listRegisteredApiRoutes();
-  const workerSig = workerRoutes.map((r) => `${r.method} ${r.path}`).join('\n');
-  if (workerSig !== lastWorkerRouteSig) {
-    lastWorkerRouteSig = workerSig;
-    reportedCollisions.clear();
-  }
-
   const router = new HttpRouter();
   registerCoreRoutes(router);
 
   for (const route of workerRoutes) {
-    try {
-      router.add(route.method, route.path, async (rq, rs, ctx) => {
-        const response = await route.handle({
-          req: rq,
-          url: ctx.url,
-          readJsonBody,
-          getDashboardState: buildDashboardState,
-        });
-        sendJson(rs, response.status, response.body);
+    router.add(route.method, route.path, async (rq, rs, ctx) => {
+      const response = await route.handle({
+        req: rq,
+        url: ctx.url,
+        readJsonBody,
+        getDashboardState: buildDashboardState,
       });
-    } catch {
-      const sig = `${route.method.toUpperCase()} ${route.path}`;
-      if (!reportedCollisions.has(sig)) {
-        reportedCollisions.add(sig);
-        console.warn(
-          `[Router] Worker route conflicts with an existing route and will be ignored: ${sig}` +
-          ` (owner: ${route.workerIds.join(', ')})`,
-        );
-      }
-    }
+      sendJson(rs, response.status, response.body);
+    });
   }
 
   return router;

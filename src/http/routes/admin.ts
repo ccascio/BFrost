@@ -76,26 +76,26 @@ export function registerAdminRoutes(router: HttpRouter): void {
     return sendJson(res, 200, { ok: true, disabledCount: disabledIds.length });
   });
 
-  // Seed the dashboard with sample data for first-time users
+  // Seed the dashboard with sample data for first-time users.
+  // Each worker declares its own sample items via manifest.sampleItems — no worker ids appear here.
   router.add('POST', '/api/admin/seed-sample-data', async (_req, res) => {
-    const SAMPLE_NEWS = [
-      { title: 'AI researchers unveil new language model benchmark', url: 'https://example.com/ai-benchmark', shortDesc: 'A new benchmark suite tests reasoning, code, and multi-step planning across 20 open-source models.' },
-      { title: 'Open-source robotics platform gains momentum', url: 'https://example.com/robotics', shortDesc: 'Community contributions double in six months as developers build affordable home automation robots.' },
-      { title: 'Privacy-first browser extension hits 1M installs', url: 'https://example.com/privacy-ext', shortDesc: 'The extension blocks 99% of trackers with no configuration needed and is fully open-source.' },
-      { title: 'Local AI inference now possible on mid-range laptops', url: 'https://example.com/local-ai', shortDesc: 'Optimised runtimes let 7B-parameter models run at usable speeds on hardware costing under $800.' },
-      { title: 'Decentralised social network reaches 10 million users', url: 'https://example.com/decentralised', shortDesc: 'Federated protocol lets users own their data while still connecting across platforms.' },
-    ];
-    const SAMPLE_RESEARCH = [
-      { title: 'Research Note: Local AI Trends 2026', url: 'https://example.com/research/local-ai', shortDesc: 'An analysis of on-device model inference improvements over the past 12 months.' },
-      { title: 'Research Note: Privacy-preserving Architectures', url: 'https://example.com/research/privacy', shortDesc: 'Survey of approaches that minimise data leaving the device without sacrificing capability.' },
-    ];
-    for (const item of SAMPLE_NEWS) {
-      await publishItem({ producerWorkerId: 'core.news', itemType: 'news.article', title: item.title, shortDesc: item.shortDesc, url: item.url, tags: ['sample'], state: 'queued' });
+    const workers = listWorkers();
+    let seeded = 0;
+    for (const worker of workers) {
+      for (const item of worker.sampleItems ?? []) {
+        await publishItem({
+          producerWorkerId: worker.id,
+          itemType: item.itemType,
+          title: item.title,
+          shortDesc: item.shortDesc,
+          url: item.url,
+          tags: [...(item.tags ?? []), 'sample'],
+          state: (item.state ?? 'queued') as 'queued',
+        });
+        seeded++;
+      }
     }
-    for (const item of SAMPLE_RESEARCH) {
-      await publishItem({ producerWorkerId: 'core.research', itemType: 'research.note', title: item.title, shortDesc: item.shortDesc, url: item.url, tags: ['sample'], state: 'queued' });
-    }
-    await recordEventSafe({ category: 'admin', action: 'sample_data_seeded', summary: 'Sample data seeded for demo purposes.', metadata: { newsCount: SAMPLE_NEWS.length, researchCount: SAMPLE_RESEARCH.length } });
-    return sendJson(res, 200, { ok: true, seeded: SAMPLE_NEWS.length + SAMPLE_RESEARCH.length });
+    await recordEventSafe({ category: 'admin', action: 'sample_data_seeded', summary: 'Sample data seeded for demo purposes.', metadata: { seeded } });
+    return sendJson(res, 200, { ok: true, seeded });
   });
 }

@@ -110,12 +110,12 @@ export default function App() {
   const [recipeApplied, setRecipeApplied] = useState<Set<string>>(new Set());
   const [recipeApplying, setRecipeApplying] = useState(false);
 
-  // LM Studio psychic adoption — shown once per session when LM Studio is detected running.
+  // Local runtime adoption — shown once per session when a local provider is detected running.
   const [lmAdoptDismissed, setLmAdoptDismissed] = useState(false);
   const [lmAdopting, setLmAdopting] = useState(false);
 
   // Cloud provider quick-connect widget state.
-  const [cloudConnectProvider, setCloudConnectProvider] = useState<'openai' | 'anthropic'>('openai');
+  const [cloudConnectProvider, setCloudConnectProvider] = useState('');
   const [cloudConnectKey, setCloudConnectKey] = useState('');
   const [cloudConnecting, setCloudConnecting] = useState(false);
   const [cloudTestReply, setCloudTestReply] = useState<string | null>(null);
@@ -3080,4 +3080,3 @@ export default function App() {
     );
   }
 }
-

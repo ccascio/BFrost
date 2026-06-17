@@ -50,6 +50,18 @@ test('admin route validation rejects duplicate routes and unknown owners', () =>
   assert.throws(() => validateAdminApiRoutes([route], ['local.other']), /unknown worker owner/);
 });
 
+test('admin route validation rejects duplicate parameterized route patterns', () => {
+  const first = routeFixture('/api/workers/:id/settings');
+  const second = routeFixture('/api/workers/:workerId/settings');
+  const specific = routeFixture('/api/workers/rescan/settings');
+
+  assert.throws(
+    () => validateAdminApiRoutes([first, second], ['local.one']),
+    /Duplicate admin API route pattern/,
+  );
+  assert.doesNotThrow(() => validateAdminApiRoutes([first, specific], ['local.one']));
+});
+
 function moduleFixture(options: {
   workerId?: string;
   jobId?: string;
@@ -99,3 +111,13 @@ function moduleFixture(options: {
   };
 }
 
+function routeFixture(path: string) {
+  return {
+    method: 'POST',
+    path,
+    workerIds: ['local.one'],
+    async handle() {
+      return { status: 200, body: { ok: true } };
+    },
+  };
+}

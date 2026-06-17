@@ -267,6 +267,13 @@ export const newsWorker: WorkerManifest = {
       run: (modelId, params) => runNewsDigest(modelId, NewsDigestParamsSchema.parse(params ?? {})),
     },
   ],
+  sampleItems: [
+    { itemType: 'news.article', title: 'AI researchers unveil new language model benchmark', url: 'https://example.com/ai-benchmark', shortDesc: 'A new benchmark suite tests reasoning, code, and multi-step planning across 20 open-source models.' },
+    { itemType: 'news.article', title: 'Open-source robotics platform gains momentum', url: 'https://example.com/robotics', shortDesc: 'Community contributions double in six months as developers build affordable home automation robots.' },
+    { itemType: 'news.article', title: 'Privacy-first browser extension hits 1M installs', url: 'https://example.com/privacy-ext', shortDesc: 'The extension blocks 99% of trackers with no configuration needed and is fully open-source.' },
+    { itemType: 'news.article', title: 'Local AI inference now possible on mid-range laptops', url: 'https://example.com/local-ai', shortDesc: 'Optimised runtimes let 7B-parameter models run at usable speeds on hardware costing under $800.' },
+    { itemType: 'news.article', title: 'Decentralised social network reaches 10 million users', url: 'https://example.com/decentralised', shortDesc: 'Federated protocol lets users own their data while still connecting across platforms.' },
+  ],
   summarizeForAssistant(item) {
     const title = safeStr(item['title']) || 'Untitled';
     const state = safeStr(item['state']);

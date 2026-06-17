@@ -83,7 +83,6 @@ import {
   DefaultModelBodySchema,
   EventsSectionSchema,
   LmStudioActionBodySchema,
-  LmStudioModelsSectionSchema,
   LocalEmbeddingModelsSectionSchema,
   type LocalEmbeddingModelsSection,
   StoreInstallBodySchema,
@@ -98,7 +97,6 @@ import {
   type CronRunsSection,
   type DashboardState,
   type EventsSection,
-  type LmStudioModelsSection,
   type WorkerDataSection,
   type QueueSection,
   type JobMetricsResponse,
@@ -294,17 +292,6 @@ export async function buildLocalEmbeddingModelsSection(): Promise<LocalEmbedding
   }
 
   return LocalEmbeddingModelsSectionSchema.parse({ models: [] });
-}
-
-export async function buildLmStudioModelsSection(): Promise<LmStudioModelsSection> {
-  const localProvider = getActiveLocalProvider();
-  if (!localProvider?.listLoadedModels) {
-    return LmStudioModelsSectionSchema.parse({ loadedModels: [] });
-  }
-  const loaded = await localProvider.listLoadedModels();
-  return LmStudioModelsSectionSchema.parse({
-    loadedModels: loaded.map((item) => item.modelKey || item.identifier || 'unknown'),
-  });
 }
 
 /** Compute percentile (0–100) of a sorted numeric array. Returns null if empty. */
