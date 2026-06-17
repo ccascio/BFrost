@@ -20,6 +20,7 @@ import { StoreTab } from '../tabs/StoreTab';
 import { ChannelsTab } from '../tabs/ChannelsTab';
 import { ChatTab } from '../tabs/ChatTab';
 import { WorkersTab } from '../tabs/WorkersTab';
+import { SystemTab } from '../tabs/SystemTab';
 import type { RefObject } from 'react';
 import type { ActionRequest, DashboardState } from '../app-types';
 
@@ -160,6 +161,39 @@ const cases: SmokeCase[] = [
       deleteChatThread: () => {},
       sendDashboardChat: () => {},
       fillChatDraft: () => {},
+    }),
+  },
+  {
+    name: 'SystemTab (empty)',
+    el: createElement(SystemTab, {
+      dashboard: {
+        ...mockDashboard,
+        dependencies: {
+          lmStudioCli: { ok: true, detail: 'ok' },
+          sqliteCli: { ok: true, detail: 'ok' },
+          ffmpeg: { ok: true, detail: 'ok' },
+          whisperCli: { ok: true, detail: 'ok' },
+          whisperModel: { ok: true, detail: 'ok' },
+          embeddingModelReachable: { ok: true, detail: 'ok' },
+        },
+        backups: [],
+        events: [],
+        app: { adminUrl: 'http://127.0.0.1:3030' },
+      } as unknown as DashboardState,
+      whatsNew: null,
+      autoBackupSettings: null,
+      setAutoBackupSettings: () => {},
+      saveAutoBackup: async () => {},
+      busyKey: null,
+      mutate: () => {},
+      restoreBackup: async () => {},
+      cancelRestore: async () => {},
+      resetChecks: { wipeWorkerState: false, wipeCredentials: false, wipeBackups: false },
+      setResetChecks: () => {},
+      resetConfirmOpen: false,
+      setResetConfirmOpen: () => {},
+      executeFactoryReset: async () => {},
+      setActiveTab: () => {},
     }),
   },
   {
