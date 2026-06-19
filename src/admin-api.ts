@@ -259,6 +259,16 @@ export const SchedulerRunRecordSchema = z.object({
   summary: z.string().nullable(),
   error: z.string().nullable(),
   itemCount: z.number().nullable(),
+  attempts: z.array(z.object({
+    attempt: z.number().int().min(1),
+    startedAt: z.string(),
+    finishedAt: z.string(),
+    status: z.enum(['success', 'error', 'skipped']),
+    summary: z.string().nullable().optional(),
+    error: z.string().nullable().optional(),
+    itemCount: z.number().nullable().optional(),
+    nextDelayMs: z.number().int().nonnegative().optional(),
+  }).strict()).default([]),
 }).strict();
 
 export const WorkerJobSummarySchema = z.object({

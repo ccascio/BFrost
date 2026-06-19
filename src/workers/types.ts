@@ -344,6 +344,11 @@ export interface WorkerJobManifest {
   defaultParams?: Record<string, unknown>;
   dashboardFields: WorkerJobDashboardField[];
   /**
+   * Optional scheduler retry policy. When omitted, scheduled/manual executions use the
+   * platform default retry budget. Set `maxRetries: 0` for jobs that must fail fast.
+   */
+  retryPolicy?: WorkerJobRetryPolicy;
+  /**
    * Optional library of one-click recipes the dashboard surfaces above the job edit form.
    * Each preset is a friendly snapshot of cron + params for a common use case ("Tech news
    * weekday mornings", "Quiet weekly digest", …). Applying a preset updates the draft
@@ -351,6 +356,17 @@ export interface WorkerJobManifest {
    */
   presets?: WorkerJobPreset[];
   run: (modelId: string, params?: Record<string, unknown>) => Promise<WorkerJobRunResult>;
+}
+
+export interface WorkerJobRetryPolicy {
+  /** Number of retries after the first failed attempt. Defaults to the platform policy. */
+  maxRetries?: number;
+  /** Delay before the first retry. Later retries use exponential backoff. */
+  initialBackoffMs?: number;
+  /** Upper bound for any retry delay. */
+  maxBackoffMs?: number;
+  /** Random +/- ratio applied to each delay. Use 0 for deterministic jobs/tests. */
+  jitterRatio?: number;
 }
 
 export interface WorkerJobPreset {

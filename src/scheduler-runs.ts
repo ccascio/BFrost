@@ -8,6 +8,18 @@ const RUN_RETENTION = 200;
 
 export const SchedulerRunStatusSchema = z.enum(['running', 'success', 'error', 'skipped']);
 export const SchedulerRunTriggerSchema = z.enum(['schedule', 'manual']);
+export const SchedulerRunAttemptStatusSchema = z.enum(['success', 'error', 'skipped']);
+
+const SchedulerRunAttemptSchema = z.object({
+  attempt: z.number().int().min(1),
+  startedAt: z.string(),
+  finishedAt: z.string(),
+  status: SchedulerRunAttemptStatusSchema,
+  summary: z.string().nullable().optional(),
+  error: z.string().nullable().optional(),
+  itemCount: z.number().nullable().optional(),
+  nextDelayMs: z.number().int().nonnegative().optional(),
+});
 
 const SchedulerRunRecordSchema = z.object({
   id: z.string().min(1),
@@ -21,10 +33,12 @@ const SchedulerRunRecordSchema = z.object({
   summary: z.string().nullable(),
   error: z.string().nullable(),
   itemCount: z.number().nullable(),
+  attempts: z.array(SchedulerRunAttemptSchema).default([]),
 });
 
 export const SchedulerRunRecordsSchema = z.array(SchedulerRunRecordSchema);
 export type SchedulerRunStatus = z.infer<typeof SchedulerRunStatusSchema>;
+export type SchedulerRunAttempt = z.infer<typeof SchedulerRunAttemptSchema>;
 export type SchedulerRunRecord = z.infer<typeof SchedulerRunRecordSchema>;
 
 export interface SchedulerRunStartInput {
@@ -41,6 +55,17 @@ export interface SchedulerRunFinishInput {
   summary?: string | null;
   error?: string | null;
   itemCount?: number | null;
+}
+
+export interface SchedulerRunAttemptInput {
+  attempt: number;
+  startedAt: string;
+  finishedAt: string;
+  status: z.infer<typeof SchedulerRunAttemptStatusSchema>;
+  summary?: string | null;
+  error?: string | null;
+  itemCount?: number | null;
+  nextDelayMs?: number;
 }
 
 export interface AbandonSchedulerRunsInput {
@@ -61,10 +86,35 @@ export async function startSchedulerRun(input: SchedulerRunStartInput): Promise<
     summary: null,
     error: null,
     itemCount: null,
+    attempts: [],
   };
   const runs = await loadSchedulerRuns(RUN_RETENTION);
   await saveRuns([run, ...runs]);
   return run;
+}
+
+export async function recordSchedulerRunAttempt(
+  id: string,
+  input: SchedulerRunAttemptInput,
+): Promise<SchedulerRunRecord | null> {
+  const runs = await loadSchedulerRuns(RUN_RETENTION);
+  let updated: SchedulerRunRecord | null = null;
+  const attempt = SchedulerRunAttemptSchema.parse(input);
+  const next = runs.map((run) => {
+    if (run.id !== id) return run;
+    const attempts = run.attempts.filter((current) => current.attempt !== attempt.attempt);
+    attempts.push(attempt);
+    attempts.sort((a, b) => a.attempt - b.attempt);
+    updated = { ...run, attempts };
+    return updated;
+  });
+
+  if (!updated) {
+    return null;
+  }
+
+  await saveRuns(next);
+  return updated;
 }
 
 export async function finishSchedulerRun(

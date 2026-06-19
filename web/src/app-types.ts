@@ -256,6 +256,18 @@ export interface SchedulerRunRecord {
   summary: string | null;
   error: string | null;
   itemCount: number | null;
+  attempts: SchedulerRunAttempt[];
+}
+
+export interface SchedulerRunAttempt {
+  attempt: number;
+  startedAt: string;
+  finishedAt: string;
+  status: 'success' | 'error' | 'skipped';
+  summary?: string | null;
+  error?: string | null;
+  itemCount?: number | null;
+  nextDelayMs?: number;
 }
 
 export interface WorkerJobSummary {

@@ -11,17 +11,25 @@ import {
   abandonRunningSchedulerRuns,
   finishSchedulerRun,
   listSchedulerRuns,
+  recordSchedulerRunAttempt,
   startSchedulerRun,
 } from './scheduler-runs';
 import { acquireSchedulerExecutionLock } from './scheduler-locks';
 import { isWorkerEnabled, loadWorkerState, type WorkerStateStore } from './workers/state';
 import { detach } from './process-lifecycle';
+import type { WorkerJobRetryPolicy } from './workers/types';
 
 const SCHEDULER_STATE_STORE_KEY = 'scheduler.state';
 // Recover a missed slot if it elapsed within this window. Sized to cover a daily
 // job (e.g. an 8am digest) after an overnight or full-workday outage/sleep, while
 // still treating older slots as too stale to be worth replaying.
 export const CATCHUP_WINDOW_MS = 26 * 60 * 60 * 1000; // 26 hours
+const DEFAULT_JOB_RETRY_POLICY: Required<WorkerJobRetryPolicy> = {
+  maxRetries: 2,
+  initialBackoffMs: 1_000,
+  maxBackoffMs: 30_000,
+  jitterRatio: 0.2,
+};
 
 /**
  * A missed slot is worth recovering only if it is in the past and not older than
@@ -649,6 +657,44 @@ interface RunJobWorkOptions {
   notifyOnCompletion?: boolean;
 }
 
+function normalizeRetryPolicy(policy: WorkerJobRetryPolicy | undefined): Required<WorkerJobRetryPolicy> {
+  return {
+    maxRetries: clampInt(policy?.maxRetries, DEFAULT_JOB_RETRY_POLICY.maxRetries, 0, 10),
+    initialBackoffMs: clampInt(policy?.initialBackoffMs, DEFAULT_JOB_RETRY_POLICY.initialBackoffMs, 0, 300_000),
+    maxBackoffMs: clampInt(policy?.maxBackoffMs, DEFAULT_JOB_RETRY_POLICY.maxBackoffMs, 0, 300_000),
+    jitterRatio: clampNumber(policy?.jitterRatio, DEFAULT_JOB_RETRY_POLICY.jitterRatio, 0, 1),
+  };
+}
+
+function clampInt(value: number | undefined, fallback: number, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.min(Math.max(Math.floor(value), min), max);
+}
+
+function clampNumber(value: number | undefined, fallback: number, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.min(Math.max(value, min), max);
+}
+
+export function retryDelayMs(
+  attempt: number,
+  policy: Required<WorkerJobRetryPolicy>,
+  random = Math.random,
+): number {
+  const base = Math.min(
+    policy.maxBackoffMs,
+    policy.initialBackoffMs * 2 ** Math.max(0, attempt - 1),
+  );
+  if (base <= 0 || policy.jitterRatio <= 0) return Math.max(0, Math.round(base));
+  const jitter = base * policy.jitterRatio * (random() * 2 - 1);
+  return Math.max(0, Math.round(base + jitter));
+}
+
+function sleep(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function runJobWork(
   name: JobName,
   jobSettings: CronJobSettings,
@@ -660,80 +706,140 @@ async function runJobWork(
 ): Promise<void> {
   const registered = getRegisteredWorkerJob(name);
   const effectiveParams = options.paramsOverride ?? jobSettings.params;
-  try {
-    const result = await runNamedJob(name, effectiveModelAlias, effectiveParams);
-    const finishedAt = new Date().toISOString();
-    runtimeCache[name] = {
-      ...buildJobState(name, jobSettings),
-      running: false,
-      lastStartedAt: startedAt,
-      lastFinishedAt: finishedAt,
-      lastStatus: 'success',
-      lastSummary: result.summary,
-      lastError: null,
-      lastTrigger: trigger,
-    };
-    await recordEventSafe({
-      category: 'job',
-      action: 'succeeded',
-      summary: `${jobLabels()[name]} completed successfully.`,
-      metadata: {
-        job: name,
-        workerId: registered.worker.id,
-        workerName: registered.worker.name,
-        trigger,
-        modelAlias: result.modelAlias,
-        itemCount: result.itemCount ?? null,
-        startedAt,
-        finishedAt,
-      },
-    });
-    if (runRecord) {
-      await finishSchedulerRunSafe(runRecord.id, {
-        finishedAt,
-        status: 'success',
-        summary: result.summary,
-        error: null,
-        itemCount: result.itemCount ?? null,
+  const retryPolicy = normalizeRetryPolicy(registered.job.retryPolicy);
+  const maxAttempts = retryPolicy.maxRetries + 1;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const attemptStartedAt = new Date().toISOString();
+    try {
+      const result = await runNamedJob(name, effectiveModelAlias, effectiveParams);
+      const finishedAt = new Date().toISOString();
+      if (runRecord) {
+        await recordSchedulerRunAttemptSafe(runRecord.id, {
+          attempt,
+          startedAt: attemptStartedAt,
+          finishedAt,
+          status: 'success',
+          summary: result.summary,
+          error: null,
+          itemCount: result.itemCount ?? null,
+        });
+      }
+      runtimeCache[name] = {
+        ...buildJobState(name, jobSettings),
+        running: false,
+        lastStartedAt: startedAt,
+        lastFinishedAt: finishedAt,
+        lastStatus: 'success',
+        lastSummary: result.summary,
+        lastError: null,
+        lastTrigger: trigger,
+      };
+      await recordEventSafe({
+        category: 'job',
+        action: 'succeeded',
+        summary: `${jobLabels()[name]} completed successfully.`,
+        metadata: {
+          job: name,
+          workerId: registered.worker.id,
+          workerName: registered.worker.name,
+          trigger,
+          modelAlias: result.modelAlias,
+          itemCount: result.itemCount ?? null,
+          startedAt,
+          finishedAt,
+          attempt,
+          maxAttempts,
+        },
       });
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    const finishedAt = new Date().toISOString();
-    const skipped = message.includes('Could not acquire queue lock');
-    runtimeCache[name] = {
-      ...buildJobState(name, jobSettings),
-      running: false,
-      lastStartedAt: startedAt,
-      lastFinishedAt: finishedAt,
-      lastStatus: skipped ? 'skipped' : 'error',
-      lastSummary: null,
-      lastError: message,
-      lastTrigger: trigger,
-    };
-    await recordEventSafe({
-      category: 'job',
-      action: skipped ? 'skipped' : 'failed',
-      severity: skipped ? 'warning' : 'error',
-      summary: `${jobLabels()[name]} ${skipped ? 'was skipped' : 'failed'}.`,
-      metadata: {
-        job: name,
-        workerId: registered.worker.id,
-        workerName: registered.worker.name,
-        trigger,
-        error: message,
-        startedAt,
-        finishedAt,
-      },
-    });
-    if (runRecord) {
-      await finishSchedulerRunSafe(runRecord.id, {
-        finishedAt,
-        status: skipped ? 'skipped' : 'error',
-        summary: null,
-        error: message,
-        itemCount: null,
+      if (runRecord) {
+        await finishSchedulerRunSafe(runRecord.id, {
+          finishedAt,
+          status: 'success',
+          summary: result.summary,
+          error: null,
+          itemCount: result.itemCount ?? null,
+        });
+      }
+      break;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const finishedAt = new Date().toISOString();
+      const skipped = message.includes('Could not acquire queue lock');
+      const finalAttempt = skipped || attempt >= maxAttempts;
+      const nextDelayMs = finalAttempt ? undefined : retryDelayMs(attempt, retryPolicy);
+
+      if (runRecord) {
+        await recordSchedulerRunAttemptSafe(runRecord.id, {
+          attempt,
+          startedAt: attemptStartedAt,
+          finishedAt,
+          status: skipped ? 'skipped' : 'error',
+          summary: null,
+          error: message,
+          itemCount: null,
+          ...(nextDelayMs !== undefined ? { nextDelayMs } : {}),
+        });
+      }
+
+      if (!finalAttempt) {
+        await recordEventSafe({
+          category: 'job',
+          action: 'retrying',
+          severity: 'warning',
+          summary: `${jobLabels()[name]} failed on attempt ${attempt}; retrying in ${Math.round(nextDelayMs! / 1000)}s.`,
+          metadata: {
+            job: name,
+            workerId: registered.worker.id,
+            workerName: registered.worker.name,
+            trigger,
+            error: message,
+            attempt,
+            maxAttempts,
+            nextDelayMs,
+          },
+        });
+        await sleep(nextDelayMs!);
+        continue;
+      }
+
+      runtimeCache[name] = {
+        ...buildJobState(name, jobSettings),
+        running: false,
+        lastStartedAt: startedAt,
+        lastFinishedAt: finishedAt,
+        lastStatus: skipped ? 'skipped' : 'error',
+        lastSummary: null,
+        lastError: message,
+        lastTrigger: trigger,
+      };
+      await recordEventSafe({
+        category: 'job',
+        action: skipped ? 'skipped' : 'failed',
+        severity: skipped ? 'warning' : 'error',
+        summary: `${jobLabels()[name]} ${skipped ? 'was skipped' : 'failed'}.`,
+        metadata: {
+          job: name,
+          workerId: registered.worker.id,
+          workerName: registered.worker.name,
+          trigger,
+          error: message,
+          startedAt,
+          finishedAt,
+          attempt,
+          maxAttempts,
+        },
       });
+      if (runRecord) {
+        await finishSchedulerRunSafe(runRecord.id, {
+          finishedAt,
+          status: skipped ? 'skipped' : 'error',
+          summary: null,
+          error: message,
+          itemCount: null,
+        });
+      }
+      break;
     }
   }
 
@@ -769,6 +875,17 @@ async function finishSchedulerRunSafe(
     await finishSchedulerRun(id, input);
   } catch (err) {
     console.warn('[Scheduler] Failed to record scheduler run finish:', err);
+  }
+}
+
+async function recordSchedulerRunAttemptSafe(
+  id: string,
+  input: Parameters<typeof recordSchedulerRunAttempt>[1],
+): Promise<void> {
+  try {
+    await recordSchedulerRunAttempt(id, input);
+  } catch (err) {
+    console.warn('[Scheduler] Failed to record scheduler run attempt:', err);
   }
 }
 

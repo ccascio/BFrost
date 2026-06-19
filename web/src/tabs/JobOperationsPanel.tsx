@@ -497,8 +497,30 @@ function JobTimeline({ job, runs }: { job: SchedulerJobState; runs: SchedulerRun
             <div>
               <strong>{run.summary ?? runStatusSummary(run)}</strong>
               <span>{run.status} · {formatDate(run.startedAt)}</span>
-              <span>{run.trigger} · {run.modelAlias}{typeof run.itemCount === 'number' ? ` · ${run.itemCount} items` : ''}{runDuration(run) ? ` · ${runDuration(run)}` : ''}</span>
+              <span>
+                {run.trigger} · {run.modelAlias}
+                {typeof run.itemCount === 'number' ? ` · ${run.itemCount} items` : ''}
+                {runDuration(run) ? ` · ${runDuration(run)}` : ''}
+                {run.attempts.length > 1 ? ` · ${run.attempts.length} attempts` : ''}
+              </span>
               {run.error ? <RunError message={run.error} /> : null}
+              {run.attempts.length > 1 ? (
+                <details className="attempt-details">
+                  <summary>Attempt history</summary>
+                  <div className="stack-list">
+                    {run.attempts.map((attempt) => (
+                      <div className="mini-card" key={attempt.attempt}>
+                        <strong>Attempt {attempt.attempt}: {attempt.status}</strong>
+                        <span className="footnote">
+                          {formatDate(attempt.startedAt)} → {formatDate(attempt.finishedAt)}
+                          {attempt.nextDelayMs !== undefined ? ` · retried after ${Math.round(attempt.nextDelayMs / 1000)}s` : ''}
+                        </span>
+                        {attempt.error ? <RunError message={attempt.error} /> : null}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
             </div>
             <StatusPill tone={runStatusTone(run.status)}>{run.status}</StatusPill>
           </div>

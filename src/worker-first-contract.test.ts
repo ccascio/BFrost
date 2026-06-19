@@ -80,7 +80,7 @@ async function walk(relDir: string, results: string[]): Promise<void> {
     if (!entry.isFile()) continue;
     const ext = path.extname(entry.name);
     if (!CONTRACT_FILE_EXTENSIONS.has(ext)) continue;
-    if (entry.name.includes('.test.')) continue;
+    if (path.basename(entry.name, ext).includes('.test')) continue;
     results.push(relPath);
   }
 }

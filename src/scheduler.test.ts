@@ -34,10 +34,12 @@ async function pollUntil<T>(
 const FAKE_WORKER_ID = 'test.fake-scheduler-worker';
 const SUCCESS_JOB_ID = 'test.fake-scheduler-success';
 const FAIL_JOB_ID = 'test.fake-scheduler-fail';
+const TRANSIENT_JOB_ID = 'test.fake-scheduler-transient';
 const LATE_WORKER_ID = 'test.fake-scheduler-late-worker';
 const LATE_JOB_ID = 'test.fake-scheduler-late-job';
 
 function buildFakeWorkerModule(): BackendWorkerModule {
+  let transientAttempts = 0;
   const manifest: WorkerManifest = {
     id: FAKE_WORKER_ID,
     name: 'Fake Scheduler Worker',
@@ -63,6 +65,30 @@ function buildFakeWorkerModule(): BackendWorkerModule {
         run: async () => ({ summary: 'Fake job completed.', itemCount: 3 }),
       },
       {
+        id: TRANSIENT_JOB_ID,
+        workerId: FAKE_WORKER_ID,
+        label: 'Fake Transient Job',
+        description: 'A test job that fails once and then succeeds.',
+        defaultEnabled: true,
+        defaultCron: '0 0 * * *',
+        defaultModelAlias: 'gpt-5.4-mini',
+        approvalRequiredDefault: false,
+        approvalRequiredEditable: false,
+        defaultPrompt: '',
+        prompt: { editable: false },
+        paramsSchema: z.object({}),
+        defaultParams: {},
+        dashboardFields: [],
+        retryPolicy: { maxRetries: 1, initialBackoffMs: 1, maxBackoffMs: 1, jitterRatio: 0 },
+        run: async () => {
+          transientAttempts += 1;
+          if (transientAttempts === 1) {
+            throw new Error('Provider warming up.');
+          }
+          return { summary: 'Fake transient job recovered.', itemCount: 2 };
+        },
+      },
+      {
         id: FAIL_JOB_ID,
         workerId: FAKE_WORKER_ID,
         label: 'Fake Failing Job',
@@ -77,6 +103,7 @@ function buildFakeWorkerModule(): BackendWorkerModule {
         paramsSchema: z.object({}),
         defaultParams: {},
         dashboardFields: [],
+        retryPolicy: { maxRetries: 0 },
         run: async () => {
           throw new Error('Fake job failed on purpose.');
         },
@@ -173,6 +200,54 @@ test('scheduler integration — successful job produces a success run record and
     assert.equal(jobState.lastStatus, 'success');
     assert.equal(jobState.lastSummary, 'Fake job completed.');
     assert.equal(jobState.lastTrigger, 'manual');
+  } finally {
+    unregisterLocalWorkerModule(FAKE_WORKER_ID);
+    config.appDbPath = prevDbPath;
+    setOpenAIApiKey(prevOpenaiKey);
+    config.modelFallbackAliases = prevFallbacks;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('scheduler integration — transient job retries with backoff and records attempts', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-sched-integration-'));
+  const prevDbPath = config.appDbPath;
+  const prevOpenaiKey = resolveOpenAIApiKey();
+  const prevFallbacks = config.modelFallbackAliases;
+
+  config.appDbPath = path.join(dir, 'app.sqlite');
+  setOpenAIApiKey('test-key');
+  config.modelFallbackAliases = [];
+
+  registerLoadedLocalModule(buildFakeWorkerModule());
+
+  try {
+    await triggerJobNow(TRANSIENT_JOB_ID);
+
+    const runs = await pollUntil(
+      () => listSchedulerRuns(),
+      (rs) => rs.some((r) => r.job === TRANSIENT_JOB_ID && r.status !== 'running'),
+    );
+
+    const run = runs.find((r) => r.job === TRANSIENT_JOB_ID);
+    assert.ok(run, 'run record exists');
+    assert.equal(run.status, 'success');
+    assert.equal(run.summary, 'Fake transient job recovered.');
+    assert.equal(run.itemCount, 2);
+    assert.equal(run.attempts.length, 2);
+    assert.equal(run.attempts[0].status, 'error');
+    assert.match(run.attempts[0].error ?? '', /Provider warming up/);
+    assert.equal(run.attempts[0].nextDelayMs, 1);
+    assert.equal(run.attempts[1].status, 'success');
+    assert.equal(run.attempts[1].summary, 'Fake transient job recovered.');
+
+    const snapshot = await getSchedulerSnapshot();
+    const jobState = snapshot.jobs.find((j) => j.name === TRANSIENT_JOB_ID);
+    assert.ok(jobState, 'snapshot includes the transient job');
+    assert.equal(jobState.running, false);
+    assert.equal(jobState.lastStatus, 'success');
+    assert.equal(jobState.lastSummary, 'Fake transient job recovered.');
   } finally {
     unregisterLocalWorkerModule(FAKE_WORKER_ID);
     config.appDbPath = prevDbPath;

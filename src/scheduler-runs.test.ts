@@ -9,6 +9,7 @@ import {
   abandonRunningSchedulerRuns,
   finishSchedulerRun,
   listSchedulerRuns,
+  recordSchedulerRunAttempt,
   startSchedulerRun,
 } from './scheduler-runs';
 
@@ -75,6 +76,51 @@ test('scheduler runs list newest first', async () => {
       runs.map((run) => run.job),
       ['personal-research', 'tweet-post'],
     );
+  } finally {
+    config.appDbPath = previousDbPath;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('scheduler runs append attempt history', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-scheduler-runs-'));
+  const previousDbPath = config.appDbPath;
+  config.appDbPath = path.join(dir, 'app.sqlite');
+
+  try {
+    const run = await startSchedulerRun({
+      job: 'news-digest',
+      label: 'News Digest',
+      trigger: 'schedule',
+      modelAlias: 'local-model',
+      startedAt: '2026-04-24T08:00:00.000Z',
+    });
+
+    await recordSchedulerRunAttempt(run.id, {
+      attempt: 1,
+      startedAt: '2026-04-24T08:00:00.000Z',
+      finishedAt: '2026-04-24T08:00:01.000Z',
+      status: 'error',
+      error: 'provider not ready',
+      nextDelayMs: 1000,
+    });
+    await recordSchedulerRunAttempt(run.id, {
+      attempt: 2,
+      startedAt: '2026-04-24T08:00:02.000Z',
+      finishedAt: '2026-04-24T08:00:03.000Z',
+      status: 'success',
+      summary: 'Recovered.',
+      itemCount: 1,
+    });
+
+    const runs = await listSchedulerRuns();
+    assert.equal(runs[0].attempts.length, 2);
+    assert.deepEqual(
+      runs[0].attempts.map((attempt) => attempt.status),
+      ['error', 'success'],
+    );
+    assert.equal(runs[0].attempts[0].nextDelayMs, 1000);
   } finally {
     config.appDbPath = previousDbPath;
     closeDb();

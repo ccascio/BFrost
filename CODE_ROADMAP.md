@@ -112,6 +112,15 @@ Verified: `npm run build:server && node --test dist/process-lifecycle.test.js` p
 
 **Exit criterion.** A job whose provider is briefly unavailable at the scheduled instant succeeds on retry; the run record shows the attempt history; behaviour is opt-out per manifest.
 
+**Status — DONE (2026-06-19).** `runJobWork` now executes jobs through a manifest-configurable retry policy:
+- Default policy is 2 retries with exponential backoff and jitter.
+- Workers can opt out with `retryPolicy: { maxRetries: 0 }`, or tune `initialBackoffMs`, `maxBackoffMs`, and `jitterRatio`.
+- Queue-lock/duplicate-run skips still finish immediately as `skipped` rather than retrying.
+- `SchedulerRunRecord.attempts` records every attempt with status, timestamps, error/summary, item count, and next retry delay.
+- The Jobs timeline displays retry counts and expandable attempt history for runs with more than one attempt.
+
+Verified: focused scheduler tests pass, including a transient job that fails once and succeeds on retry with two recorded attempts. Full `npm test` passes with **212 backend tests** plus `npm run check:web`; `npm run smoke:web` passes with 25 rendered components.
+
 ### 2.3 Harden the raw HTTP surface
 **Problem.** `src/admin-server.ts` reads request bodies without an obvious size cap; auth is an inline check inside the dispatcher (`handleRequest` early arms). Local-first, but the worker-generation and zip-upload endpoints (`uploadLocalWorkerZip`, `generateWorkerFromDescription`) accept untrusted-ish input.
 
