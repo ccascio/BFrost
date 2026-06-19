@@ -2048,11 +2048,13 @@ h3 {
 .summary-row div {
   display: grid;
   gap: 0.2rem;
+  min-width: 0;
 }
 
 .summary-row span {
   color: var(--muted);
   font-size: 0.86rem;
+  overflow-wrap: anywhere;
 }
 
 .worker-activity-row {
@@ -3067,6 +3069,8 @@ h3 {
 .event-row div {
   display: grid;
   gap: 0.3rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .event-row span,
@@ -6098,8 +6102,22 @@ code {
 }
 
 .settings-modal-body .tab-page {
-  height: 100%;
   min-height: 0;
+}
+
+/* Inside the modal the page-level sticky/max-height rules don't apply — the
+   modal body is the scroll container and has no topbar offset to account for. */
+.settings-modal-body .config-detail-column,
+.settings-modal-body .job-detail-column {
+  position: sticky;
+  top: 1rem;
+  align-self: start;
+}
+
+.settings-modal-body .config-detail-panel,
+.settings-modal-body .job-detail-panel {
+  max-height: calc(100vh - 10rem);
+  overflow: auto;
 }
 
 /* ─── Boot splash ─────────────────────────────────────────────────────────── */
