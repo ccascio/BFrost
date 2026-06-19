@@ -103,18 +103,16 @@ export const CORE_CHAT_PROMPTS: ChatPromptExample[] = [
   },
 ];
 
+/** Tabs that live inside the Settings modal rather than the sidebar. */
+export type SettingsTab = 'channels' | 'workers' | 'config' | 'system' | 'actions';
+
 export const CORE_MENU_ENTRIES: Array<Omit<SidebarEntry<DashboardTab>, 'count'>> = [
   { id: 'overview', label: 'Overview', icon: 'overview', group: 'Workspace', order: 10 },
-  { id: 'pipeline', label: 'Pipeline', icon: 'pipeline', group: 'Workspace', order: 12 },
-  { id: 'channels', label: 'Channels', icon: 'channels', group: 'Workspace', order: 15 },
   { id: 'jobs', label: 'Jobs', icon: 'jobs', group: 'Workspace', order: 20 },
-  { id: 'workers', label: 'Workers', icon: 'workers', group: 'Workspace', order: 30 },
   { id: 'store', label: 'Store', icon: 'store', group: 'Workspace', order: 35 },
-  { id: 'config', label: 'Config', icon: 'config', group: 'Workspace', order: 40 },
   { id: 'health', label: 'Health', icon: 'health', group: 'System', order: 3 },
-  { id: 'actions', label: 'Actions', icon: 'actions', group: 'System', order: 5 },
   { id: 'chat', label: 'Chat', icon: 'chat', group: 'System', order: 10 },
-  { id: 'system', label: 'System', icon: 'system', group: 'System', order: 20 },
+  // pipeline merged into Overview; channels/workers/config/actions/system → Settings modal
 ];
 
 export interface ModelOption {

@@ -7,6 +7,7 @@ import { Wizard } from './Wizard';
 import { AlertDialog, Button, CopyButton, Dialog, ManagementBar, PreviewLinkCard, Sheet } from './ui';
 import { AuthCheckingScreen, DashboardSplash, LoginScreen } from './app-shell/AuthScreens';
 import { DashboardRoutes } from './app-shell/DashboardRoutes';
+import { SettingsModal } from './app-shell/SettingsModal';
 import { QueueDetail, QueueMetrics, StuckDetectorBanner } from './app-shell/QueueViews';
 import { SpecialModeBanners } from './app-shell/SpecialModeBanners';
 import { useChatController } from './app-shell/useChatController';
@@ -16,14 +17,29 @@ import { useOverviewController } from './app-shell/useOverviewController';
 import { useStoreController } from './app-shell/useStoreController';
 import { workerDashboardUi } from './workers/ui-contract';
 import {
-  ActionClass, ActionRequest, ActionState, AppBackupRecord, AppError, AuthSession, AutoBackupSettings, CORE_CHAT_PROMPTS, CORE_MENU_ENTRIES, ChatProject, ChatPromptButton, ChatPromptExample, ChatThread, ChatTurn, CoreConfigKey, CoreDashboardTab, DASHBOARD_REFRESH_INTERVAL_MS, DashboardSectionName, DashboardState, DashboardTab, EventLogRecord, HealthStatus, JOBS_REFRESH_INTERVAL_MS, JobBaseField, JobBooleanField, JobDashboardField, JobDraft, JobMetricsResponse, JobNumberField, JobParamDraftValue, JobPreset, JobRunMetrics, JobSecretReferenceField, JobSelectField, JobStringListField, JobTextField, JobTextareaField, ModelOption, PERMISSION_INFO, PlatformSettings, QueueFilter, QueueItem, RecipeInputStorage, RegisteredPlatformEntry, RunStatus, SchedulerJobState, SchedulerRunRecord, SourceQualityRules, StoreWorkerDetail, StoreWorkerListing, StoreWorkerVersion, WhatsNewEntry, WorkerDashboardManifest, WorkerDashboardSurface, WorkerHealthRequirementStatus, WorkerHealthState, WorkerJobSummary, WorkerKind, WorkerLoadIssue, WorkerOnboardingAction, WorkerOwnedSetting, WorkerRecipe, WorkerRecipeInput, WorkerRecipeStep, WorkerRunMetrics, WorkerSummary, WorkerTabDefinition, toAppError,
+  ActionClass, ActionRequest, ActionState, AppBackupRecord, AppError, AuthSession, AutoBackupSettings, CORE_CHAT_PROMPTS, CORE_MENU_ENTRIES, ChatProject, ChatPromptButton, ChatPromptExample, ChatThread, ChatTurn, CoreConfigKey, CoreDashboardTab, DASHBOARD_REFRESH_INTERVAL_MS, DashboardSectionName, DashboardState, DashboardTab, EventLogRecord, HealthStatus, JOBS_REFRESH_INTERVAL_MS, JobBaseField, JobBooleanField, JobDashboardField, JobDraft, JobMetricsResponse, JobNumberField, JobParamDraftValue, JobPreset, JobRunMetrics, JobSecretReferenceField, JobSelectField, JobStringListField, JobTextField, JobTextareaField, ModelOption, PERMISSION_INFO, PlatformSettings, QueueFilter, QueueItem, RecipeInputStorage, RegisteredPlatformEntry, RunStatus, SchedulerJobState, SchedulerRunRecord, SettingsTab, SourceQualityRules, StoreWorkerDetail, StoreWorkerListing, StoreWorkerVersion, WhatsNewEntry, WorkerDashboardManifest, WorkerDashboardSurface, WorkerHealthRequirementStatus, WorkerHealthState, WorkerJobSummary, WorkerKind, WorkerLoadIssue, WorkerOnboardingAction, WorkerOwnedSetting, WorkerRecipe, WorkerRecipeInput, WorkerRecipeStep, WorkerRunMetrics, WorkerSummary, WorkerTabDefinition, toAppError,
 } from './app-types';
 import {
   ChatSuggestions, ChatWelcome, Detail, HealthRow, HelpTip, PipelineNode, PipelineTopology, RUN_ERROR_PREVIEW_CHARS, RunError, STORE_PALETTE_COUNT, STORE_VISUAL_RULES, StatusPill, StoreTrustBadge, StoreVisualWorker, StoreWorkerLogo, buildChatPromptButtons, buildJobParamsDraft, buildPipelineTopology, buildSurfaceDraft, buildWorkerTabDefinitions, configSurfaceKey, coreMenuCount, draftToHosts, eventSeverityTone, formatBytes, formatDate, formatDuration, formatRelativeTime, formatTime, hostsToDraft, jobConfigSummary, jobScheduleChanges, mergeSection, normalizeStringListItem, queueItemReason, queueItemTone, renderPipelineTab, renderWorkerDashboardView, resolveDashboardTab, resolveSeedPath, runDuration, runSeverity, runStatusSummary, runStatusTone, safeWorkerViewCount, sectionEndpoint, sectionsForTab, serializeDashboardFields, serializeJobParams, statusTone, storeAuthorHandle, storeCategoryKey, storeCategoryLabel, storePaletteIndex, storeTrustTone, storeWorkerIcon, workerDeclaresView, workerOwnsEvent, workerTabId,
 } from './app-helpers';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
+  const [activeTabState, setActiveTabRaw] = useState<DashboardTab>('overview');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('config');
+
+  const SETTINGS_TABS = new Set<string>(['channels', 'workers', 'config', 'system', 'actions']);
+  function setActiveTab(tab: DashboardTab) {
+    if (SETTINGS_TABS.has(tab)) {
+      setSettingsTab(tab as SettingsTab);
+      setSettingsOpen(true);
+      return;
+    }
+    setSettingsOpen(false);
+    // pipeline is now embedded in Overview
+    setActiveTabRaw(tab === 'pipeline' ? 'overview' : tab);
+  }
+  const activeTab = activeTabState;
   const [selectedJobName, setSelectedJobName] = useState<string | null>(null);
   const [selectedCoreConfigKey, setSelectedCoreConfigKey] = useState<CoreConfigKey | null>(null);
   const [surfaceDrafts, setSurfaceDrafts] = useState<Record<string, Record<string, JobParamDraftValue>>>({});
@@ -418,6 +434,7 @@ export default function App() {
           setSidebarMobileOpen(false);
         }}
         onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
       <button
         className="sidebar-mobile-backdrop"
@@ -437,6 +454,10 @@ export default function App() {
       />
 
       <DashboardRoutes
+        settingsOpen={settingsOpen}
+        setSettingsOpen={setSettingsOpen}
+        settingsTab={settingsTab}
+        setSettingsTab={setSettingsTab}
         activeTab={activeTab}
         activeWorkerTab={activeWorkerTab}
         dashboard={dashboard}

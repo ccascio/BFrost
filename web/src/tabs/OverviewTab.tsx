@@ -1,7 +1,8 @@
-import type { Dispatch, SetStateAction } from 'react';
+import type { CSSProperties, Dispatch, SetStateAction } from 'react';
 import {
   HelpTip,
   StatusPill,
+  buildPipelineTopology,
   eventSeverityTone,
   formatDate,
   workerHealthLabel,
@@ -178,6 +179,78 @@ export function OverviewTab(props: OverviewTabProps) {
           </div>
         </article>
       </section>
+
+      {(() => {
+        const topology = buildPipelineTopology(dashboard.queue.recentItems, dashboard.workers);
+        const isEmpty = topology.producers.length === 0 && topology.consumers.length === 0;
+        return (
+          <section className="panel pipeline-graph-card" aria-label="Item Bus Pipeline">
+            <div className="panel-head">
+              <div>
+                <p className="panel-kicker">Live view</p>
+                <h2>Item Bus Pipeline <HelpTip>Every item in the bus organised by producer and consumer. Workers stamp their id into item metadata — this graph is derived from those stamps alone.</HelpTip></h2>
+              </div>
+              {!isEmpty && <StatusPill tone="muted">{`${topology.totalItems} item${topology.totalItems !== 1 ? 's' : ''}`}</StatusPill>}
+            </div>
+            {isEmpty ? (
+              <div className="empty-state">
+                <p>The bus is empty — no items have been produced yet.</p>
+                <p className="footnote">Enable a producer worker to start filling the pipeline.</p>
+              </div>
+            ) : (
+              <div className="pipeline-graph">
+                <div className="pipeline-col pipeline-producers-col" aria-label="Producers">
+                  <p className="pipeline-col-label">Producers</p>
+                  {topology.producers.map((node) => (
+                    <div key={node.workerId} className="pipeline-node pipeline-node-producer">
+                      <strong className="pipeline-node-name">{node.displayName}</strong>
+                      <span className="pipeline-node-count">{node.count} item{node.count !== 1 ? 's' : ''}</span>
+                      <span className="pipeline-node-types footnote">{node.itemTypes.join(' · ')}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="pipeline-lane" aria-hidden>
+                  <div className="pipeline-lane-track">
+                    <span className="pipeline-dot" style={{ '--dot-delay': '0s' } as CSSProperties} />
+                    <span className="pipeline-dot" style={{ '--dot-delay': '0.5s' } as CSSProperties} />
+                    <span className="pipeline-dot" style={{ '--dot-delay': '1.0s' } as CSSProperties} />
+                  </div>
+                </div>
+                <div className="pipeline-bus-col" aria-label="Item Bus">
+                  <p className="pipeline-col-label">Item Bus</p>
+                  <div className="pipeline-bus-node">
+                    <strong className="pipeline-bus-count">{topology.totalItems}</strong>
+                    <span className="pipeline-bus-label">items</span>
+                    {topology.unconsumedCount > 0 && <span className="pipeline-bus-inflight footnote">{topology.unconsumedCount} queued</span>}
+                    {topology.totalItems - topology.unconsumedCount > 0 && <span className="pipeline-bus-consumed footnote">{topology.totalItems - topology.unconsumedCount} consumed</span>}
+                  </div>
+                </div>
+                <div className="pipeline-lane pipeline-lane-right" aria-hidden>
+                  <div className="pipeline-lane-track">
+                    <span className="pipeline-dot" style={{ '--dot-delay': '0.25s' } as CSSProperties} />
+                    <span className="pipeline-dot" style={{ '--dot-delay': '0.75s' } as CSSProperties} />
+                    <span className="pipeline-dot" style={{ '--dot-delay': '1.25s' } as CSSProperties} />
+                  </div>
+                </div>
+                <div className="pipeline-col pipeline-consumers-col" aria-label="Consumers">
+                  <p className="pipeline-col-label">Consumers</p>
+                  {topology.consumers.length > 0 ? topology.consumers.map((node) => (
+                    <div key={node.workerId} className="pipeline-node pipeline-node-consumer">
+                      <strong className="pipeline-node-name">{node.displayName}</strong>
+                      <span className="pipeline-node-count">{node.count} consumed</span>
+                      <span className="pipeline-node-types footnote">{node.itemTypes.join(' · ')}</span>
+                    </div>
+                  )) : (
+                    <div className="pipeline-node pipeline-node-empty">
+                      <span className="pipeline-node-name muted">No consumers yet</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+        );
+      })()}
     </section>
   );
 }

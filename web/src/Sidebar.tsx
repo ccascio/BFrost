@@ -19,6 +19,7 @@ interface SidebarProps<T extends string = string> {
   collapsed: boolean;
   onSelect: (id: T) => void;
   onToggleCollapsed: () => void;
+  onOpenSettings?: () => void;
 }
 
 export function Sidebar<T extends string>({
@@ -27,6 +28,7 @@ export function Sidebar<T extends string>({
   collapsed,
   onSelect,
   onToggleCollapsed,
+  onOpenSettings,
 }: SidebarProps<T>) {
   // Build the set of parent IDs (entries that have children).
   const parentIds = new Set(entries.filter((e) => e.parentId).map((e) => e.parentId!));
@@ -150,6 +152,23 @@ export function Sidebar<T extends string>({
           </section>
         ))}
       </nav>
+
+      {onOpenSettings && (() => {
+        const btn = (
+          <button
+            className="sidebar-settings"
+            type="button"
+            aria-label="Settings"
+            onClick={onOpenSettings}
+          >
+            <Icon name="config" />
+            <span className="sidebar-label">Settings</span>
+          </button>
+        );
+        return collapsed
+          ? <Tooltip content="Settings" side="right">{btn}</Tooltip>
+          : btn;
+      })()}
 
       <button
         className="sidebar-collapse"

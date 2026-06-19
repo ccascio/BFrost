@@ -1,5 +1,6 @@
-import type { DashboardTab } from '../app-types';
-import { renderPipelineTab, renderWorkerDashboardView } from '../app-helpers';
+import type { DashboardTab, SettingsTab } from '../app-types';
+import { renderWorkerDashboardView } from '../app-helpers';
+import { SettingsModal } from './SettingsModal';
 import { ActionsTab } from '../tabs/ActionsTab';
 import { HealthTab } from '../tabs/HealthTab';
 import { StoreTab } from '../tabs/StoreTab';
@@ -16,6 +17,10 @@ import { WorkerConfigPage } from '../tabs/WorkerConfigPage';
 
 export function DashboardRoutes(props: any) {
   const {
+    settingsOpen,
+    setSettingsOpen,
+    settingsTab,
+    setSettingsTab,
     activeTab,
     activeWorkerTab,
     dashboard,
@@ -163,15 +168,107 @@ export function DashboardRoutes(props: any) {
         />
       ) : null}
 
-      {activeTab === 'channels' ? (
-        <ChannelsTab
-          dashboard={dashboard}
-          expandedChannelId={expandedChannelId}
-          setExpandedChannelId={setExpandedChannelId}
-          dashboardViews={dashboardViews}
-          fetchDashboard={fetchDashboard}
-        />
-      ) : null}
+      <SettingsModal
+        isOpen={settingsOpen}
+        activeTab={settingsTab as SettingsTab}
+        onSetTab={(tab) => setSettingsTab(tab)}
+        onClose={() => setSettingsOpen(false)}
+        renderContent={(tab) => {
+          if (tab === 'channels') return (
+            <ChannelsTab
+              dashboard={dashboard}
+              expandedChannelId={expandedChannelId}
+              setExpandedChannelId={setExpandedChannelId}
+              dashboardViews={dashboardViews}
+              fetchDashboard={fetchDashboard}
+            />
+          );
+          if (tab === 'workers') return (
+            <WorkersTab
+              dashboard={dashboard}
+              busyKey={busyKey}
+              workerDescription={operations.workers.workerDescription}
+              setWorkerDescription={operations.workers.setWorkerDescription}
+              generatedWorker={operations.workers.generatedWorker}
+              workerUploadFile={operations.workers.workerUploadFile}
+              setWorkerUploadFile={operations.workers.setWorkerUploadFile}
+              storeUpdates={store.storeUpdates}
+              generateWorkerFromDescription={operations.workers.generateWorkerFromDescription}
+              uploadWorkerZip={operations.workers.uploadWorkerZip}
+              deleteWorker={operations.workers.deleteWorker}
+              mutate={mutate}
+            />
+          );
+          if (tab === 'config') return (
+            <ConfigTab
+              dashboard={dashboard}
+              configCoreCount={configCoreCount}
+              selectedCoreConfigKey={selectedCoreConfigKey}
+              setSelectedCoreConfigKey={setSelectedCoreConfigKey}
+              dashboardViews={dashboardViews}
+              workerViewContext={workerViewContext}
+              platformRoutingPanel={
+                <PlatformRoutingPanel
+                  dashboard={dashboard}
+                  busyKey={busyKey}
+                  activeLocalProviderDraft={activeLocalProviderDraft}
+                  setActiveLocalProviderDraft={setActiveLocalProviderDraft}
+                  primaryChannelDraft={primaryChannelDraft}
+                  setPrimaryChannelDraft={setPrimaryChannelDraft}
+                  savePlatformRouting={savePlatformRouting}
+                />
+              }
+              platformSecurityPanel={
+                <PlatformSecurityPanel
+                  dashboard={dashboard}
+                  busyKey={busyKey}
+                  adminPasswordDraft={adminPasswordDraft}
+                  setAdminPasswordDraft={setAdminPasswordDraft}
+                  sessionTtlDraft={sessionTtlDraft}
+                  setSessionTtlDraft={setSessionTtlDraft}
+                  jobTimeoutDraft={jobTimeoutDraft}
+                  setJobTimeoutDraft={setJobTimeoutDraft}
+                  saveCoreSettings={saveCoreSettings}
+                />
+              }
+              setActiveTab={setActiveTab}
+              setWizardOpen={setWizardOpen}
+            />
+          );
+          if (tab === 'system') return (
+            <SystemTab
+              dashboard={dashboard}
+              whatsNew={operations.system.whatsNew}
+              autoBackupSettings={operations.system.autoBackupSettings}
+              setAutoBackupSettings={operations.system.setAutoBackupSettings}
+              saveAutoBackup={operations.system.saveAutoBackup}
+              busyKey={busyKey}
+              mutate={mutate}
+              restoreBackup={operations.system.restoreBackup}
+              cancelRestore={operations.system.cancelRestore}
+              resetChecks={operations.system.resetChecks}
+              setResetChecks={operations.system.setResetChecks}
+              resetConfirmOpen={operations.system.resetConfirmOpen}
+              setResetConfirmOpen={operations.system.setResetConfirmOpen}
+              executeFactoryReset={operations.system.executeFactoryReset}
+              setActiveTab={operations.system.setActiveTab}
+            />
+          );
+          if (tab === 'actions') return (
+            <ActionsTab
+              pendingActions={operations.actions.pendingActions}
+              actionHistory={operations.actions.actionHistory}
+              actionsLoading={operations.actions.actionsLoading}
+              selectedActionId={operations.actions.selectedActionId}
+              setSelectedActionId={operations.actions.setSelectedActionId}
+              busyKey={busyKey}
+              decideAction={operations.actions.decideAction}
+              fetchPendingActions={operations.actions.fetchPendingActions}
+            />
+          );
+          return null;
+        }}
+      />
 
       {activeTab === 'jobs' ? (
         <JobsTab
@@ -201,43 +298,6 @@ export function DashboardRoutes(props: any) {
         />
       ) : null}
 
-      {activeTab === 'config' ? (
-        <ConfigTab
-          dashboard={dashboard}
-          configCoreCount={configCoreCount}
-          selectedCoreConfigKey={selectedCoreConfigKey}
-          setSelectedCoreConfigKey={setSelectedCoreConfigKey}
-          dashboardViews={dashboardViews}
-          workerViewContext={workerViewContext}
-          platformRoutingPanel={
-            <PlatformRoutingPanel
-              dashboard={dashboard}
-              busyKey={busyKey}
-              activeLocalProviderDraft={activeLocalProviderDraft}
-              setActiveLocalProviderDraft={setActiveLocalProviderDraft}
-              primaryChannelDraft={primaryChannelDraft}
-              setPrimaryChannelDraft={setPrimaryChannelDraft}
-              savePlatformRouting={savePlatformRouting}
-            />
-          }
-          platformSecurityPanel={
-            <PlatformSecurityPanel
-              dashboard={dashboard}
-              busyKey={busyKey}
-              adminPasswordDraft={adminPasswordDraft}
-              setAdminPasswordDraft={setAdminPasswordDraft}
-              sessionTtlDraft={sessionTtlDraft}
-              setSessionTtlDraft={setSessionTtlDraft}
-              jobTimeoutDraft={jobTimeoutDraft}
-              setJobTimeoutDraft={setJobTimeoutDraft}
-              saveCoreSettings={saveCoreSettings}
-            />
-          }
-          setActiveTab={setActiveTab}
-          setWizardOpen={setWizardOpen}
-        />
-      ) : null}
-
       {activeWorkerTab ? renderWorkerDashboardView(activeWorkerTab, workerViewContext) : null}
 
       {activeTab.startsWith('worker-config:') ? (
@@ -256,22 +316,6 @@ export function DashboardRoutes(props: any) {
         />
       ) : null}
 
-      {activeTab === 'workers' ? (
-        <WorkersTab
-          dashboard={dashboard}
-          busyKey={busyKey}
-          workerDescription={operations.workers.workerDescription}
-          setWorkerDescription={operations.workers.setWorkerDescription}
-          generatedWorker={operations.workers.generatedWorker}
-          workerUploadFile={operations.workers.workerUploadFile}
-          setWorkerUploadFile={operations.workers.setWorkerUploadFile}
-          storeUpdates={store.storeUpdates}
-          generateWorkerFromDescription={operations.workers.generateWorkerFromDescription}
-          uploadWorkerZip={operations.workers.uploadWorkerZip}
-          deleteWorker={operations.workers.deleteWorker}
-          mutate={mutate}
-        />
-      ) : null}
 
       {activeTab === 'store' ? (
         <StoreTab
@@ -302,8 +346,6 @@ export function DashboardRoutes(props: any) {
         />
       ) : null}
 
-      {activeTab === 'pipeline' ? renderPipelineTab(dashboard, () => setActiveTab('overview')) : null}
-
       {activeTab === 'health' ? (
         <HealthTab
           jobMetrics={operations.health.jobMetrics}
@@ -316,38 +358,6 @@ export function DashboardRoutes(props: any) {
         />
       ) : null}
 
-      {activeTab === 'actions' ? (
-        <ActionsTab
-          pendingActions={operations.actions.pendingActions}
-          actionHistory={operations.actions.actionHistory}
-          actionsLoading={operations.actions.actionsLoading}
-          selectedActionId={operations.actions.selectedActionId}
-          setSelectedActionId={operations.actions.setSelectedActionId}
-          busyKey={busyKey}
-          decideAction={operations.actions.decideAction}
-          fetchPendingActions={operations.actions.fetchPendingActions}
-        />
-      ) : null}
-
-      {activeTab === 'system' ? (
-        <SystemTab
-          dashboard={dashboard}
-          whatsNew={operations.system.whatsNew}
-          autoBackupSettings={operations.system.autoBackupSettings}
-          setAutoBackupSettings={operations.system.setAutoBackupSettings}
-          saveAutoBackup={operations.system.saveAutoBackup}
-          busyKey={busyKey}
-          mutate={mutate}
-          restoreBackup={operations.system.restoreBackup}
-          cancelRestore={operations.system.cancelRestore}
-          resetChecks={operations.system.resetChecks}
-          setResetChecks={operations.system.setResetChecks}
-          resetConfirmOpen={operations.system.resetConfirmOpen}
-          setResetConfirmOpen={operations.system.setResetConfirmOpen}
-          executeFactoryReset={operations.system.executeFactoryReset}
-          setActiveTab={operations.system.setActiveTab}
-        />
-      ) : null}
     </>
   );
 }
