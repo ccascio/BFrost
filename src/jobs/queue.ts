@@ -3,7 +3,7 @@ import { createHash } from 'crypto';
 import path from 'path';
 import { z } from 'zod';
 import { config } from '../config';
-import { loadKvJson, saveKvJson } from '../sqlite';
+import { listKvJsonBySuffix, loadKvJson, saveKvJson } from '../sqlite';
 
 const QUEUE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const LOCK_STALE_MS = 3 * 60 * 1000;
@@ -67,6 +67,12 @@ export async function loadQueue(): Promise<QueueItem[]> {
     return QueueSchema.parse(parsed.map(normalizeQueueItem));
   }
 
+  const legacyKvQueue = await loadLegacyKvQueue();
+  if (legacyKvQueue) {
+    await saveQueue(legacyKvQueue);
+    return legacyKvQueue;
+  }
+
   try {
     const raw = await fs.readFile(queuePath(), 'utf8');
     const parsed = z.array(RawQueueItemSchema).parse(JSON.parse(raw));
@@ -75,6 +81,11 @@ export async function loadQueue(): Promise<QueueItem[]> {
     return queue;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      const legacyFileQueue = await loadLegacyFileQueue();
+      if (legacyFileQueue) {
+        await saveQueue(legacyFileQueue);
+        return legacyFileQueue;
+      }
       return [];
     }
     throw new Error(`Failed to read ${queuePath()}. Fix or move the invalid queue file before continuing. Cause: ${err instanceof Error ? err.message : String(err)}`);
@@ -108,6 +119,62 @@ function normalizeQueueItem(item: z.infer<typeof RawQueueItemSchema>): QueueItem
     state,
     stateChangedAt: item.stateChangedAt ?? item.postedAt ?? item.lastAttemptAt ?? item.addedAt,
   };
+}
+
+async function loadLegacyKvQueue(): Promise<QueueItem[] | null> {
+  const entries = await listKvJsonBySuffix<unknown>('.queue');
+  const legacy = entries.find((entry) => entry.key !== QUEUE_STORE_KEY);
+  if (!legacy) return null;
+
+  const parsed = z.array(RawQueueItemSchema).parse(legacy.value);
+  return QueueSchema.parse(parsed.map(normalizeQueueItem));
+}
+
+async function loadLegacyFileQueue(): Promise<QueueItem[] | null> {
+  const currentPath = path.resolve(queuePath());
+  const parentDir = path.dirname(path.resolve(config.itemBusStoreDir));
+  let entries: Array<{ filePath: string; mtimeMs: number } | null> = [];
+  try {
+    entries = await Promise.all(
+      (await fs.readdir(parentDir, { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory())
+        .map(async (entry) => {
+          const filePath = path.join(parentDir, entry.name, 'queue.json');
+          try {
+            const stat = await fs.stat(filePath);
+            return { filePath, mtimeMs: stat.mtimeMs };
+          } catch (err) {
+            if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+              console.warn(`[Queue] Failed to inspect legacy queue file ${filePath}:`, err);
+            }
+            return null;
+          }
+        }),
+    );
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn('[Queue] Failed to scan legacy queue files:', err);
+    }
+    return null;
+  }
+
+  const candidates = entries
+    .filter((entry): entry is { filePath: string; mtimeMs: number } => entry !== null)
+    .filter((entry) => path.resolve(entry.filePath) !== currentPath)
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = z.array(RawQueueItemSchema).parse(
+        JSON.parse(await fs.readFile(candidate.filePath, 'utf8')),
+      );
+      return QueueSchema.parse(parsed.map(normalizeQueueItem));
+    } catch (err) {
+      console.warn(`[Queue] Ignoring legacy queue file ${candidate.filePath}:`, err);
+    }
+  }
+
+  return null;
 }
 
 export function createQueueItem(item: QueueItemDraft): QueueItem {

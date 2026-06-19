@@ -51,6 +51,14 @@ export async function loadKvJson<T>(key: string): Promise<T | null> {
   return JSON.parse(row.valueJson) as T;
 }
 
+export async function listKvJsonBySuffix<T>(suffix: string): Promise<Array<{ key: string; value: T }>> {
+  await ensureAppDb();
+  const rows = getDb()
+    .prepare('SELECT key, value_json AS valueJson FROM app_kv WHERE key LIKE ? ORDER BY updated_at DESC')
+    .all(`%${suffix}`) as Array<{ key: string; valueJson: string }>;
+  return rows.map((row) => ({ key: row.key, value: JSON.parse(row.valueJson) as T }));
+}
+
 export async function saveKvJson(key: string, value: unknown): Promise<void> {
   await ensureAppDb();
   saveKvJsonSync(key, value);

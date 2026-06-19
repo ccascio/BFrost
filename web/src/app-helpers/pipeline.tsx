@@ -1,6 +1,8 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { DashboardState, QueueItem, WorkerSummary } from '../app-types';
 
+const LEGACY_PRODUCER_ID = 'legacy.producer';
+
 export interface PipelineNode {
   workerId: string;
   displayName: string;
@@ -21,13 +23,13 @@ export function buildPipelineTopology(items: QueueItem[], workers: WorkerSummary
   let unconsumedCount = 0;
 
   for (const item of items) {
-    if (!item.producerWorkerId) continue;
-    if (!producerMap.has(item.producerWorkerId)) {
-      producerMap.set(item.producerWorkerId, { count: 0, types: new Set() });
+    const producerWorkerId = item.producerWorkerId ?? LEGACY_PRODUCER_ID;
+    if (!producerMap.has(producerWorkerId)) {
+      producerMap.set(producerWorkerId, { count: 0, types: new Set() });
     }
-    const p = producerMap.get(item.producerWorkerId)!;
+    const p = producerMap.get(producerWorkerId)!;
     p.count++;
-    if (item.itemType) p.types.add(item.itemType);
+    p.types.add(item.itemType ?? 'legacy.item');
 
     const consumers = Object.keys(item.metadata ?? {});
     if (consumers.length === 0) unconsumedCount++;
@@ -39,7 +41,10 @@ export function buildPipelineTopology(items: QueueItem[], workers: WorkerSummary
     }
   }
 
-  const label = (id: string) => workers.find((w) => w.id === id)?.displayName ?? id;
+  const label = (id: string) =>
+    id === LEGACY_PRODUCER_ID
+      ? 'Legacy items'
+      : workers.find((w) => w.id === id)?.displayName ?? id;
 
   return {
     producers: [...producerMap.entries()].map(([workerId, d]) => ({
@@ -54,7 +59,7 @@ export function buildPipelineTopology(items: QueueItem[], workers: WorkerSummary
       count: d.count,
       itemTypes: [...d.types],
     })),
-    totalItems: items.filter((i) => i.producerWorkerId).length,
+    totalItems: items.length,
     unconsumedCount,
   };
 }

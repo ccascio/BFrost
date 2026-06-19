@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -17,6 +17,7 @@ import {
   rejectQueueItem,
   saveQueue,
 } from './jobs/queue';
+import { loadKvJson, saveKvJson } from './sqlite';
 
 test('loadQueue normalizes legacy queued items', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-queue-'));
@@ -44,6 +45,74 @@ test('loadQueue normalizes legacy queued items', async () => {
     assert.match(queue[0].id, /^q_[a-f0-9]{18}$/);
     assert.equal(queue[0].state, 'queued');
     assert.equal(queue[0].stateChangedAt, queue[0].addedAt);
+  } finally {
+    config.itemBusStoreDir = previousDir;
+    config.appDbPath = previousDbPath;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('loadQueue migrates a legacy KV queue into the Item Bus store', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-queue-'));
+  const previousDir = config.itemBusStoreDir;
+  const previousDbPath = config.appDbPath;
+  config.itemBusStoreDir = path.join(dir, 'item-bus');
+  config.appDbPath = path.join(dir, 'app.sqlite');
+
+  try {
+    await saveKvJson('legacy.queue', [
+      {
+        title: 'From legacy KV',
+        shortDesc: 'Migrated into the generic bus.',
+        url: 'https://example.com/legacy-kv',
+        addedAt: '2026-04-24T08:00:00.000Z',
+      },
+    ]);
+
+    const queue = await loadQueue();
+
+    assert.equal(queue.length, 1);
+    assert.equal(queue[0].title, 'From legacy KV');
+    assert.equal(queue[0].state, 'queued');
+    assert.equal((await loadKvJson<unknown[]>('item-bus.queue'))?.length, 1);
+  } finally {
+    config.itemBusStoreDir = previousDir;
+    config.appDbPath = previousDbPath;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('loadQueue migrates a legacy sibling queue file into the Item Bus store', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-queue-'));
+  const previousDir = config.itemBusStoreDir;
+  const previousDbPath = config.appDbPath;
+  config.itemBusStoreDir = path.join(dir, 'item-bus');
+  config.appDbPath = path.join(dir, 'app.sqlite');
+
+  try {
+    const legacyDir = path.join(dir, 'old-bucket');
+    await mkdir(legacyDir, { recursive: true });
+    await writeFile(
+      path.join(legacyDir, 'queue.json'),
+      JSON.stringify([
+        {
+          title: 'From legacy file',
+          shortDesc: 'Migrated from an older queue bucket.',
+          url: 'https://example.com/legacy-file',
+          addedAt: '2026-04-24T08:00:00.000Z',
+        },
+      ]),
+      'utf8',
+    );
+
+    const queue = await loadQueue();
+
+    assert.equal(queue.length, 1);
+    assert.equal(queue[0].title, 'From legacy file');
+    assert.equal(queue[0].state, 'queued');
+    assert.equal((await loadKvJson<unknown[]>('item-bus.queue'))?.length, 1);
   } finally {
     config.itemBusStoreDir = previousDir;
     config.appDbPath = previousDbPath;
