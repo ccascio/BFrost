@@ -1435,6 +1435,12 @@ h3 {
   margin-top: 1rem;
 }
 
+.overview-pipeline-grid {
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  margin-bottom: 1rem;
+  align-items: start;
+}
+
 .overview-chat-panel {
   margin-bottom: 1rem;
   padding: 0.95rem 1rem 1rem;

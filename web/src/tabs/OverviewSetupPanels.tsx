@@ -515,19 +515,6 @@ export function OverviewSetupPanels(props: OverviewSetupPanelsProps) {
         }
       })()}
 
-      <OverviewRecipesPanel
-        dashboard={dashboard}
-        setDashboard={setDashboard}
-        setError={setError}
-        recipeApplied={recipeApplied}
-        setRecipeApplied={setRecipeApplied}
-        recipeExpanded={recipeExpanded}
-        setRecipeExpanded={setRecipeExpanded}
-        recipeInputValues={recipeInputValues}
-        setRecipeInputValues={setRecipeInputValues}
-        recipeApplying={recipeApplying}
-        setRecipeApplying={setRecipeApplying}
-      />
     </>
   );
 }
