@@ -12,6 +12,16 @@ function tempPath(ext: string): string {
   return join(tmpdir(), `bfrost-${randomBytes(6).toString('hex')}${ext}`);
 }
 
+async function removeTempFile(filePath: string): Promise<void> {
+  try {
+    await unlink(filePath);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn(`[Transcribe] Failed to remove temporary file ${filePath}:`, err);
+    }
+  }
+}
+
 async function convertToWav(oggBuffer: Buffer): Promise<string> {
   const oggPath = tempPath('.ogg');
   const wavPath = tempPath('.wav');
@@ -26,7 +36,7 @@ async function convertToWav(oggBuffer: Buffer): Promise<string> {
       '-y', wavPath,
     ]);
   } finally {
-    await unlink(oggPath).catch(() => {});
+    await removeTempFile(oggPath);
   }
 
   return wavPath;
@@ -46,6 +56,6 @@ export async function transcribeAudio(oggBuffer: Buffer): Promise<string> {
     // whisper-cli outputs metadata to stderr; stdout has the transcription
     return stdout.trim();
   } finally {
-    await unlink(wavPath).catch(() => {});
+    await removeTempFile(wavPath);
   }
 }

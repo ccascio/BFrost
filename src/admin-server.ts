@@ -10,6 +10,7 @@ import { buildDashboardState } from './admin-dashboard-state';
 import { isAdminAuthEnabled, isAuthenticated } from './admin-auth';
 import { BadRequestError } from './admin-route';
 import { handleAuthRoutes } from './http/routes/auth';
+import { detach } from './process-lifecycle';
 
 let server: Server | null = null;
 
@@ -19,7 +20,7 @@ export async function startAdminServer(): Promise<void> {
   }
 
   server = http.createServer((req, res) => {
-    void handleRequest(req, res);
+    detach(handleRequest(req, res), 'admin:handle-request');
   });
 
   await new Promise<void>((resolve, reject) => {

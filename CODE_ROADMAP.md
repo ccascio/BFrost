@@ -6,7 +6,7 @@
 
 BFrost has exactly one load-bearing rule (see [`CLAUDE.md`](./CLAUDE.md)): *every capability is a worker; the core only installs, configures, schedules, runs, observes, and uninstalls them.* So the question for every refactor in this document is not "is this cleaner?" but **"does this make `src/` (outside `src/workers/`) more worker-agnostic, or less?"** A change that shrinks a file but leaves core owning worker-shaped logic is a half-fix. Each item below is framed as contract-reinforcing.
 
-This roadmap began with two pressure points. As of **2026-06-18**, **Phase 1 is complete**: the backend HTTP monolith is dissolved, the frontend shell/helper pressure points are below the ~600 LOC threshold, and the design-token layer exit criterion is already met. **Phase 3.1 is also complete**: the worker-first contract is now machine-enforced across production core files, and the main provider/channel/config leaks have been moved behind generic or worker-owned contracts. The next meaningful work is reliability: detached failure handling, scheduled-job retry/backoff, and the remaining HTTP hardening.
+This roadmap began with two pressure points. As of **2026-06-19**, **Phase 1 is complete**: the backend HTTP monolith is dissolved, the frontend shell/helper pressure points are below the ~600 LOC threshold, and the design-token layer exit criterion is already met. **Phase 3.1 is also complete**: the worker-first contract is now machine-enforced across production core files, and the main provider/channel/config leaks have been moved behind generic or worker-owned contracts. **Phase 2.1 is complete**: process-level crash/rejection handling and detached-promise logging are in place. The next meaningful work is scheduled-job retry/backoff, followed by the remaining HTTP hardening.
 
 | File | Original LOC | Current LOC | Status |
 |---|---:|---:|---|
@@ -96,6 +96,15 @@ Remaining follow-up (not Phase 1.2):
 
 **Exit criterion.** No detached promise can fail silently; a forced rejection produces one structured log line and a defined process outcome.
 
+**Status — DONE (2026-06-19).** Added `src/process-lifecycle.ts` as the single owner for process fault handling:
+- `unhandledRejection` and `uncaughtException` now emit one structured JSON `process_fault` log line, attempt cleanup, and exit with code 1.
+- Startup fatal errors use the same structured path instead of ad hoc logging and swallowed cleanup failures.
+- `detach(promise, label)` records rejected background work with a named `detached_promise_rejection` log.
+- Core detached runtime paths now use `detach`: admin request dispatch, scheduler/manual/catch-up jobs, signal shutdown, hot reload, factory reset, and channel launch.
+- Former silent cleanup/default catches in lifecycle-adjacent paths now either log explicitly or intentionally ignore only expected absence cases.
+
+Verified: `npm run build:server && node --test dist/process-lifecycle.test.js` passes; full `npm test` passes with **208 backend tests** plus `npm run check:web`.
+
 ### 2.2 Scheduled-job retry with backoff
 **Problem.** Verified: the `maxAttempts`/`attemptCount` machinery in `src/jobs/queue.ts:174-201` is the **Item Bus posting** path only. A failed *scheduled job* (`src/job-runner.ts`, `scheduler.ts runJobWork`) simply records a `status: 'error'` run — no retry, no backoff. A transient provider blip (the exact cold-boot risk noted in memory `job-runner-requires-provider`) means the user just doesn't get that run. This is the same class of failure as the missing ops digest that started this work.
 
@@ -174,7 +183,7 @@ These were the engineering carryovers from the v1.0 technical roadmap (originall
 
 1. **Phase 1 (monolith dissolution)** — done; preserve it with the typecheck, smoke harness, and worker-first contract scan.
 2. **Phase 3.1 (worker-first contract guardrail)** — done; production core is scanned recursively and the main provider/channel/config leaks have been dissolved.
-3. **Phase 2 reliability gaps** — global crash/rejection handling, scheduled-job retry/backoff, and the remaining HTTP hardening.
+3. **Phase 2 reliability gaps** — 2.1 is done; next is scheduled-job retry/backoff, then the remaining HTTP hardening.
 4. **Phase 3.2** — wrap the node-cron/internal API casts in one typed, tested adapter.
 5. **Phase 4 testing/observability** — richer schema-form smoke coverage, per-worker metrics, scoped secrets, and longer-tail platform hardening.
 

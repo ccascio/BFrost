@@ -5,6 +5,7 @@ import type { Telegram } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { availableModels, config, findModel } from '../../../config';
 import { refreshActiveLocalProviderModels } from '../../../model-discovery';
+import { detach } from '../../../process-lifecycle';
 
 const TELEGRAM_MAX_MESSAGE_CHARS = 4000;
 import { processChannelMessage } from '../../../channel';
@@ -193,7 +194,7 @@ export function createTelegramChannelAdapter(): ChannelAdapter {
       console.log('[TelegramChannel] Bot in avvio...');
       // Telegraf's launch returns once long-polling starts, so we don't await it
       // beyond setup; the bot keeps running in the background.
-      void bot.launch();
+      detach(bot.launch(), 'channel:telegram:launch');
       console.log('[TelegramChannel] Bot attivo e in ascolto.');
     },
     async stop(reason: string) {

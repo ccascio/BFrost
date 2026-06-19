@@ -23,6 +23,7 @@ import { activateLocalWorker, deactivateLocalWorker } from './bootstrap';
 import { discoverLocalWorkerResult, type DiscoveredLocalWorker } from './local';
 import { listLocalWorkerModules } from './registry';
 import { recordEventSafe } from '../event-log';
+import { detach } from '../process-lifecycle';
 
 const DEBOUNCE_MS = 300;
 
@@ -54,7 +55,7 @@ export function startLocalWorkerWatcher(): LocalWorkerWatcher {
     if (existing) clearTimeout(existing);
     pending.set('*', setTimeout(() => {
       pending.delete('*');
-      void reloadChangedWorkers();
+      detach(reloadChangedWorkers(), 'workers:hot-reload');
     }, DEBOUNCE_MS));
   };
 
@@ -149,6 +150,8 @@ async function reloadWorker(worker: DiscoveredLocalWorker): Promise<void> {
       action: 'worker_hot_reload_failed',
       summary: `Hot reload of ${id} failed: ${message}`,
       metadata: { workerId: id },
-    }).catch(() => {});
+    }).catch((eventErr) => {
+      console.warn(`[Workers] Failed to record hot reload failure for ${id}:`, eventErr);
+    });
   }
 }

@@ -23,6 +23,35 @@ import { config, findModel } from './config';
 import type { ChannelAdapter, ProviderAdapter } from './workers/module';
 import { acquireRuntimeLock, releaseRuntimeLock } from './runtime-lock';
 import { closeDb } from './sqlite';
+import {
+  detach,
+  installProcessFaultHandlers,
+  logCleanupFailure,
+  logProcessFault,
+  type ProcessFaultKind,
+} from './process-lifecycle';
+
+installProcessFaultHandlers({
+  cleanup: async (kind) => {
+    await cleanupForExit(`process-fault:${kind}`);
+  },
+});
+
+async function cleanupStep(scope: string, label: string, work: () => Promise<void> | void): Promise<void> {
+  try {
+    await work();
+  } catch (err) {
+    logCleanupFailure(`${scope}:${label}`, err);
+  }
+}
+
+async function cleanupForExit(scope: string): Promise<void> {
+  await cleanupStep(scope, 'scheduler', stopScheduler);
+  await cleanupStep(scope, 'auto-backup', stopAutoBackup);
+  await cleanupStep(scope, 'admin-server', stopAdminServer);
+  await cleanupStep(scope, 'runtime-lock', releaseRuntimeLock);
+  await cleanupStep(scope, 'sqlite', closeDb);
+}
 
 async function main(): Promise<void> {
   // Apply any pending restore before the DB is opened for the first time.
@@ -196,15 +225,12 @@ async function main(): Promise<void> {
     process.exit(exitCode);
   };
 
-  process.once('SIGINT', () => void shutdown('SIGINT'));
-  process.once('SIGTERM', () => void shutdown('SIGTERM'));
+  process.once('SIGINT', () => detach(shutdown('SIGINT'), 'shutdown:SIGINT'));
+  process.once('SIGTERM', () => detach(shutdown('SIGTERM'), 'shutdown:SIGTERM'));
 }
 
 main().catch(async (err) => {
-  console.error('[BFrost] Fatal error:', err);
-  await stopScheduler().catch(() => undefined);
-  await stopAutoBackup().catch(() => undefined);
-  await releaseRuntimeLock().catch(() => undefined);
-  closeDb();
+  logProcessFault('fatalStartupError' satisfies ProcessFaultKind, err);
+  await cleanupForExit('fatalStartupError');
   process.exit(1);
 });

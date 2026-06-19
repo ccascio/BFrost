@@ -10,6 +10,7 @@ import { isWorkerEnabled, loadWorkerState, setWorkerEnabled } from '../../worker
 import { deactivateLocalWorker } from '../../workers/bootstrap';
 import { publishItem } from '../../jobs/item-bus';
 import { FactoryResetBodySchema } from '../../admin-api';
+import { detach, logCleanupFailure } from '../../process-lifecycle';
 
 export function registerAdminRoutes(router: HttpRouter): void {
   // Factory reset — wipes selected categories of state, then exits for restart
@@ -27,36 +28,46 @@ export function registerAdminRoutes(router: HttpRouter): void {
     // Send the response before performing destructive operations so the client gets it.
     sendJson(res, 200, { ok: true, message: 'Reset in progress. BFrost will exit and must be restarted.' });
     // Perform reset asynchronously after a brief delay so the HTTP response flushes.
-    setTimeout(async () => {
-      if (body.wipeBackups) {
-        const backupDir = path.join(config.adminStoreDir, 'backups');
-        await fs.rm(backupDir, { recursive: true, force: true }).catch(() => undefined);
-      }
-      if (body.wipeCredentials) {
-        const envPath = path.join(process.cwd(), '.env');
-        // Strip likely credential keys while keeping structural lines (comments, blank lines).
-        // Worker-owned credential names should not be enumerated in core.
-        const isCredentialKey = (key: string): boolean =>
-          /(?:^|_)(?:API_)?KEY$/.test(key) ||
-          /(?:^|_)(?:TOKEN|SECRET|PASSWORD)$/.test(key) ||
-          /(?:^|_)(?:ACCESS|REFRESH)_TOKEN$/.test(key) ||
-          /(?:^|_)CLIENT_SECRET$/.test(key);
-        try {
-          const content = await fs.readFile(envPath, 'utf8');
-          const filtered = content.split('\n').filter((line) => {
-            const key = line.split('=')[0]?.trim();
-            return !key || !isCredentialKey(key);
-          }).join('\n');
-          await fs.writeFile(envPath, filtered, 'utf8');
-        } catch { /* no .env — nothing to clear */ }
-      }
-      if (body.wipeWorkerState) {
-        // Close the DB and delete the SQLite file. A fresh DB is created on next boot.
-        const { closeDb } = await import('../../sqlite');
-        closeDb();
-        await fs.rm(config.appDbPath, { force: true }).catch(() => undefined);
-      }
-      process.exit(0);
+    setTimeout(() => {
+      detach((async () => {
+        if (body.wipeBackups) {
+          const backupDir = path.join(config.adminStoreDir, 'backups');
+          await fs.rm(backupDir, { recursive: true, force: true }).catch((err) => {
+            logCleanupFailure('factory-reset:backups', err);
+          });
+        }
+        if (body.wipeCredentials) {
+          const envPath = path.join(process.cwd(), '.env');
+          // Strip likely credential keys while keeping structural lines (comments, blank lines).
+          // Worker-owned credential names should not be enumerated in core.
+          const isCredentialKey = (key: string): boolean =>
+            /(?:^|_)(?:API_)?KEY$/.test(key) ||
+            /(?:^|_)(?:TOKEN|SECRET|PASSWORD)$/.test(key) ||
+            /(?:^|_)(?:ACCESS|REFRESH)_TOKEN$/.test(key) ||
+            /(?:^|_)CLIENT_SECRET$/.test(key);
+          try {
+            const content = await fs.readFile(envPath, 'utf8');
+            const filtered = content.split('\n').filter((line) => {
+              const key = line.split('=')[0]?.trim();
+              return !key || !isCredentialKey(key);
+            }).join('\n');
+            await fs.writeFile(envPath, filtered, 'utf8');
+          } catch (err) {
+            if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+              logCleanupFailure('factory-reset:credentials', err);
+            }
+          }
+        }
+        if (body.wipeWorkerState) {
+          // Close the DB and delete the SQLite file. A fresh DB is created on next boot.
+          const { closeDb } = await import('../../sqlite');
+          closeDb();
+          await fs.rm(config.appDbPath, { force: true }).catch((err) => {
+            logCleanupFailure('factory-reset:worker-state', err);
+          });
+        }
+        process.exit(0);
+      })(), 'admin:factory-reset');
     }, 200);
     return; // response already sent above
   });

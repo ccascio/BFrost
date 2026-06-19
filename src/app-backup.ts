@@ -109,7 +109,12 @@ export async function pruneOldBackups(retentionDays: number): Promise<number> {
         .filter((entry) => entry.endsWith('.sqlite'))
         .map(async (file) => {
           const p = path.join(dir, file);
-          const stat = await fs.stat(p).catch(() => null);
+          const stat = await fs.stat(p).catch((err) => {
+            if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+              console.warn(`[Backup] Failed to stat backup ${file}:`, err);
+            }
+            return null;
+          });
           return stat ? { file, path: p, mtime: stat.mtime } : null;
         }),
     )
@@ -127,8 +132,13 @@ export async function pruneOldBackups(retentionDays: number): Promise<number> {
   // Keep at least 2 backups regardless of retention.
   for (let i = 2; i < backups.length; i++) {
     if (backups[i].mtime.getTime() < cutoff) {
-      await fs.rm(backups[i].path, { force: true }).catch(() => undefined);
-      pruned++;
+      await fs.rm(backups[i].path, { force: true })
+        .then(() => {
+          pruned++;
+        })
+        .catch((err) => {
+          console.warn(`[Backup] Failed to prune backup ${backups[i].file}:`, err);
+        });
     }
   }
 

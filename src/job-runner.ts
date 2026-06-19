@@ -296,7 +296,9 @@ async function runWithLocalRuntimeExclusive<T>(run: () => Promise<T>): Promise<T
     release = resolve;
   });
 
-  await previous.catch(() => undefined);
+  await previous.catch((err) => {
+    console.warn('[Model] Previous local-runtime queue step failed:', err);
+  });
   try {
     return await run();
   } finally {

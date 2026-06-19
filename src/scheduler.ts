@@ -15,6 +15,7 @@ import {
 } from './scheduler-runs';
 import { acquireSchedulerExecutionLock } from './scheduler-locks';
 import { isWorkerEnabled, loadWorkerState, type WorkerStateStore } from './workers/state';
+import { detach } from './process-lifecycle';
 
 const SCHEDULER_STATE_STORE_KEY = 'scheduler.state';
 // Recover a missed slot if it elapsed within this window. Sized to cover a daily
@@ -155,7 +156,10 @@ export async function getSchedulerSnapshot(): Promise<{ timezone: string; jobs: 
   const workerState = await loadWorkerState();
 
   // Load recent runs to compute per-job consecutive error counts (stuck detector).
-  const recentRuns = await listSchedulerRuns(30).catch(() => []);
+  const recentRuns = await listSchedulerRuns(30).catch((err) => {
+    console.warn('[Scheduler] Failed to load recent scheduler runs:', err);
+    return [];
+  });
   const consecutiveErrorsByJob = computeConsecutiveErrors(recentRuns);
   const settings = await ensureSettings();
   const jobNames = knownJobs();
@@ -246,12 +250,12 @@ export async function triggerJobNow(name: JobName, options: TriggerJobOptions = 
     },
   });
 
-  void enqueueJobExecution(() =>
+  detach(enqueueJobExecution(() =>
     runJobWork(name, jobSettings, 'manual', startedAt, runRecord, current.effectiveModelAlias, {
       paramsOverride: options.paramsOverride,
       notifyOnCompletion: options.notifyOnCompletion ?? false,
     }),
-  );
+  ), `scheduler:manual:${name}`);
   return buildJobState(name, jobSettings, workerState);
 }
 
@@ -313,7 +317,10 @@ async function doReloadSchedules(): Promise<void> {
     const task = cron.schedule(
       jobSettings.cron,
       (ctx) => {
-        void runJob(name, jobSettings, 'schedule', { scheduledAt: ctx.date.toISOString() });
+        detach(
+          runJob(name, jobSettings, 'schedule', { scheduledAt: ctx.date.toISOString() }),
+          `scheduler:run:${name}`,
+        );
       },
       {
         timezone: settings.timezone,
@@ -322,10 +329,16 @@ async function doReloadSchedules(): Promise<void> {
       },
     );
     task.on('execution:missed', (ctx) => {
-      void recordSkippedScheduleExecution(name, jobSettings, 'missed', ctx);
+      detach(
+        recordSkippedScheduleExecution(name, jobSettings, 'missed', ctx),
+        `scheduler:missed:${name}`,
+      );
     });
     task.on('execution:overlap', (ctx) => {
-      void recordSkippedScheduleExecution(name, jobSettings, 'overlap', ctx);
+      detach(
+        recordSkippedScheduleExecution(name, jobSettings, 'overlap', ctx),
+        `scheduler:overlap:${name}`,
+      );
     });
     tasks.set(name, task);
   }
@@ -402,7 +415,10 @@ async function recordSkippedScheduleExecution(
       );
       // Reuse the slot lock acquired above so the catch-up run and skipped-run
       // bookkeeping stay mutually exclusive for this scheduled minute.
-      void runJob(name, jobSettings, 'schedule', { scheduledAt, lockAlreadyAcquired: true });
+      detach(
+        runJob(name, jobSettings, 'schedule', { scheduledAt, lockAlreadyAcquired: true }),
+        `scheduler:missed-catchup:${name}`,
+      );
       return; // Catch-up job records its own started/succeeded/failed events.
     }
 
@@ -509,7 +525,10 @@ export async function catchUpMissedRunsOnStartup(): Promise<void> {
 
     // Reuse the slot lock just acquired so the recovery run stays mutually exclusive
     // with any concurrent scheduled/missed execution for the same slot.
-    void runJob(name, jobSettings, 'schedule', { scheduledAt, lockAlreadyAcquired: true });
+    detach(
+      runJob(name, jobSettings, 'schedule', { scheduledAt, lockAlreadyAcquired: true }),
+      `scheduler:startup-catchup:${name}`,
+    );
   }
 }
 
