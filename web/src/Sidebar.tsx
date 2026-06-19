@@ -1,4 +1,4 @@
-import { useState, useEffect, type CSSProperties } from 'react';
+import { useState, useEffect, type CSSProperties, type SyntheticEvent } from 'react';
 import { Icon } from './icons';
 import { Tooltip } from './ui';
 
@@ -49,7 +49,7 @@ export function Sidebar<T extends string>({
     }
   }, [activeTab, entries]);
 
-  function toggleExpand(parentId: string, e: React.MouseEvent) {
+  function toggleExpand(parentId: string, e: SyntheticEvent) {
     e.stopPropagation();
     setExpandedParents((prev) => {
       const next = new Set(prev);
@@ -131,7 +131,7 @@ export function Sidebar<T extends string>({
                       }
                       if (event.key === 'Enter') {
                         event.preventDefault();
-                        if (isParent) toggleExpand(entry.id, event as unknown as React.MouseEvent);
+                        if (isParent) toggleExpand(entry.id, event);
                         onSelect(entry.id);
                       }
                     }}

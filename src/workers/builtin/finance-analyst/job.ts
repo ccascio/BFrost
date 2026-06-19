@@ -107,8 +107,7 @@ interface FinanceNewsPayload {
 }
 
 function payloadOf(item: QueueItem): FinanceNewsPayload {
-  const p = (item as unknown as { payload?: unknown }).payload;
-  return p && typeof p === 'object' ? (p as FinanceNewsPayload) : {};
+  return item.payload ?? {};
 }
 
 function tickersOf(item: QueueItem): string[] {

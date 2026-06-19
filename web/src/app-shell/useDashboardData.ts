@@ -6,6 +6,7 @@ import type {
   DashboardSectionName,
   DashboardState,
   DashboardTab,
+  EventLogRecord,
   JobDraft,
 } from '../app-types';
 import {
@@ -20,6 +21,7 @@ import {
   sectionEndpoint,
   sectionsForTab,
 } from '../app-helpers';
+import { useEventStream } from './useEventStream';
 
 export function useDashboardData({
   activeTab,
@@ -38,15 +40,33 @@ export function useDashboardData({
   const [error, setError] = useState<AppError | null>(null);
   const [notice, setNotice] = useState<string>('Loading dashboard...');
   const [password, setPassword] = useState('');
+  const [lastStreamEvent, setLastStreamEvent] = useState<EventLogRecord | null>(null);
   const loadedSectionsRef = useRef<Set<DashboardSectionName>>(new Set());
   const inflightSectionsRef = useRef<Map<DashboardSectionName, Promise<void>>>(new Map());
   const activeTabRef = useRef<DashboardTab>('overview');
   const loadedBundleWorkersRef = useRef<Set<string>>(new Set());
+  const pendingStreamSectionsRef = useRef<Set<DashboardSectionName>>(new Set());
+  const streamSectionTimerRef = useRef<number | null>(null);
+  const streamDashboardTimerRef = useRef<number | null>(null);
   const dashboardViews = useWorkerDashboardViews();
+  const streamEnabled = Boolean(session?.authenticated || session?.authEnabled === false);
+  const eventStreamStatus = useEventStream({
+    enabled: streamEnabled,
+    onEvent: handleStreamEvent,
+    onOpen: handleStreamOpen,
+  });
 
   useEffect(() => {
     void initialize();
+    return () => {
+      if (streamSectionTimerRef.current !== null) window.clearTimeout(streamSectionTimerRef.current);
+      if (streamDashboardTimerRef.current !== null) window.clearTimeout(streamDashboardTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
     const timer = window.setInterval(() => {
+      if (eventStreamStatus === 'open') return;
       if (activeTabRef.current === 'config') return;
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       if (session?.authenticated || session?.authEnabled === false) {
@@ -56,11 +76,12 @@ export function useDashboardData({
       }
     }, DASHBOARD_REFRESH_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [session?.authenticated, session?.authEnabled]);
+  }, [session?.authenticated, session?.authEnabled, eventStreamStatus]);
 
   useEffect(() => {
     if (!dashboard || activeTab !== 'jobs') return;
     const timer = window.setInterval(() => {
+      if (eventStreamStatus === 'open') return;
       if (activeTabRef.current !== 'jobs') return;
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       if (session?.authenticated || session?.authEnabled === false) {
@@ -71,7 +92,7 @@ export function useDashboardData({
       }
     }, JOBS_REFRESH_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [activeTab, dashboard !== null, session?.authenticated, session?.authEnabled]);
+  }, [activeTab, dashboard !== null, session?.authenticated, session?.authEnabled, eventStreamStatus]);
 
   useEffect(() => {
     if (!dashboard) return;
@@ -90,6 +111,95 @@ export function useDashboardData({
       void fetchSection(section);
     }
   }, [activeTab, dashboard !== null]);
+
+  useEffect(() => {
+    if (!dashboard || eventStreamStatus !== 'open') return;
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        void refreshActiveTabSections();
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [dashboard !== null, eventStreamStatus]);
+
+  function handleStreamOpen() {
+    if (!dashboard) return;
+    queueStreamSections(sectionsForTab(activeTabRef.current));
+  }
+
+  function handleStreamEvent(event: EventLogRecord) {
+    setLastStreamEvent(event);
+    if (eventNeedsDashboardRefresh(event)) {
+      queueDashboardRefreshFromStream();
+    }
+    queueStreamSections(sectionsForStreamEvent(event));
+  }
+
+  function sectionsForStreamEvent(event: EventLogRecord): DashboardSectionName[] {
+    const sections = new Set<DashboardSectionName>(['events']);
+    for (const section of sectionsForTab(activeTabRef.current)) sections.add(section);
+
+    switch (event.category) {
+      case 'queue':
+        sections.add('queue');
+        break;
+      case 'scheduler':
+        sections.add('cronRuns');
+        sections.add('queue');
+        sections.add('workerData');
+        break;
+      case 'backups':
+        sections.add('backups');
+        break;
+      case 'config':
+        sections.add('localRuntimeModels');
+        sections.add('workerData');
+        break;
+      case 'actions':
+        break;
+      default:
+        sections.add('workerData');
+        break;
+    }
+
+    return [...sections];
+  }
+
+  function eventNeedsDashboardRefresh(event: EventLogRecord): boolean {
+    return event.category === 'workers' || event.category === 'config' || event.category === 'admin';
+  }
+
+  function queueStreamSections(sections: DashboardSectionName[]) {
+    if (sections.length === 0) return;
+    for (const section of sections) pendingStreamSectionsRef.current.add(section);
+    if (streamSectionTimerRef.current !== null) return;
+
+    streamSectionTimerRef.current = window.setTimeout(() => {
+      streamSectionTimerRef.current = null;
+      const queued = [...pendingStreamSectionsRef.current];
+      pendingStreamSectionsRef.current.clear();
+      if (!dashboardAccessAllowed()) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void Promise.all(queued.map((section) => fetchSection(section, { force: true })));
+    }, 250);
+  }
+
+  function queueDashboardRefreshFromStream() {
+    if (streamDashboardTimerRef.current !== null) return;
+    streamDashboardTimerRef.current = window.setTimeout(() => {
+      streamDashboardTimerRef.current = null;
+      if (!dashboardAccessAllowed()) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void fetchDashboard(true);
+    }, 250);
+  }
+
+  function dashboardAccessAllowed(): boolean {
+    return Boolean(session?.authenticated || session?.authEnabled === false);
+  }
 
   async function initialize() {
     const nextSession = await refreshSession(true);
@@ -351,6 +461,8 @@ export function useDashboardData({
     password,
     setPassword,
     dashboardViews,
+    eventStreamStatus,
+    lastStreamEvent,
     fetchDashboard,
     fetchSection,
     mutate,

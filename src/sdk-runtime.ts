@@ -37,11 +37,11 @@ export function registerBfrostRuntimeModule(): void {
   virtualModule.exports = bfrostSdk;
   cache[VIRTUAL_FILENAME] = virtualModule;
 
-  const ModuleAny = Module as unknown as {
+  const ModuleResolver = Module as typeof Module & {
     _resolveFilename: (request: string, parent: NodeJS.Module | null, ...rest: unknown[]) => string;
   };
-  const originalResolveFilename = ModuleAny._resolveFilename;
-  ModuleAny._resolveFilename = function (
+  const originalResolveFilename = ModuleResolver._resolveFilename;
+  ModuleResolver._resolveFilename = function (
     request: string,
     parent: NodeJS.Module | null,
     ...rest: unknown[]

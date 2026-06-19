@@ -3,6 +3,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { TextDecoder } from 'node:util';
 import test from 'node:test';
 import {
   startAdminServer,
@@ -14,6 +15,7 @@ import { closeDb } from './sqlite';
 import { createThread, getThread, hydrateThreads } from './chat-threads';
 import { hydrateProjects } from './projects';
 import { addUserMessage, addAssistantMessage } from './conversation';
+import { recordEvent } from './event-log';
 
 async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -25,6 +27,34 @@ async function freePort(): Promise<number> {
       srv.close(() => resolve(port));
     });
   });
+}
+
+type TestStreamReader = {
+  read: () => Promise<{ done?: boolean; value?: Uint8Array }>;
+  cancel?: () => Promise<void>;
+};
+
+async function readStreamUntil(reader: TestStreamReader, needle: string): Promise<string> {
+  const decoder = new TextDecoder();
+  let text = '';
+  const deadline = Date.now() + 3000;
+
+  while (!text.includes(needle)) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      throw new Error(`Timed out waiting for stream text: ${needle}`);
+    }
+    const chunk = await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error(`Timed out waiting for stream text: ${needle}`)), remaining);
+      }),
+    ]);
+    if (chunk.done) break;
+    if (chunk.value) text += decoder.decode(chunk.value, { stream: true });
+  }
+
+  return text;
 }
 
 // These guard worker zip/tarball installs against zip-slip / tar-slip path traversal and
@@ -107,6 +137,56 @@ test('router dispatch serves exact routes, static fallback, and 404s over HTTP',
     // Method specificity: /api/dashboard is GET-only, so POST falls through to 404.
     assert.equal((await fetch(`${base}/api/dashboard`, { method: 'POST' })).status, 404);
   } finally {
+    await stopAdminServer();
+    config.appDbPath = previous.appDbPath;
+    config.adminPort = previous.adminPort;
+    config.adminHost = previous.adminHost;
+    config.adminPassword = previous.adminPassword;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('dashboard event stream emits event log records over SSE', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-admin-stream-'));
+  const previous = {
+    appDbPath: config.appDbPath,
+    adminPort: config.adminPort,
+    adminHost: config.adminHost,
+    adminPassword: config.adminPassword,
+  };
+  config.appDbPath = path.join(dir, 'app.sqlite');
+  config.adminHost = '127.0.0.1';
+  config.adminPort = await freePort();
+  config.adminPassword = '';
+  const base = `http://127.0.0.1:${config.adminPort}`;
+  const controller = new AbortController();
+  let reader: TestStreamReader | null = null;
+
+  try {
+    await startAdminServer();
+
+    const response = await fetch(`${base}/api/events/stream`, { signal: controller.signal });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type') ?? '', /text\/event-stream/);
+    assert.ok(response.body);
+
+    reader = response.body.getReader();
+    assert.match(await readStreamUntil(reader, 'event: ready'), /retry: 3000/);
+
+    await recordEvent({
+      category: 'stream-test',
+      action: 'created',
+      summary: 'SSE test event.',
+      metadata: { ok: true },
+    });
+
+    const text = await readStreamUntil(reader, 'SSE test event.');
+    assert.match(text, /event: event-log/);
+    assert.match(text, /stream-test/);
+  } finally {
+    controller.abort();
+    await reader?.cancel?.().catch(() => undefined);
     await stopAdminServer();
     config.appDbPath = previous.appDbPath;
     config.adminPort = previous.adminPort;

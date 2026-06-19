@@ -6,7 +6,7 @@
 
 BFrost has exactly one load-bearing rule (see [`CLAUDE.md`](./CLAUDE.md)): *every capability is a worker; the core only installs, configures, schedules, runs, observes, and uninstalls them.* So the question for every refactor in this document is not "is this cleaner?" but **"does this make `src/` (outside `src/workers/`) more worker-agnostic, or less?"** A change that shrinks a file but leaves core owning worker-shaped logic is a half-fix. Each item below is framed as contract-reinforcing.
 
-This roadmap began with two pressure points. As of **2026-06-19**, **Phase 1 is complete**: the backend HTTP monolith is dissolved, the frontend shell/helper pressure points are below the ~600 LOC threshold, and the design-token layer exit criterion is already met. **Phase 2 is complete**: process-level crash/rejection handling, scheduled-job retry/backoff, and raw HTTP body hardening are in place. **Phase 3.1 is also complete**: the worker-first contract is now machine-enforced across production core files, and the main provider/channel/config leaks have been moved behind generic or worker-owned contracts. The next meaningful work is Phase 3.2: wrapping internal API casts in a typed, tested adapter.
+This roadmap began with two pressure points. As of **2026-06-19**, **Phase 1 is complete**: the backend HTTP monolith is dissolved, the frontend shell/helper pressure points are below the ~600 LOC threshold, and the design-token layer exit criterion is already met. **Phase 2 is complete**: process-level crash/rejection handling, scheduled-job retry/backoff, and raw HTTP body hardening are in place. **Phase 3.1 and 3.2 are also complete**: the worker-first contract is now machine-enforced across production core files, the main provider/channel/config leaks have been moved behind generic or worker-owned contracts, and fragile double-unknown casts are removed from production code. The next meaningful work is Phase 4 testing/observability.
 
 | File | Original LOC | Current LOC | Status |
 |---|---:|---:|---|
@@ -166,6 +166,15 @@ Verified on 2026-06-18: the manual forbidden-token production-core scan is clean
 
 **Exit criterion.** Internal-API access lives in one typed, tested seam; a node-cron upgrade that changes the shape fails a test, not production.
 
+**Status — DONE (2026-06-19).**
+- `src/cron-internals.ts` is now the single adapter around node-cron's `InlineScheduledTask.timeMatcher` internal, using runtime checks and fail-closed `null` behavior instead of scheduler-local double casts.
+- `src/cron-internals.test.ts` verifies the current node-cron task shape by computing a known previous scheduled match; a dependency shape change now fails a focused test.
+- `scheduler.ts` delegates missed-slot calculation to the adapter and keeps its existing catch-up fallback behavior.
+- The remaining production `as unknown as` uses were removed or narrowed: Node module resolver hook, event metadata objects, Item Bus payload access, and assistant item summaries.
+- `src/worker-first-contract.test.ts` now scans production TypeScript files and fails if `as unknown as` returns.
+
+Verified: full `npm test` passes with **221 backend tests** plus `npm run check:web`.
+
 ### 3.3 Add a frontend typecheck gate
 **Problem.** Memory `frontend-has-no-typecheck-gate`: `vite build` does not typecheck `web/src`. The 7k-line `App.tsx` has been growing without `tsc` coverage.
 
@@ -200,8 +209,8 @@ These were the engineering carryovers from the v1.0 technical roadmap (originall
 1. **Phase 1 (monolith dissolution)** — done; preserve it with the typecheck, smoke harness, and worker-first contract scan.
 2. **Phase 3.1 (worker-first contract guardrail)** — done; production core is scanned recursively and the main provider/channel/config leaks have been dissolved.
 3. **Phase 2 reliability gaps** — done: process fault handling, scheduled-job retry/backoff, and raw HTTP hardening are all verified.
-4. **Phase 3.2** — next: wrap the node-cron/internal API casts in one typed, tested adapter.
-5. **Phase 4 testing/observability** — richer schema-form smoke coverage, per-worker metrics, scoped secrets, and longer-tail platform hardening.
+4. **Phase 3.2** — done: node-cron internals are adapter-owned/tested and production double-unknown casts are guarded against.
+5. **Phase 4 testing/observability** — next: richer schema-form smoke coverage, per-worker metrics, scoped secrets, and longer-tail platform hardening.
 
 ## Global exit criterion
 

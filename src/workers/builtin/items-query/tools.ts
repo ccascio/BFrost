@@ -110,7 +110,7 @@ function formatItem(item: QueueItem): string {
     : undefined;
   if (producerWorker?.summarizeForAssistant) {
     try {
-      const summary = producerWorker.summarizeForAssistant(item as unknown as Record<string, unknown>);
+      const summary = producerWorker.summarizeForAssistant({ ...item });
       // Always append URL so the assistant can follow up, even when using a custom summarizer.
       const lines = [`• ${summary}`, `  ${item.url}`];
       return lines.join('\n');

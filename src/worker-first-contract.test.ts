@@ -58,10 +58,31 @@ test('production core files do not name specific workers', async () => {
   assert.deepEqual(hits, []);
 });
 
+test('production TypeScript files do not use double unknown casts', async () => {
+  const hits: string[] = [];
+
+  for (const relPath of await listProductionTypeScriptFiles()) {
+    const content = await readFile(path.join(process.cwd(), relPath), 'utf8');
+    if (content.includes('as unknown as')) {
+      hits.push(relPath);
+    }
+  }
+
+  assert.deepEqual(hits, []);
+});
+
 async function listContractCoreFiles(): Promise<string[]> {
   const results: string[] = [];
   for (const root of CONTRACT_CORE_ROOTS) {
     await walk(root, results);
+  }
+  return results.sort();
+}
+
+async function listProductionTypeScriptFiles(): Promise<string[]> {
+  const results: string[] = [];
+  for (const root of CONTRACT_CORE_ROOTS) {
+    await walkProduction(root, results);
   }
   return results.sort();
 }
@@ -78,8 +99,26 @@ async function walk(relDir: string, results: string[]): Promise<void> {
       continue;
     }
     if (!entry.isFile()) continue;
+    if (relPath.includes('/__smoke__/')) continue;
     const ext = path.extname(entry.name);
     if (!CONTRACT_FILE_EXTENSIONS.has(ext)) continue;
+    if (path.basename(entry.name, ext).includes('.test')) continue;
+    results.push(relPath);
+  }
+}
+
+async function walkProduction(relDir: string, results: string[]): Promise<void> {
+  const entries = await readdir(path.join(process.cwd(), relDir), { withFileTypes: true });
+  for (const entry of entries) {
+    const relPath = `${relDir}/${entry.name}`;
+    if (relPath.includes('/__smoke__/') || relPath.endsWith('/__smoke__')) continue;
+    if (entry.isDirectory()) {
+      await walkProduction(relPath, results);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    const ext = path.extname(entry.name);
+    if (ext !== '.ts' && ext !== '.tsx') continue;
     if (path.basename(entry.name, ext).includes('.test')) continue;
     results.push(relPath);
   }

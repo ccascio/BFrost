@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { config } from './config';
 import { closeDb } from './sqlite';
-import { listRecentEvents, recordEvent } from './event-log';
+import { listRecentEvents, recordEvent, subscribeToEventLog } from './event-log';
 
 test('event log records and lists recent events from SQLite', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-events-'));
@@ -27,6 +27,32 @@ test('event log records and lists recent events from SQLite', async () => {
     assert.equal(events[0].summary, 'Recorded a test event.');
     assert.deepEqual(events[0].metadata, { value: 42 });
   } finally {
+    config.appDbPath = previousPath;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('event log notifies subscribers after durable write', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-event-subscribers-'));
+  const previousPath = config.appDbPath;
+  config.appDbPath = path.join(dir, 'events.sqlite');
+  const received: unknown[] = [];
+  const unsubscribe = subscribeToEventLog((event) => received.push(event));
+
+  try {
+    await recordEvent({
+      category: 'stream',
+      action: 'created',
+      summary: 'Stream me.',
+      metadata: { live: true },
+    });
+
+    const events = await listRecentEvents(5);
+    assert.equal(received.length, 1);
+    assert.deepEqual(received[0], events[0]);
+  } finally {
+    unsubscribe();
     config.appDbPath = previousPath;
     closeDb();
     await rm(dir, { recursive: true, force: true });

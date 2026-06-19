@@ -45,7 +45,7 @@ export function registerBackupRoutes(router: HttpRouter): void {
       category: 'admin',
       action: 'auto_backup_settings_updated',
       summary: `Auto-backup ${updated.enabled ? 'enabled' : 'disabled'} (retention: ${updated.retentionDays} days).`,
-      metadata: updated as unknown as Record<string, unknown>,
+      metadata: { ...updated },
     });
     return sendJson(res, 200, updated);
   });

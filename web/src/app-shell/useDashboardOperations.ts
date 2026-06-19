@@ -4,14 +4,18 @@ import type {
   AutoBackupSettings,
   DashboardState,
   DashboardTab,
+  EventLogRecord,
   JobMetricsResponse,
   WhatsNewEntry,
   WorkerSummary,
 } from '../app-types';
 import { toAppError } from '../app-types';
+import type { EventStreamStatus } from './useEventStream';
 
 export function useDashboardOperations({
   activeTab,
+  eventStreamStatus,
+  lastStreamEvent,
   setActiveTab,
   setBusyKey,
   setError,
@@ -22,6 +26,8 @@ export function useDashboardOperations({
   mutate,
 }: {
   activeTab: DashboardTab;
+  eventStreamStatus: EventStreamStatus;
+  lastStreamEvent: EventLogRecord | null;
   setActiveTab: (tab: DashboardTab) => void;
   setBusyKey: (key: string | null) => void;
   setError: (error: ReturnType<typeof toAppError> | null) => void;
@@ -58,9 +64,18 @@ export function useDashboardOperations({
     if (activeTab !== 'actions') return;
     void fetchPendingActions();
     void fetchActionHistory();
+    if (eventStreamStatus === 'open') return;
     const timer = window.setInterval(() => void fetchPendingActions(), 3000);
     return () => window.clearInterval(timer);
-  }, [activeTab]);
+  }, [activeTab, eventStreamStatus]);
+
+  useEffect(() => {
+    if (eventStreamStatus !== 'open' || lastStreamEvent?.category !== 'actions') return;
+    void fetchPendingActions();
+    if (activeTab === 'actions') {
+      void fetchActionHistory();
+    }
+  }, [activeTab, eventStreamStatus, lastStreamEvent?.id]);
 
   useEffect(() => {
     if (activeTab !== 'system' || whatsNew !== null) return;

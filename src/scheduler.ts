@@ -18,6 +18,7 @@ import { acquireSchedulerExecutionLock } from './scheduler-locks';
 import { isWorkerEnabled, loadWorkerState, type WorkerStateStore } from './workers/state';
 import { detach } from './process-lifecycle';
 import type { WorkerJobRetryPolicy } from './workers/types';
+import { getPreviousCronMatch } from './cron-internals';
 
 const SCHEDULER_STATE_STORE_KEY = 'scheduler.state';
 // Recover a missed slot if it elapsed within this window. Sized to cover a daily
@@ -557,25 +558,7 @@ function getMissedSlotTime(name: JobName, ctxDate: Date): Date | null {
     const task = tasks.get(name);
     if (!task) return null;
 
-    // timeMatcher is a public property on InlineScheduledTask but not on the
-    // ScheduledTask interface — access via unknown cast, guarded by try-catch.
-    const timeMatcher = (task as unknown as { timeMatcher: { getNextMatch(d: Date): Date } })
-      .timeMatcher;
-    if (typeof timeMatcher?.getNextMatch !== 'function') return null;
-
-    const ctxMs = ctxDate.getTime();
-    let t = new Date(ctxMs - 48 * 60 * 60 * 1000); // start 48h before ctx.date
-    let lastMatchBeforeCtx: Date | null = null;
-
-    // Walk forward through scheduled slots, stopping just before ctxDate.
-    for (let i = 0; i < 300; i++) {
-      const nextT = timeMatcher.getNextMatch(t);
-      if (nextT.getTime() >= ctxMs) break;
-      lastMatchBeforeCtx = nextT;
-      t = nextT;
-    }
-
-    return lastMatchBeforeCtx;
+    return getPreviousCronMatch(task, ctxDate);
   } catch {
     return null;
   }

@@ -1,3 +1,4 @@
+import type { ServerResponse } from 'http';
 import { HttpRouter } from '../router';
 import { sendJson } from '../responses';
 import {
@@ -11,6 +12,7 @@ import {
   buildLocalEmbeddingModelsSection,
   buildJobMetricsSection,
 } from '../../admin-dashboard-state';
+import { subscribeToEventLog, type EventLogRecord } from '../../event-log';
 
 export function registerDashboardRoutes(router: HttpRouter): void {
   router.add('GET', '/api/dashboard', async (_req, res) => {
@@ -40,4 +42,46 @@ export function registerDashboardRoutes(router: HttpRouter): void {
   router.add('GET', '/api/dashboard/job-metrics', async (_req, res) => {
     return sendJson(res, 200, await buildJobMetricsSection());
   });
+  router.add('GET', '/api/events/stream', (req, res) => {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-store, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    res.write('retry: 3000\n\n');
+    writeSseEvent(res, 'ready', { connectedAt: new Date().toISOString() });
+
+    const unsubscribe = subscribeToEventLog((event) => {
+      writeSseEvent(res, 'event-log', event, event.id);
+    });
+    const heartbeat = setInterval(() => {
+      if (!res.writableEnded) {
+        res.write(': heartbeat\n\n');
+      }
+    }, 15000);
+
+    const close = () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+    };
+    req.on('close', close);
+    res.on('close', close);
+  });
+}
+
+function writeSseEvent(
+  res: ServerResponse,
+  eventName: string,
+  payload: EventLogRecord | Record<string, unknown>,
+  id?: string,
+): void {
+  if (res.writableEnded) return;
+  if (id) res.write(`id: ${sanitizeSseLine(id)}\n`);
+  res.write(`event: ${sanitizeSseLine(eventName)}\n`);
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function sanitizeSseLine(value: string): string {
+  return value.replace(/[\r\n]/g, '');
 }

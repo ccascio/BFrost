@@ -23,7 +23,7 @@ export function registerAdminRoutes(router: HttpRouter): void {
       category: 'admin',
       action: 'factory_reset',
       summary: `Factory reset initiated (workerState=${body.wipeWorkerState}, credentials=${body.wipeCredentials}, backups=${body.wipeBackups}).`,
-      metadata: body as unknown as Record<string, unknown>,
+      metadata: { ...body },
     });
     // Send the response before performing destructive operations so the client gets it.
     sendJson(res, 200, { ok: true, message: 'Reset in progress. BFrost will exit and must be restarted.' });
