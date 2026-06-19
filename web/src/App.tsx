@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Sidebar, type SidebarEntry } from './Sidebar';
 import { TopBar } from './TopBar';
 import { Markdown } from './Markdown';
@@ -69,6 +69,8 @@ export default function App() {
     return window.localStorage.getItem('bfrost.sidebarCollapsed') === 'true';
   });
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
+  const [introPhase, setIntroPhase] = useState<'loading' | 'splash-exit' | 'enter' | 'done'>('loading');
+  const introFiredRef = useRef(false);
   const data = useDashboardData({ activeTab, setWizardCompleted, setWizardOpen });
   const {
     dashboard,
@@ -137,6 +139,15 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem('bfrost.sidebarCollapsed', String(sidebarCollapsed));
   }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    if (!dashboard || introFiredRef.current) return;
+    introFiredRef.current = true;
+    setIntroPhase('splash-exit');
+    const t1 = window.setTimeout(() => setIntroPhase('enter'), 300);
+    const t2 = window.setTimeout(() => setIntroPhase('done'), 1500);
+    return () => { window.clearTimeout(t1); window.clearTimeout(t2); };
+  }, [dashboard]);
 
   useEffect(() => {
     if (!sidebarMobileOpen) return;
@@ -256,8 +267,8 @@ export default function App() {
     );
   }
 
-  if (!dashboard) {
-    return <DashboardSplash error={error} />;
+  if (introPhase === 'loading' || introPhase === 'splash-exit') {
+    return <DashboardSplash error={error} exiting={introPhase === 'splash-exit'} />;
   }
 
   const filteredQueueItems = dashboard.queue.recentItems.filter((item) => {
@@ -380,7 +391,7 @@ export default function App() {
   ];
 
   return (
-    <div className={`dashboard-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}${sidebarMobileOpen ? ' sidebar-mobile-open' : ''}`}>
+    <div className={`dashboard-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}${sidebarMobileOpen ? ' sidebar-mobile-open' : ''}${introPhase === 'enter' ? ' is-intro' : ''}`}>
       <TopBar
         notice={notice}
         error={error}

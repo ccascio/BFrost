@@ -68,9 +68,9 @@ export function LoginScreen({
   );
 }
 
-export function DashboardSplash({ error }: { error: AppError | null }) {
+export function DashboardSplash({ error, exiting = false }: { error: AppError | null; exiting?: boolean }) {
   return (
-    <div className="bfrost-splash" aria-busy="true" aria-live="polite">
+    <div className={`bfrost-splash${exiting ? ' is-exiting' : ''}`} aria-busy="true" aria-live="polite">
       <img src="/bfrost-logo.jpeg" alt="BFrost" />
       <span>Loading BFrost...</span>
       {error ? (

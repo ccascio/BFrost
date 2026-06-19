@@ -6101,3 +6101,138 @@ code {
   height: 100%;
   min-height: 0;
 }
+
+/* ─── Boot splash ─────────────────────────────────────────────────────────── */
+
+.bfrost-splash {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  background: var(--bg);
+  z-index: 100;
+}
+
+.bfrost-splash img {
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
+  object-fit: cover;
+  box-shadow: 0 8px 32px rgba(29, 35, 39, 0.14);
+  animation: splash-logo-breathe 1.6s ease-in-out infinite alternate;
+}
+
+.bfrost-splash span {
+  color: var(--muted);
+  font-size: 0.88rem;
+  letter-spacing: 0.01em;
+}
+
+@keyframes splash-logo-breathe {
+  from { transform: scale(1);    opacity: 0.85; }
+  to   { transform: scale(1.04); opacity: 1; }
+}
+
+/* Exit: logo flies toward the top-left (where the sidebar lives) and shrinks */
+.bfrost-splash.is-exiting {
+  pointer-events: none;
+  animation: splash-exit 300ms var(--ease-emphasized) forwards;
+}
+
+.bfrost-splash.is-exiting img {
+  animation: splash-logo-exit 300ms var(--ease-emphasized) forwards;
+}
+
+.bfrost-splash.is-exiting span {
+  animation: splash-text-exit 200ms ease forwards;
+}
+
+@keyframes splash-exit {
+  to { background: transparent; }
+}
+
+@keyframes splash-logo-exit {
+  to {
+    transform: translate(-36vw, -36vh) scale(0.28);
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+
+@keyframes splash-text-exit {
+  to { opacity: 0; transform: translateY(6px); }
+}
+
+/* ─── Cinematic intro — active while .is-intro is on .dashboard-layout ────── */
+
+/* Sidebar slides in from left */
+.is-intro .sidebar {
+  animation: intro-sidebar-enter 420ms var(--ease-emphasized) both;
+}
+
+@keyframes intro-sidebar-enter {
+  from { transform: translateX(-110%); }
+  to   { transform: translateX(0); }
+}
+
+/* Logo materialises large → normal (echoes where splash logo "went") */
+.is-intro .sidebar-logo {
+  animation: intro-logo-land 500ms 180ms var(--ease-emphasized) both;
+}
+
+@keyframes intro-logo-land {
+  from { transform: scale(2.8); opacity: 0; filter: blur(4px); }
+  to   { transform: scale(1);   opacity: 1; filter: blur(0); }
+}
+
+/* Sidebar title fades in after logo lands */
+.is-intro .sidebar-brand .sidebar-title {
+  animation: ui-fade-in 280ms 420ms ease both;
+}
+
+/* Sidebar nav items stagger in from the left using --item-idx set by JS */
+.is-intro .sidebar-item {
+  animation: intro-item-enter 300ms var(--ease-emphasized) both;
+  animation-delay: calc(260ms + var(--item-idx, 0) * 48ms);
+}
+
+@keyframes intro-item-enter {
+  from { transform: translateX(-14px); opacity: 0; }
+  to   { transform: translateX(0);     opacity: 1; }
+}
+
+/* Settings + collapse buttons at the bottom of the sidebar */
+.is-intro .sidebar-settings,
+.is-intro .sidebar-collapse {
+  animation: intro-item-enter 300ms 860ms var(--ease-emphasized) both;
+}
+
+/* Topbar drops down from above */
+.is-intro .topbar {
+  animation: intro-topbar-enter 380ms 60ms var(--ease-emphasized) both;
+}
+
+@keyframes intro-topbar-enter {
+  from { transform: translateY(-110%); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+
+/* Content panels wave up, staggered by section position */
+.is-intro .tab-page > * {
+  animation: intro-panel-enter 400ms var(--ease-emphasized) both;
+}
+
+.is-intro .tab-page > *:nth-child(1) { animation-delay: 420ms; }
+.is-intro .tab-page > *:nth-child(2) { animation-delay: 480ms; }
+.is-intro .tab-page > *:nth-child(3) { animation-delay: 540ms; }
+.is-intro .tab-page > *:nth-child(4) { animation-delay: 600ms; }
+.is-intro .tab-page > *:nth-child(5) { animation-delay: 660ms; }
+.is-intro .tab-page > *:nth-child(6) { animation-delay: 720ms; }
+
+@keyframes intro-panel-enter {
+  from { transform: translateY(22px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}

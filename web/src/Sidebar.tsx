@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type CSSProperties } from 'react';
 import { Icon } from './icons';
 import { Tooltip } from './ui';
 
@@ -66,6 +66,7 @@ export function Sidebar<T extends string>({
   });
 
   const groups = groupEntries(visibleEntries);
+  let globalItemIdx = 0;
 
   function moveFocus(current: HTMLButtonElement, direction: 1 | -1) {
     const buttons = Array.from(
@@ -96,6 +97,12 @@ export function Sidebar<T extends string>({
                 const isChild = !!entry.parentId;
                 const isParent = parentIds.has(entry.id);
                 const isExpanded = isParent && expandedParents.has(entry.id);
+                const itemIdx = globalItemIdx++;
+
+                const itemStyle: CSSProperties = {
+                  '--item-idx': Math.min(itemIdx, 12),
+                  ...(isChild ? { animationDelay: `${Math.min(entryIndex, 6) * 24}ms` } : {}),
+                } as CSSProperties;
 
                 const item = (
                   <button
@@ -105,7 +112,7 @@ export function Sidebar<T extends string>({
                     aria-expanded={isParent ? isExpanded : undefined}
                     aria-label={collapsed ? entry.label : undefined}
                     key={entry.id}
-                    style={isChild ? { animationDelay: `${Math.min(entryIndex, 6) * 24}ms` } : undefined}
+                    style={itemStyle}
                     onClick={(e) => {
                       if (isParent) {
                         // Toggle subtree; navigate to the parent tab too.
