@@ -144,9 +144,10 @@ export default function App() {
     if (!dashboard || introFiredRef.current) return;
     introFiredRef.current = true;
     setIntroPhase('splash-exit');
-    const t1 = window.setTimeout(() => setIntroPhase('enter'), 300);
-    const t2 = window.setTimeout(() => setIntroPhase('done'), 1500);
-    return () => { window.clearTimeout(t1); window.clearTimeout(t2); };
+    // No cleanup: timers must survive dashboard reference updates (polling refresh)
+    // and React StrictMode's double-invoke. App is the root and never unmounts normally.
+    window.setTimeout(() => setIntroPhase('enter'), 300);
+    window.setTimeout(() => setIntroPhase('done'), 1500);
   }, [dashboard]);
 
   useEffect(() => {
@@ -267,7 +268,7 @@ export default function App() {
     );
   }
 
-  if (introPhase === 'loading' || introPhase === 'splash-exit') {
+  if (introPhase === 'loading' || introPhase === 'splash-exit' || !dashboard) {
     return <DashboardSplash error={error} exiting={introPhase === 'splash-exit'} />;
   }
 
