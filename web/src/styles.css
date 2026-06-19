@@ -1438,7 +1438,7 @@ h3 {
 .overview-pipeline-grid {
   grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
   margin-bottom: 1rem;
-  align-items: start;
+  align-items: stretch;
 }
 
 .overview-chat-panel {
