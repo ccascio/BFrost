@@ -14,30 +14,8 @@ export interface ProviderModelOption {
   label?: string;
 }
 
-const builtInModels: ModelOption[] = [
-  {
-    alias: 'gpt-5.5',
-    id: 'gpt-5.5',
-    label: 'GPT-5.5',
-    provider: 'openai',
-  },
-  {
-    alias: 'gpt-5.4-mini',
-    id: 'gpt-5.4-mini',
-    label: 'GPT-5.4 mini',
-    provider: 'openai',
-  },
-  {
-    alias: 'claude-sonnet-4.6',
-    id: 'claude-sonnet-4-6',
-    label: 'Claude Sonnet 4.6',
-    provider: 'anthropic',
-  },
-];
-
-export const availableModels: ModelOption[] = [...builtInModels];
+export const availableModels: ModelOption[] = [];
 const discoveredModelsByProvider = new Map<string, ProviderModelOption[]>();
-const defaultModel = availableModels[0];
 
 function positiveNumberEnv(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -47,28 +25,22 @@ function positiveNumberEnv(name: string, fallback: number): number {
 }
 
 export const config = {
-  ollamaModel: process.env.OLLAMA_MODEL || defaultModel.id,
+  ollamaModel: process.env.OLLAMA_MODEL || '',
   ollamaBaseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434/v1',
-  lmStudioBin:
-    process.env.LMSTUDIO_BIN ||
-    '/Applications/LM Studio.app/Contents/Resources/app/.webpack/lms',
   allowedUserId: Number(process.env.ALLOWED_USER_ID || '0'),
   whisperModelPath: process.env.WHISPER_MODEL_PATH || './models/ggml-large-v3-turbo-q5_0.bin',
   googleApiKey: process.env.GOOGLE_API_KEY || '',
   googleSearchEngineId: process.env.GOOGLE_SEARCH_ENGINE_ID || '',
-  openaiApiKey: process.env.OPENAI_API_KEY || '',
-  anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
-  modelFallbackAliases: (process.env.MODEL_FALLBACK_ALIASES || 'gpt-5.4-mini,claude-sonnet-4.6')
+  modelFallbackAliases: (process.env.MODEL_FALLBACK_ALIASES || '')
     .split(',')
     .map((alias) => alias.trim())
     .filter(Boolean),
   embeddingModel: process.env.EMBEDDING_MODEL || 'text-embedding-nomic-embed-text-v1.5',
-  embeddingProvider: (process.env.EMBEDDING_PROVIDER === 'openai' ? 'openai' : 'local') as 'local' | 'openai',
+  embeddingProvider: process.env.EMBEDDING_PROVIDER || 'local',
   memoryStorePath: process.env.MEMORY_STORE_PATH || './data/memory.json',
   conversationStorePath: process.env.CONVERSATION_STORE_PATH || './data/conversations.json',
   appDbPath: process.env.APP_DB_PATH || './data/bfrost.sqlite',
-  newsStoreDir: process.env.NEWS_STORE_DIR || './data/news',
-  researchStoreDir: process.env.RESEARCH_STORE_DIR || './data/research',
+  itemBusStoreDir: process.env.BFROST_ITEM_BUS_DIR || './data/item-bus',
   xConsumerKey: process.env.X_CONSUMER_KEY || '',
   xConsumerSecret: process.env.X_CONSUMER_SECRET || '',
   xAccessToken: process.env.X_ACCESS_TOKEN || '',
@@ -80,7 +52,6 @@ export const config = {
   adminPassword: process.env.ADMIN_PASSWORD || '',
   adminSessionTtlHours: Number(process.env.ADMIN_SESSION_TTL_HOURS || '24'),
   jobLlmTimeoutMs: positiveNumberEnv('JOB_LLM_TIMEOUT_MS', 600000),
-  lmStudioContextLength: positiveNumberEnv('LMSTUDIO_CONTEXT_LENGTH', 16384),
   workerPaths: (process.env.BFROST_WORKER_PATHS || './workers/local,./workers')
     .split(',')
     .map((item) => item.trim())
@@ -94,19 +65,19 @@ export const config = {
    */
   workerHotReloadEnabled: process.env.BFROST_WORKER_HOT_RELOAD !== 'false',
   /**
-   * ID of the active local-runtime provider worker (e.g. 'lmstudio', 'ollama'). When more than
+   * ID of the active local-runtime provider worker. When more than
    * one local provider is installed, only this one is treated as the active local runtime.
-   * Cloud providers (openai, anthropic) coexist freely via per-model selection — this setting
+   * Cloud providers coexist freely via per-model selection — this setting
    * is only consulted for local-runtime dispatch. Persisted in admin settings; this default
    * is overwritten at boot from the stored value.
    */
-  activeLocalProviderId: 'lmstudio',
+  activeLocalProviderId: '',
   /**
    * ID of the channel worker that receives operator notifications (e.g. cron-run outcomes).
    * Other channels can still be enabled and serve incoming user messages; only outbound
    * notifications are funneled through the primary. Persisted in admin settings.
    */
-  primaryChannelId: 'telegram',
+  primaryChannelId: '',
 };
 
 export function findModel(aliasOrId: string): ModelOption | undefined {
@@ -127,7 +98,7 @@ export function clearDiscoveredProviderModels(provider: string): void {
 }
 
 function rebuildAvailableModels(): void {
-  const next = [...builtInModels];
+  const next: ModelOption[] = [];
   const usedAliases = new Set(next.map((model) => model.alias.toLowerCase()));
   const usedIds = new Set(next.map((model) => model.id.toLowerCase()));
 
@@ -193,7 +164,13 @@ function slugAlias(value: string): string {
 }
 
 export function getDefaultModel(): ModelOption {
-  return findModel(config.ollamaModel) ?? defaultModel;
+  const configured = config.ollamaModel ? findModel(config.ollamaModel) : undefined;
+  return configured ?? availableModels[0] ?? {
+    alias: 'unconfigured',
+    id: config.ollamaModel || 'unconfigured',
+    label: 'No configured model',
+    provider: 'unconfigured',
+  };
 }
 
 export function getDefaultModelAlias(): string {
@@ -207,15 +184,6 @@ export function setDefaultModel(aliasOrId: string): ModelOption {
   }
   config.ollamaModel = model.id;
   return model;
-}
-
-export function setCloudApiKeys(values: { openaiApiKey?: string; anthropicApiKey?: string }): void {
-  if (values.openaiApiKey !== undefined) {
-    config.openaiApiKey = values.openaiApiKey;
-  }
-  if (values.anthropicApiKey !== undefined) {
-    config.anthropicApiKey = values.anthropicApiKey;
-  }
 }
 
 export function setGoogleCredentials(values: { googleApiKey?: string; googleSearchEngineId?: string }): void {
@@ -235,7 +203,7 @@ export function setPrimaryChannelId(value: string): void {
   config.primaryChannelId = value;
 }
 
-export function setEmbeddingSettings(values: { provider?: 'local' | 'openai'; model?: string }): void {
+export function setEmbeddingSettings(values: { provider?: string; model?: string }): void {
   if (values.provider !== undefined) config.embeddingProvider = values.provider;
   if (values.model !== undefined) config.embeddingModel = values.model;
 }

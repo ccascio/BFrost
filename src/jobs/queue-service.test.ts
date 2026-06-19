@@ -11,9 +11,9 @@ import { loadQueueSnapshot, updateDashboardQueueItem } from './queue-service';
 
 test('loadQueueSnapshot returns pruned counts and newest items first', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-queue-service-'));
-  const previousDir = config.newsStoreDir;
+  const previousDir = config.itemBusStoreDir;
   const previousDbPath = config.appDbPath;
-  config.newsStoreDir = dir;
+  config.itemBusStoreDir = dir;
   config.appDbPath = path.join(dir, 'app.sqlite');
 
   try {
@@ -56,7 +56,7 @@ test('loadQueueSnapshot returns pruned counts and newest items first', async () 
       ['Failed', 'Queued'],
     );
   } finally {
-    config.newsStoreDir = previousDir;
+    config.itemBusStoreDir = previousDir;
     config.appDbPath = previousDbPath;
     closeDb();
     await rm(dir, { recursive: true, force: true });
@@ -65,9 +65,9 @@ test('loadQueueSnapshot returns pruned counts and newest items first', async () 
 
 test('updateDashboardQueueItem persists transition and records an event', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-queue-service-'));
-  const previousDir = config.newsStoreDir;
+  const previousDir = config.itemBusStoreDir;
   const previousDbPath = config.appDbPath;
-  config.newsStoreDir = dir;
+  config.itemBusStoreDir = dir;
   config.appDbPath = path.join(dir, 'app.sqlite');
 
   try {
@@ -91,7 +91,7 @@ test('updateDashboardQueueItem persists transition and records an event', async 
     assert.equal(events[0].action, 'approved');
     assert.equal(events[0].metadata.id, item.id);
   } finally {
-    config.newsStoreDir = previousDir;
+    config.itemBusStoreDir = previousDir;
     config.appDbPath = previousDbPath;
     closeDb();
     await rm(dir, { recursive: true, force: true });

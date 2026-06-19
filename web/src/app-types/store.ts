@@ -25,7 +25,7 @@ export const PERMISSION_INFO: Record<string, { label: string; description: strin
   },
   'operator-notify': {
     label: 'Operator notifications',
-    description: 'Can send you notifications via configured channels (e.g. Telegram).',
+    description: 'Can send you notifications via configured channels.',
   },
   'local-process': {
     label: 'Local process execution',

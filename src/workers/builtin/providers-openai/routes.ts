@@ -1,10 +1,10 @@
 import path from 'path';
 import { z } from 'zod';
 import { BadRequestError, type AdminApiRoute } from '../../../admin-route';
-import { setCloudApiKeys } from '../../../config';
 import { upsertEnvValue } from '../../../env-file';
 import { refreshCloudProviderModels } from '../../../model-discovery';
 import { recordEventSafe } from '../../../event-log';
+import { setOpenAIApiKey } from './credentials';
 
 const WORKER_ID = 'core.providers.openai';
 
@@ -25,7 +25,7 @@ export const openaiProviderApiRoutes: AdminApiRoute[] = [
       }
 
       await upsertEnvValue(path.join(process.cwd(), '.env'), 'OPENAI_API_KEY', key);
-      setCloudApiKeys({ openaiApiKey: key });
+      setOpenAIApiKey(key);
       await refreshCloudProviderModels();
 
       await recordEventSafe({

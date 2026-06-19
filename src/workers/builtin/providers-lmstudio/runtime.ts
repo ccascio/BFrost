@@ -1,6 +1,6 @@
 import { execFile, type ExecFileOptions } from 'child_process';
 import { promisify } from 'util';
-import { config } from '../../../config';
+import { getLmStudioBin, getLmStudioContextLength } from './settings';
 
 const execFileAsync = promisify(execFile);
 const LOAD_MODEL_TIMEOUT_MS = 20 * 60 * 1000;
@@ -25,7 +25,7 @@ async function lms(...args: string[]): Promise<string> {
 }
 
 async function runLms(args: string[], options: ExecFileOptions = {}): Promise<string> {
-  const { stdout } = await execFileAsync(config.lmStudioBin, args, options);
+  const { stdout } = await execFileAsync(getLmStudioBin(), args, options);
   return stdout.toString().trim();
 }
 
@@ -208,7 +208,7 @@ export function getUnloadIdentifiersForModel(modelKey: string, loaded: LoadedLmS
 }
 
 export function getLoadArgsForModel(modelKey: string): string[] {
-  return ['load', modelKey, '--identifier', modelKey, '--yes', '--context-length', String(config.lmStudioContextLength)];
+  return ['load', modelKey, '--identifier', modelKey, '--yes', '--context-length', String(getLmStudioContextLength())];
 }
 
 function isLoadedModelMatch(modelKey: string, model: LoadedLmStudioModel): boolean {

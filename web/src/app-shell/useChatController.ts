@@ -162,6 +162,23 @@ export function useChatController({
     }
   }
 
+  async function renameChatProject(project: ChatProject) {
+    const name = window.prompt('Rename project', project.name)?.trim();
+    if (!name || name === project.name) return;
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(project.projectId)}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!response.ok) throw new Error('Rename failed');
+      await loadChatProjects();
+    } catch (err) {
+      setError(toAppError(err));
+    }
+  }
+
   async function deleteChatThread(thread: ChatThread) {
     if (!window.confirm(`Delete chat "${thread.title}"? This cannot be undone.`)) return;
     try {
@@ -249,6 +266,7 @@ export function useChatController({
     chatLogRef,
     chatInputRef,
     createChatProject,
+    renameChatProject,
     startNewChat,
     openChatThread,
     renameChatThread,

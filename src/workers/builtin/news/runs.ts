@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { config } from '../../../config';
 import { loadKvJson, saveKvJson } from '../../../sqlite';
+import { getNewsStoreDir } from './settings';
 
 const NEWS_RUNS_STORE_KEY = 'news.runs';
 const RUN_RETENTION = 56;
@@ -60,7 +60,7 @@ async function loadNewsRuns(): Promise<NewsRunRecord[]> {
 }
 
 async function importLegacyRunFiles(): Promise<NewsRunRecord[]> {
-  const runsDir = path.join(config.newsStoreDir, 'runs');
+  const runsDir = path.join(getNewsStoreDir(), 'runs');
   try {
     const entries = (await fs.readdir(runsDir))
       .filter((name) => name.endsWith('.json'))

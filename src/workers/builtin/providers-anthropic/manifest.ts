@@ -55,6 +55,13 @@ export const anthropicProviderWorker: WorkerManifest = {
         vision: false,
         localRuntime: false,
       },
+      defaultModels: [
+        {
+          alias: 'claude-sonnet-4.6',
+          id: 'claude-sonnet-4-6',
+          label: 'Claude Sonnet 4.6',
+        },
+      ],
     },
   ],
 };

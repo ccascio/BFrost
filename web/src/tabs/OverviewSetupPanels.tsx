@@ -229,13 +229,13 @@ export function OverviewSetupPanels(props: OverviewSetupPanelsProps) {
       ) : null}
       {(() => {
         const detectedProvider = dashboard.availableLocalProviders[0];
-        const localRuntimeRunning = dashboard.lmStudio.running && dashboard.lmStudio.loadedCount > 0;
+        const localRuntimeRunning = dashboard.localRuntime.running && dashboard.localRuntime.loadedCount > 0;
         const alreadyAdopted =
           detectedProvider &&
           dashboard.platform.activeLocalProviderId === detectedProvider.id &&
           localRuntimeRunning;
         if (!detectedProvider || !localRuntimeRunning || alreadyAdopted || lmAdoptDismissed) return null;
-        const count = dashboard.lmStudio.loadedCount;
+        const count = dashboard.localRuntime.loadedCount;
         return (
           <section className="panel lm-adoption-banner" aria-label="Local model provider detected">
             <div className="panel-head" style={{ alignItems: 'flex-start' }}>
@@ -422,7 +422,7 @@ export function OverviewSetupPanels(props: OverviewSetupPanelsProps) {
 
         // Show cloud quick-connect when no real model is configured and no local runtime is detected.
         const hasRealModel = dashboard.models.some((m) => m.provider !== 'demo');
-        const localRuntimeRunning = dashboard.lmStudio.running;
+        const localRuntimeRunning = dashboard.localRuntime.running;
         if (hasRealModel || localRuntimeRunning || !selectedCredentialProvider) return null;
         if (cloudTestReply) {
           return (

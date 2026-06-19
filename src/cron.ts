@@ -57,7 +57,7 @@ function printUsage(): void {
     `Available jobs:\n  ${jobs}\n\n` +
     `Examples:\n` +
     `  node dist/cron.js --job <job-id>\n` +
-    `  node dist/cron.js "Summarize today's top AI news in 3 bullets."`,
+    `  node dist/cron.js "Summarize today's top items in 3 bullets."`,
   );
 }
 

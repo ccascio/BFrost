@@ -61,7 +61,7 @@ const overviewDashboard = {
   },
   models: [{ alias: 'demo', id: 'demo-model', label: 'Demo model', provider: 'demo' }],
   defaultModel: { alias: 'demo', id: 'demo-model', label: 'Demo model', provider: 'demo' },
-  lmStudio: { running: false, loadedModels: [], loadedCount: 0, pinnedModelId: null },
+  localRuntime: { running: false, loadedModels: [], loadedCount: 0, pinnedModelId: null },
   cron: { timezone: 'UTC', jobs: [], runs: [] },
   workers: [
     {
@@ -108,7 +108,7 @@ const overviewDashboard = {
   },
   integrations: {},
   dependencies: {
-    lmStudioCli: { ok: true, detail: 'ok' },
+    localRuntimeCli: { ok: true, detail: 'ok' },
     sqliteCli: { ok: true, detail: 'ok' },
     ffmpeg: { ok: true, detail: 'ok' },
     whisperCli: { ok: true, detail: 'ok' },
@@ -427,6 +427,7 @@ const cases: SmokeCase[] = [
       chatLogRef: nullRef,
       chatInputRef: nullRef,
       createChatProject: () => {},
+      renameChatProject: () => {},
       startNewChat: () => {},
       openChatThread: () => {},
       renameChatThread: () => {},
@@ -441,7 +442,7 @@ const cases: SmokeCase[] = [
       dashboard: {
         ...mockDashboard,
         dependencies: {
-          lmStudioCli: { ok: true, detail: 'ok' },
+          localRuntimeCli: { ok: true, detail: 'ok' },
           sqliteCli: { ok: true, detail: 'ok' },
           ffmpeg: { ok: true, detail: 'ok' },
           whisperCli: { ok: true, detail: 'ok' },

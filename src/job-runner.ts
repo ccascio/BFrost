@@ -12,7 +12,7 @@ import { getPinnedModelId, getPinnedModelIdSync, setPinnedModelId } from './loca
 
 export { isJobName, jobLabels, knownJobs, type JobName } from './workers/registry';
 
-let lmStudioRunQueue: Promise<void> = Promise.resolve();
+let localRuntimeRunQueue: Promise<void> = Promise.resolve();
 
 export interface JobRunResult {
   job: JobName;
@@ -36,7 +36,7 @@ async function invokeJob(job: JobName, modelId: string, params?: Record<string, 
 
 export interface RunModelOptions {
   /**
-   * When true, the runner does NOT unload the LM Studio model or stop the local runtime
+   * When true, the runner does NOT unload the model or stop the local runtime
    * after the work completes. Use for short-lived flows (chat turns) where back-to-back
    * invocations would otherwise pay multi-second load costs each time.
    */
@@ -65,7 +65,7 @@ export async function runNamedJob(job: JobName, modelAlias?: string, params?: Re
 
 /**
  * Run an interactive chat turn against the chosen model. Routes through the same
- * LM Studio exclusive queue as cron jobs so chat and jobs never race for the GPU.
+ * local-runtime exclusive queue as cron jobs so chat and jobs never race for the GPU.
  *
  * The model stays loaded between turns only if the user has explicitly pinned it
  * from the dashboard (see setPinnedModelId). Otherwise it is unloaded after the
@@ -80,7 +80,7 @@ export async function runChatTurn(
     throw new Error(`Unknown model alias: ${modelAlias}`);
   }
 
-  // Ensure pin state is hydrated so the LM Studio prep step can read it synchronously.
+  // Ensure pin state is hydrated so the local-runtime prep step can read it synchronously.
   await getPinnedModelId();
 
   return runWithModelFailover(primaryModel, async (model) => {
@@ -98,7 +98,7 @@ export async function pinAndLoadModel(modelAlias: string): Promise<void> {
   const model = await resolveModel(modelAlias);
   if (!model) throw new Error(`Unknown model alias: ${modelAlias}`);
   const provider = requireLocalProviderForModel(model);
-  await runWithLmStudioExclusive(async () => {
+  await runWithLocalRuntimeExclusive(async () => {
     if (provider.startRuntime) await provider.startRuntime();
     if (provider.unloadAllModels) await provider.unloadAllModels();
     if (provider.loadModel) await provider.loadModel(model.id);
@@ -111,7 +111,7 @@ export async function unpinAndUnloadModel(): Promise<void> {
   await setPinnedModelId(null);
   const provider = getActiveLocalProvider();
   if (!provider) return;
-  await runWithLmStudioExclusive(async () => {
+  await runWithLocalRuntimeExclusive(async () => {
     if (provider.unloadAllModels) await provider.unloadAllModels();
   });
 }
@@ -156,7 +156,7 @@ async function runWithModelFailover<T>(
 
   for (const model of candidates) {
     if (!isModelProviderConfigured(model)) {
-      console.warn(`[Model] Skipping ${model.alias}; ${requiredApiKeyName(model)} is not configured.`);
+      console.warn(`[Model] Skipping ${model.alias}; provider "${model.provider}" is not configured.`);
       continue;
     }
 
@@ -213,7 +213,7 @@ async function runWithPreparedModel<T>(
     return run(model);
   }
 
-  return runWithLmStudioExclusive(() => runWithPreparedLmStudioModel(model, run, options));
+  return runWithLocalRuntimeExclusive(() => runWithPreparedLocalRuntimeModel(model, run, options));
 }
 
 function requireLocalProviderForModel(model: ModelOption): ProviderAdapter {
@@ -233,7 +233,7 @@ function requireLocalProviderForModel(model: ModelOption): ProviderAdapter {
   return provider;
 }
 
-async function runWithPreparedLmStudioModel<T>(
+async function runWithPreparedLocalRuntimeModel<T>(
   model: ModelOption,
   run: (model: ModelOption) => Promise<T>,
   options: RunModelOptions = {},
@@ -289,10 +289,10 @@ async function runWithPreparedLmStudioModel<T>(
   }
 }
 
-async function runWithLmStudioExclusive<T>(run: () => Promise<T>): Promise<T> {
-  const previous = lmStudioRunQueue;
+async function runWithLocalRuntimeExclusive<T>(run: () => Promise<T>): Promise<T> {
+  const previous = localRuntimeRunQueue;
   let release: () => void = () => undefined;
-  lmStudioRunQueue = new Promise<void>((resolve) => {
+  localRuntimeRunQueue = new Promise<void>((resolve) => {
     release = resolve;
   });
 
@@ -302,12 +302,6 @@ async function runWithLmStudioExclusive<T>(run: () => Promise<T>): Promise<T> {
   } finally {
     release();
   }
-}
-
-function requiredApiKeyName(model: ModelOption): string {
-  if (model.provider === 'openai') return 'OPENAI_API_KEY';
-  if (model.provider === 'anthropic') return 'ANTHROPIC_API_KEY';
-  return model.provider;
 }
 
 function isActiveLocalRuntimeModel(model: ModelOption): boolean {

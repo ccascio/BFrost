@@ -29,7 +29,7 @@ async function main(): Promise<void> {
   await applyPendingRestoreIfAny();
 
   const health = await getAppHealthSnapshot();
-  // No local-runtime dependency is a hard requirement: LM Studio is optional
+  // No local-runtime dependency is a hard requirement: local runtimes are optional
   // (Ollama or a cloud provider can serve models instead). Missing dependencies
   // are surfaced as warnings rather than blocking startup.
   logStartupHealthSummary(health);
@@ -78,7 +78,7 @@ async function main(): Promise<void> {
 
   // Boot only the active local-runtime provider, and only when the user's default
   // model actually needs it. Skipped when the default model resolves to a cloud
-  // provider (openai, anthropic, …) so LM Studio (or any local runtime) is not
+  // provider so the selected local runtime is not
   // loaded into memory unnecessarily.
   //
   // Decision table for config.ollamaModel:

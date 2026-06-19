@@ -3,9 +3,13 @@ import { constants } from 'fs';
 import { access } from 'fs/promises';
 import { promisify } from 'util';
 import { config } from './config';
-import { resolveTelegramBotToken } from './workers/builtin/channels-telegram/credentials';
-import { resolveDiscordBotToken, resolveDiscordChannelId } from './workers/builtin/channels-discord/credentials';
-import { getStoredEmailCredentials } from './workers/builtin/channels-email/credentials';
+import { embedText } from './embeddings';
+import {
+  getProviderAdapter,
+  listRegisteredChannels,
+  listRegisteredHealthChecks,
+  listRegisteredProviders,
+} from './workers/registry';
 
 const execFileAsync = promisify(execFile);
 
@@ -15,19 +19,8 @@ export interface HealthStatus {
 }
 
 export interface AppHealthSnapshot {
-  // Open-ended map: each entry is a health row contributed by a worker's
-  // requiredCredentials/optionalCredentials (matched by `key`), or by a small
-  // set of core-owned checks (cloud LLM providers, allowed-user gate). Don't
-  // freeze the shape here — workers declare their own keys via their manifest.
   integrations: Record<string, HealthStatus>;
-  dependencies: {
-    lmStudioCli: HealthStatus;
-    ffmpeg: HealthStatus;
-    whisperCli: HealthStatus;
-    whisperModel: HealthStatus;
-    sqliteCli: HealthStatus;
-    embeddingModelReachable: HealthStatus;
-  };
+  dependencies: Record<string, HealthStatus>;
 }
 
 async function fileReadable(filePath: string): Promise<boolean> {
@@ -66,99 +59,88 @@ function configured(ok: boolean, readyDetail: string, missingDetail: string): He
 }
 
 async function embeddingModelReachable(): Promise<boolean> {
-  if (config.embeddingProvider === 'openai') {
-    return Boolean(config.openaiApiKey);
-  }
   try {
-    const response = await fetch(`${config.ollamaBaseUrl.replace(/\/$/, '')}/embeddings`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: config.embeddingModel,
-        input: 'health check',
-      }),
-      signal: AbortSignal.timeout(5000),
-    });
-
-    if (!response.ok) {
-      return false;
-    }
-
-    const data = await response.json() as { data?: Array<{ embedding?: unknown }> };
-    return Array.isArray(data.data) && Array.isArray(data.data[0]?.embedding);
+    await embedText('health check');
+    return true;
   } catch {
     return false;
   }
 }
 
+async function collectAdapterHealth(): Promise<Record<string, HealthStatus>> {
+  const entries: Array<[string, HealthStatus]> = [];
+
+  for (const registered of listRegisteredProviders()) {
+    const requirement = registered.worker.requiredCredentials?.[0];
+    if (!requirement) continue;
+    const adapter = getProviderAdapter(registered.manifest.id);
+    const ok = Boolean(adapter?.isConfigured());
+    entries.push([
+      requirement.key,
+      configured(
+        ok,
+        `${registered.manifest.label} provider is configured.`,
+        `Configure ${registered.manifest.label} provider credentials in the worker settings.`,
+      ),
+    ]);
+  }
+
+  for (const registered of listRegisteredChannels()) {
+    const requirement = registered.worker.requiredCredentials?.[0];
+    if (!requirement) continue;
+    const adapter = registered.factory.create();
+    const ok = await adapter.isConfigured();
+    entries.push([
+      requirement.key,
+      configured(
+        Boolean(ok),
+        `${registered.manifest.label} channel is configured.`,
+        `Configure ${registered.manifest.label} channel credentials in the worker settings.`,
+      ),
+    ]);
+  }
+
+  return Object.fromEntries(entries);
+}
+
+async function collectWorkerHealth(): Promise<Pick<AppHealthSnapshot, 'integrations' | 'dependencies'>> {
+  const integrations: Record<string, HealthStatus> = {};
+  const dependencies: Record<string, HealthStatus> = {};
+
+  await Promise.all(
+    listRegisteredHealthChecks().map(async (check) => {
+      const target = check.category === 'dependencies' ? dependencies : integrations;
+      try {
+        target[check.key] = await check.check();
+      } catch (err) {
+        target[check.key] = {
+          ok: false,
+          detail: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }),
+  );
+
+  return { integrations, dependencies };
+}
+
 export async function getAppHealthSnapshot(): Promise<AppHealthSnapshot> {
-  const [lmStudioCliOk, ffmpegOk, whisperCliOk, whisperModelOk, sqliteCliOk, embeddingModelOk, telegramBotToken, discordBotToken, discordChannelId, emailCreds] = await Promise.all([
-    fileExecutable(config.lmStudioBin),
+  const [adapterIntegrations, workerHealth, ffmpegOk, whisperCliOk, whisperModelOk, sqliteCliOk, embeddingModelOk] = await Promise.all([
+    collectAdapterHealth(),
+    collectWorkerHealth(),
     commandAvailable('ffmpeg', ['-version']),
     commandAvailable('whisper-cli', ['--help']),
     fileReadable(config.whisperModelPath),
     commandAvailable('sqlite3', ['-version']),
     embeddingModelReachable(),
-    resolveTelegramBotToken(),
-    resolveDiscordBotToken(),
-    resolveDiscordChannelId(),
-    getStoredEmailCredentials(),
   ]);
 
   return {
     integrations: {
-      telegramConfigured: configured(
-        Boolean(telegramBotToken),
-        'Telegram bot token present.',
-        'Configure the Telegram bot token in the dashboard.',
-      ),
-      discordConfigured: configured(
-        Boolean(discordBotToken && discordChannelId),
-        'Discord bot token and channel ID present.',
-        'Configure the Discord bot token and channel ID in the Channels tab.',
-      ),
-      emailConfigured: configured(
-        Boolean(emailCreds.smtpHost && emailCreds.smtpUser && emailCreds.smtpPassword),
-        'Email SMTP credentials present.',
-        'Configure SMTP credentials in the Channels tab.',
-      ),
-      googleSearchConfigured: configured(
-        Boolean(config.googleApiKey && config.googleSearchEngineId),
-        'Google Custom Search credentials present.',
-        'Set GOOGLE_API_KEY and GOOGLE_SEARCH_ENGINE_ID to enable web search and digest jobs.',
-      ),
-      xConfigured: configured(
-        Boolean(
-          config.xConsumerKey &&
-            config.xConsumerSecret &&
-            config.xAccessToken &&
-            config.xAccessTokenSecret,
-        ),
-        'X posting credentials present.',
-        'Set the X_* credentials to enable automated posting.',
-      ),
-      allowedUserConfigured: configured(
-        Boolean(config.allowedUserId),
-        `Allowed Telegram user set to ${config.allowedUserId}.`,
-        'Set ALLOWED_USER_ID to restrict bot usage to your Telegram account.',
-      ),
-      openaiConfigured: configured(
-        Boolean(config.openaiApiKey),
-        'OpenAI API key present.',
-        'Set OPENAI_API_KEY to enable OpenAI model fallback.',
-      ),
-      anthropicConfigured: configured(
-        Boolean(config.anthropicApiKey),
-        'Anthropic API key present.',
-        'Set ANTHROPIC_API_KEY to enable Claude model fallback.',
-      ),
+      ...adapterIntegrations,
+      ...workerHealth.integrations,
     },
     dependencies: {
-      lmStudioCli: configured(
-        lmStudioCliOk,
-        `LM Studio CLI found at ${config.lmStudioBin}.`,
-        `LM Studio CLI missing or not executable at ${config.lmStudioBin}.`,
-      ),
       ffmpeg: configured(
         ffmpegOk,
         '`ffmpeg` is available in PATH.',
@@ -181,13 +163,10 @@ export async function getAppHealthSnapshot(): Promise<AppHealthSnapshot> {
       ),
       embeddingModelReachable: configured(
         embeddingModelOk,
-        config.embeddingProvider === 'openai'
-          ? `Embedding model ${config.embeddingModel} via OpenAI (key configured).`
-          : `Embedding model ${config.embeddingModel} is reachable at ${config.ollamaBaseUrl}.`,
-        config.embeddingProvider === 'openai'
-          ? `OpenAI API key not set. Configure it in Config → Cloud API keys.`
-          : `Embedding model ${config.embeddingModel} is not reachable at ${config.ollamaBaseUrl}. Start the local embedding server or set OLLAMA_BASE_URL and EMBEDDING_MODEL.`,
+        `Embedding model ${config.embeddingModel} is reachable via ${config.embeddingProvider}.`,
+        `Embedding model ${config.embeddingModel} is not reachable via ${config.embeddingProvider}. Configure an embedding-capable provider and model.`,
       ),
+      ...workerHealth.dependencies,
     },
   };
 }

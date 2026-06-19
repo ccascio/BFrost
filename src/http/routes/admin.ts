@@ -34,17 +34,18 @@ export function registerAdminRoutes(router: HttpRouter): void {
       }
       if (body.wipeCredentials) {
         const envPath = path.join(process.cwd(), '.env');
-        // Strip known credential keys but keep structural lines (comments, blank lines)
-        const CREDENTIAL_KEYS = [
-          'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'TELEGRAM_BOT_TOKEN', 'DISCORD_BOT_TOKEN',
-          'X_CONSUMER_KEY', 'X_CONSUMER_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_TOKEN_SECRET',
-          'GOOGLE_API_KEY', 'GOOGLE_SEARCH_ENGINE_ID',
-        ];
+        // Strip likely credential keys while keeping structural lines (comments, blank lines).
+        // Worker-owned credential names should not be enumerated in core.
+        const isCredentialKey = (key: string): boolean =>
+          /(?:^|_)(?:API_)?KEY$/.test(key) ||
+          /(?:^|_)(?:TOKEN|SECRET|PASSWORD)$/.test(key) ||
+          /(?:^|_)(?:ACCESS|REFRESH)_TOKEN$/.test(key) ||
+          /(?:^|_)CLIENT_SECRET$/.test(key);
         try {
           const content = await fs.readFile(envPath, 'utf8');
           const filtered = content.split('\n').filter((line) => {
             const key = line.split('=')[0]?.trim();
-            return !key || !CREDENTIAL_KEYS.includes(key);
+            return !key || !isCredentialKey(key);
           }).join('\n');
           await fs.writeFile(envPath, filtered, 'utf8');
         } catch { /* no .env — nothing to clear */ }

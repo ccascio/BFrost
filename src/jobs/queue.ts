@@ -7,7 +7,7 @@ import { loadKvJson, saveKvJson } from '../sqlite';
 
 const QUEUE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const LOCK_STALE_MS = 3 * 60 * 1000;
-const QUEUE_STORE_KEY = 'news.queue';
+const QUEUE_STORE_KEY = 'item-bus.queue';
 
 export const QueueItemStateSchema = z.enum(['seen', 'rejected', 'queued', 'approved', 'posted', 'failed']);
 export type QueueItemState = z.infer<typeof QueueItemStateSchema>;
@@ -53,11 +53,11 @@ export type QueueItemDraft = z.infer<typeof RawQueueItemSchema> & {
 };
 
 export function queuePath(): string {
-  return path.join(config.newsStoreDir, 'queue.json');
+  return path.join(config.itemBusStoreDir, 'queue.json');
 }
 
 export function lockPath(): string {
-  return path.join(config.newsStoreDir, 'queue.lock');
+  return path.join(config.itemBusStoreDir, 'queue.lock');
 }
 
 export async function loadQueue(): Promise<QueueItem[]> {

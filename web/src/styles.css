@@ -2068,7 +2068,7 @@ h3 {
   align-items: start;
 }
 
-.news-queue-workspace {
+.article-queue-workspace {
   grid-template-columns: minmax(22rem, 0.85fr) minmax(0, 1.35fr);
 }
 
@@ -2121,7 +2121,7 @@ h3 {
 
 .config-detail-column,
 .job-detail-column,
-.news-item-detail-column {
+.article-item-detail-column {
   position: sticky;
   top: calc(var(--topbar-height) + 1rem);
   align-self: start;
@@ -2129,7 +2129,7 @@ h3 {
 
 .config-detail-panel,
 .job-detail-panel,
-.news-item-detail-panel {
+.article-item-detail-panel {
   max-height: calc(100vh - var(--topbar-height) - 2rem);
   overflow: auto;
 }
@@ -2399,9 +2399,9 @@ h3 {
   font-size: 0.85rem;
   cursor: pointer;
   border-radius: 0.25rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 .project-combobox-option:hover {
@@ -2410,6 +2410,35 @@ h3 {
 
 .project-combobox-option.active {
   font-weight: 600;
+  color: var(--brand-deep, var(--brand));
+}
+
+.project-combobox-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.project-combobox-option-rename {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  padding: 0 0.2rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.project-combobox-option:hover .project-combobox-option-rename {
+  opacity: 1;
+}
+
+.project-combobox-option-rename:hover {
   color: var(--brand-deep, var(--brand));
 }
 
@@ -3097,13 +3126,13 @@ code {
 
   .config-detail-column,
   .job-detail-column,
-  .news-item-detail-column {
+  .article-item-detail-column {
     position: static;
   }
 
   .config-detail-panel,
   .job-detail-panel,
-  .news-item-detail-panel {
+  .article-item-detail-panel {
     max-height: none;
     overflow: visible;
   }
@@ -5014,7 +5043,7 @@ code {
   align-items: flex-start;
 }
 
-/* ---- LM Studio adoption banner ---- */
+/* ---- Local runtime adoption banner ---- */
 
 .lm-adoption-banner {
   border: 1px solid var(--good, #1f7a57);

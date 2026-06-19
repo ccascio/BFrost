@@ -1,7 +1,7 @@
 import { LanguageModel } from 'ai';
 import { type ModelOption } from './config';
 
-// Imported lazily to break a CJS cycle: registry → builtin/workers → publisher-x/job → llm.
+// Imported lazily to break a CJS cycle between the worker registry and model dispatch.
 function lookupProvider(providerId: string) {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   return require('./workers/registry').getProviderAdapter(providerId);

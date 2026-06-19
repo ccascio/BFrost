@@ -158,8 +158,8 @@ interface ModelOption {
   provider: string;
 }
 
-function LmStudioRuntimePanel({ lmStudio, defaultModel, activeLocalProviderId, refreshDashboard }: {
-  lmStudio: LmStudioState;
+function LmStudioRuntimePanel({ localRuntime, defaultModel, activeLocalProviderId, refreshDashboard }: {
+  localRuntime: LmStudioState;
   defaultModel: ModelOption;
   activeLocalProviderId: string;
   refreshDashboard: () => void;
@@ -201,8 +201,8 @@ function LmStudioRuntimePanel({ lmStudio, defaultModel, activeLocalProviderId, r
           <p className="panel-kicker">Runtime services</p>
           <h2>LM Studio</h2>
         </div>
-        <span className={`status-pill ${lmStudio.running ? 'good' : 'warning'}`}>
-          {lmStudio.running ? 'Running' : 'Stopped'}
+        <span className={`status-pill ${localRuntime.running ? 'good' : 'warning'}`}>
+          {localRuntime.running ? 'Running' : 'Stopped'}
         </span>
       </div>
 
@@ -216,7 +216,7 @@ function LmStudioRuntimePanel({ lmStudio, defaultModel, activeLocalProviderId, r
       <div className="metric-row">
         <div className="metric">
           <span className="metric-label">Loaded models</span>
-          <span className="metric-value">{lmStudio.loadedCount}</span>
+          <span className="metric-value">{localRuntime.loadedCount}</span>
         </div>
         <div className="metric">
           <span className="metric-label">Default model</span>
@@ -225,8 +225,8 @@ function LmStudioRuntimePanel({ lmStudio, defaultModel, activeLocalProviderId, r
       </div>
 
       <p className="mini-list">
-        {lmStudio.loadedModels.length > 0
-          ? lmStudio.loadedModels.join(', ')
+        {localRuntime.loadedModels.length > 0
+          ? localRuntime.loadedModels.join(', ')
           : 'No models are currently loaded.'}
       </p>
 
@@ -287,19 +287,19 @@ export const dashboardView: WorkerDashboardViewDefinition = {
     label: 'LM Studio',
   },
   count: ({ dashboard }) => {
-    const lmStudio = dashboard?.lmStudio;
-    if (!lmStudio) return undefined;
-    return lmStudio.running ? lmStudio.loadedCount : undefined;
+    const localRuntime = dashboard?.localRuntime;
+    if (!localRuntime) return undefined;
+    return localRuntime.running ? localRuntime.loadedCount : undefined;
   },
   render: (ctx) => {
     const dashboard = ctx.dashboard as {
-      lmStudio: LmStudioState;
+      localRuntime: LmStudioState;
       defaultModel: ModelOption;
       platform: { activeLocalProviderId: string };
     };
     return (
       <LmStudioRuntimePanel
-        lmStudio={dashboard.lmStudio}
+        localRuntime={dashboard.localRuntime}
         defaultModel={dashboard.defaultModel}
         activeLocalProviderId={dashboard.platform.activeLocalProviderId}
         refreshDashboard={ctx.refreshDashboard as () => void}

@@ -13,11 +13,11 @@ import {
 } from '../../config';
 import { refreshActiveLocalProviderModels } from '../../model-discovery';
 import { upsertEnvValue } from '../../env-file';
-import { getRegisteredProvider, listRegisteredChannels } from '../../workers/registry';
+import { getActiveLocalProvider, getRegisteredProvider, listRegisteredChannels } from '../../workers/registry';
 import { updatePlatformSettings } from '../../admin-config';
 import { recordEventSafe } from '../../event-log';
 import { getSchedulerSnapshot, reloadSchedulerSchedules, triggerJobNow, updateSchedulerJob } from '../../scheduler';
-import { isJobName } from '../../job-runner';
+import { isJobName, pinAndLoadModel, unpinAndUnloadModel } from '../../job-runner';
 import { sessions } from '../../admin-auth';
 import { BadRequestError } from '../../admin-route';
 import {
@@ -26,6 +26,7 @@ import {
   EmbeddingSettingsBodySchema,
   CoreSettingsBodySchema,
   CronJobUpdateBodySchema,
+  LocalRuntimeActionBodySchema,
 } from '../../admin-api';
 
 export function registerConfigRoutes(router: HttpRouter): void {
@@ -80,15 +81,83 @@ export function registerConfigRoutes(router: HttpRouter): void {
     return sendJson(res, 200, { ok: true });
   });
 
+  router.add('POST', '/api/local-runtime', async (req, res) => {
+    const body = await readJsonBody(req, LocalRuntimeActionBodySchema);
+    const action = body.action;
+    await refreshActiveLocalProviderModels();
+    const defaultModel = getDefaultModel();
+
+    if (action === 'pin-load') {
+      const alias = body.alias?.trim() || defaultModel.alias;
+      await pinAndLoadModel(alias);
+      await recordEventSafe({
+        category: 'admin',
+        action: 'local_runtime_model_pinned',
+        summary: `Local runtime model pinned and loaded: ${alias}`,
+        metadata: { alias },
+      });
+      return sendJson(res, 200, { ok: true });
+    }
+
+    if (action === 'pin-unload') {
+      await unpinAndUnloadModel();
+      await recordEventSafe({
+        category: 'admin',
+        action: 'local_runtime_model_unpinned',
+        summary: 'Local runtime pin cleared and all models unloaded.',
+      });
+      return sendJson(res, 200, { ok: true });
+    }
+
+    const provider = getActiveLocalProvider();
+    if (!provider) {
+      throw new BadRequestError('No local provider worker is configured.');
+    }
+
+    if (action === 'start' && provider.startRuntime) {
+      await provider.startRuntime();
+    } else if (action === 'stop' && provider.stopRuntime) {
+      await provider.stopRuntime();
+    } else if (action === 'load-default' && provider.loadModel) {
+      if (defaultModel.provider !== provider.providerId) {
+        throw new BadRequestError(`Default model ${defaultModel.alias} is not served by the active local provider.`);
+      }
+      if (provider.startRuntime) await provider.startRuntime();
+      await provider.loadModel(defaultModel.id);
+    } else if (action === 'unload-default' && provider.unloadModel) {
+      if (defaultModel.provider !== provider.providerId) {
+        throw new BadRequestError(`Default model ${defaultModel.alias} is not served by the active local provider.`);
+      }
+      await provider.unloadModel(defaultModel.id);
+    } else if (action === 'unload-all' && provider.unloadAllModels) {
+      await provider.unloadAllModels();
+    }
+
+    await recordEventSafe({
+      category: 'admin',
+      action: 'local_runtime_action',
+      summary: `Local runtime action completed: ${action}`,
+      metadata: { action, providerId: provider.providerId },
+    });
+    return sendJson(res, 200, { ok: true });
+  });
+
   router.add('POST', '/api/embedding-settings', async (req, res) => {
     const body = await readJsonBody(req, EmbeddingSettingsBodySchema);
     if (!body.provider && !body.model) {
       throw new BadRequestError('Provide at least one field to update (provider or model).');
     }
-    const updates: { provider?: 'local' | 'openai'; model?: string } = {};
+    const updates: { provider?: string; model?: string } = {};
     if (body.provider) {
-      updates.provider = body.provider;
-      await upsertEnvValue(path.join(process.cwd(), '.env'), 'EMBEDDING_PROVIDER', body.provider);
+      const providerId = body.provider.trim();
+      if (providerId !== 'local') {
+        const registered = getRegisteredProvider(providerId);
+        if (!registered?.manifest.capabilities.embeddings) {
+          throw new BadRequestError(`Unknown embedding-capable provider: ${providerId}`);
+        }
+      }
+      updates.provider = providerId;
+      await upsertEnvValue(path.join(process.cwd(), '.env'), 'EMBEDDING_PROVIDER', providerId);
     }
     if (body.model?.trim()) {
       updates.model = body.model.trim();

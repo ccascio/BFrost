@@ -31,7 +31,7 @@ export function WorkersTab(props: WorkersTabProps) {
     const groups: Array<{ kind: WorkerKind; label: string; description: string }> = [
       { kind: 'provider', label: 'LLM Platforms', description: 'Model runtimes. One local platform is active at a time; cloud platforms coexist.' },
       { kind: 'channel', label: 'Channels', description: 'Communication adapters. Any can run; one is designated as the primary recipient for operator notifications.' },
-      { kind: 'feature', label: 'Features', description: 'Job and tool workers (news, publishers, research, …).' },
+      { kind: 'feature', label: 'Features', description: 'Job and tool workers that add capabilities.' },
     ];
 
     return (
@@ -108,7 +108,7 @@ export function WorkersTab(props: WorkersTabProps) {
           <div className="panel-head">
             <div>
               <p className="panel-kicker">Describe a worker</p>
-              <h2>Create a worker by describing it <HelpTip>Type what you want a worker to do in plain English. BFrost asks your model to design it, scaffolds the code, installs it, and enables it — no files, no restart. Needs a real model connected (LM Studio, Ollama, or a cloud key).</HelpTip></h2>
+              <h2>Create a worker by describing it <HelpTip>Type what you want a worker to do in plain English. BFrost asks your model to design it, scaffolds the code, installs it, and enables it — no files, no restart. Needs a real model connected through a local runtime or cloud provider.</HelpTip></h2>
             </div>
           </div>
           <div className="stack-list">
@@ -128,7 +128,7 @@ export function WorkersTab(props: WorkersTabProps) {
               >
                 {busyKey === 'worker-generate' ? 'Designing…' : 'Create worker'}
               </button>
-              {(['Write me one calm haiku every morning.', 'Summarize each new news article into three bullet points.', 'Draft a daily gratitude journal prompt.'] as const).map((example) => (
+              {(['Write me one calm haiku every morning.', 'Summarize each new item into three bullet points.', 'Draft a daily gratitude journal prompt.'] as const).map((example) => (
                 <button
                   key={example}
                   type="button"
@@ -222,7 +222,7 @@ export function WorkersTab(props: WorkersTabProps) {
             <div className="empty-state">
               <p>No workers loaded.</p>
               <p className="footnote">
-                BFrost ships with bundled workers (news, research, publishers, channels, providers).
+                BFrost ships with bundled workers for production, analysis, publishing, channels, and providers.
                 If none are showing here, click <strong>Rescan</strong> above. To add a community
                 worker, drop its folder under <code>workers/local/</code> and rescan.
               </p>

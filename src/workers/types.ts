@@ -236,6 +236,13 @@ export interface WorkerProviderManifest {
   label: string;
   description: string;
   capabilities: WorkerProviderCapabilities;
+  defaultModels?: WorkerProviderDefaultModel[];
+}
+
+export interface WorkerProviderDefaultModel {
+  alias?: string;
+  id: string;
+  label?: string;
 }
 
 export interface WorkerProviderCapabilities {

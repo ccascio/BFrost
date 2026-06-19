@@ -58,6 +58,8 @@ export function SystemTab(props: SystemTabProps) {
     executeFactoryReset,
     setActiveTab,
   } = props;
+  const dependencyEntries = Object.entries(dashboard.dependencies)
+    .sort(([a], [b]) => dependencyLabel(a).localeCompare(dependencyLabel(b)));
 
   return (
     <>
@@ -92,24 +94,21 @@ export function SystemTab(props: SystemTabProps) {
         <div className="panel-head">
           <div>
             <p className="panel-kicker">System</p>
-            <h2>Runtime readiness <HelpTip>Shows whether BFrost's required services are running and configured — the AI model, any connected channels (Telegram, Discord), and the local database. A yellow "missing" pill means a credential or dependency is not yet set up; use the worker's Config subtab in the left panel to fix it.</HelpTip></h2>
+            <h2>Runtime readiness <HelpTip>Shows whether BFrost's required services are running and configured — the AI model, any connected channels, and the local database. A yellow "missing" pill means a credential or dependency is not yet set up; use the worker's Config subtab in the left panel to fix it.</HelpTip></h2>
           </div>
         </div>
 
         <div className="panel-head section-break">
           <div>
             <p className="panel-kicker">Dependencies</p>
-            <h2>Local runtime readiness <HelpTip>Optional tools that some workers need. LM Studio lets you run AI models locally without sending data to the cloud. sqlite3 and ffmpeg are used by a few workers for data storage and audio processing. Missing items are only a problem if a worker that needs them is enabled.</HelpTip></h2>
+            <h2>Runtime readiness <HelpTip>Optional tools that workers need. Local runtimes let you run AI models on your own machine; other command-line tools support storage, audio, and worker-specific processing. Missing items are only a problem if a worker that needs them is enabled.</HelpTip></h2>
           </div>
         </div>
 
         <div className="stack-list">
-          <HealthRow label="LM Studio CLI" status={dashboard.dependencies.lmStudioCli} />
-          <HealthRow label="sqlite3" status={dashboard.dependencies.sqliteCli} />
-          <HealthRow label="ffmpeg" status={dashboard.dependencies.ffmpeg} />
-          <HealthRow label="whisper-cli" status={dashboard.dependencies.whisperCli} />
-          <HealthRow label="Whisper model" status={dashboard.dependencies.whisperModel} />
-          <HealthRow label="Embedding model" status={dashboard.dependencies.embeddingModelReachable} />
+          {dependencyEntries.map(([key, status]) => (
+            <HealthRow key={key} label={dependencyLabel(key)} status={status} />
+          ))}
         </div>
 
         <div className="panel-head section-break">
@@ -349,11 +348,26 @@ export function SystemTab(props: SystemTabProps) {
           </p>
           <p className="footnote">
             Cloud provider API keys are stored in the local <code>.env</code> file and sent only to
-            the respective provider (OpenAI, Anthropic). They are never sent to bfrost.net or any
+            the selected provider. They are never sent to bfrost.net or any
             third-party service.
           </p>
         </div>
       </section>
     </>
   );
+}
+
+function dependencyLabel(key: string): string {
+  const known: Record<string, string> = {
+    ffmpeg: 'ffmpeg',
+    sqliteCli: 'sqlite3',
+    whisperCli: 'whisper-cli',
+    whisperModel: 'Whisper model',
+    embeddingModelReachable: 'Embedding model',
+  };
+  if (known[key]) return known[key];
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[-_.]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }

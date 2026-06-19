@@ -1,7 +1,7 @@
 /**
  * Item Bus — the generic producer/consumer surface workers use to exchange work items.
  *
- * Any worker can produce items of a declared `itemType` (dotted, e.g. `news.article`).
+ * Any worker can produce items of a declared dotted `itemType`.
  * Any worker can subscribe as a consumer by filtering on `itemType` / `tags` / `states`.
  *
  * Producers own the `payload`. Consumers write into a `metadata` map keyed by their own

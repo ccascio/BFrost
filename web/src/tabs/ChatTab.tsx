@@ -30,6 +30,7 @@ export interface ChatTabProps {
   chatLogRef: RefObject<HTMLDivElement | null>;
   chatInputRef: RefObject<HTMLTextAreaElement | null>;
   createChatProject: () => void | Promise<void>;
+  renameChatProject: (project: ChatProject) => void | Promise<void>;
   startNewChat: () => void;
   openChatThread: (thread: ChatThread) => void | Promise<void>;
   renameChatThread: (thread: ChatThread) => void | Promise<void>;
@@ -44,14 +45,15 @@ export function ChatTab(props: ChatTabProps) {
     chatProjects, activeProjectId, setActiveProjectId, activeConversationId, chatArrivingFromOverview,
     chatQuery, setChatQuery, projectComboOpen, setProjectComboOpen, projectComboQuery,
     setProjectComboQuery, projectComboRef, chatLogRef, chatInputRef, createChatProject,
-    startNewChat, openChatThread, renameChatThread, deleteChatThread, sendDashboardChat, fillChatDraft,
+    renameChatProject, startNewChat, openChatThread, renameChatThread, deleteChatThread,
+    sendDashboardChat, fillChatDraft,
   } = props;
   return (
         <section className={`panel tab-page chat-page${chatArrivingFromOverview ? ' chat-page-arriving' : ''}`}>
           <div className="panel-head">
             <div>
               <p className="panel-kicker">Assistant</p>
-              <h2>Dashboard chat <HelpTip>Type naturally to ask about your queue, schedules, or workers — or give commands like "enable the news digest at 8am". The assistant uses the same AI model you have configured in Settings. All messages stay on your machine.</HelpTip></h2>
+              <h2>Dashboard chat <HelpTip>Type naturally to ask about your queue, schedules, or workers — or give plain-language commands. The assistant uses the same AI model you have configured in Settings. All messages stay on your machine.</HelpTip></h2>
             </div>
             <StatusPill tone={
               dashboard.workers.find(
@@ -116,13 +118,28 @@ export function ChatTab(props: ChatTabProps) {
                             <li
                               key={p.projectId}
                               className={`project-combobox-option${activeProjectId === p.projectId ? ' active' : ''}`}
-                              onMouseDown={() => {
-                                setActiveProjectId(p.projectId);
-                                setProjectComboOpen(false);
-                                setProjectComboQuery('');
-                              }}
                             >
-                              {p.name}
+                              <span
+                                className="project-combobox-option-name"
+                                onMouseDown={() => {
+                                  setActiveProjectId(p.projectId);
+                                  setProjectComboOpen(false);
+                                  setProjectComboQuery('');
+                                }}
+                              >
+                                {p.name}
+                              </span>
+                              <button
+                                type="button"
+                                className="project-combobox-option-rename"
+                                title="Rename project"
+                                onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  void renameChatProject(p);
+                                }}
+                              >
+                                ✎
+                              </button>
                             </li>
                           ))}
                           <li

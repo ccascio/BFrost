@@ -1,9 +1,9 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { z } from 'zod';
-import { config } from '../../../config';
 import type { ArticleExtraction } from '../article-fetch/module';
 import { loadKvJson, saveKvJson } from '../../../sqlite';
+import { getNewsStoreDir } from './settings';
 
 const SOURCE_RULES_STORE_KEY = 'news.sourceRules';
 
@@ -78,7 +78,7 @@ const DEFAULT_SOURCE_QUALITY_RULES: SourceQualityRules = {
 };
 
 export function sourceQualityRulesPath(): string {
-  return path.join(config.newsStoreDir, 'source-rules.json');
+  return path.join(getNewsStoreDir(), 'source-rules.json');
 }
 
 export async function loadSourceQualityRules(): Promise<SourceQualityRules> {

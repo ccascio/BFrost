@@ -1,6 +1,5 @@
 import { randomUUID } from 'crypto';
 import { openWorkerDb, type WorkerTableHandle } from '../../db';
-import { embedText } from '../../../embeddings';
 import { listProjectIds } from '../../../projects';
 
 /**
@@ -104,6 +103,7 @@ export function chunkText(text: string): string[] {
 /** Embed a string, returning null (not throwing) when no embed model is available. */
 async function tryEmbed(text: string): Promise<{ embedding: number[]; model: string } | null> {
   try {
+    const { embedText } = await import('../../../embeddings');
     const result = await embedText(text);
     return { embedding: result.embedding, model: result.model };
   } catch {

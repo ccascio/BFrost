@@ -12,7 +12,6 @@ export type IconKey =
   | 'health'
   | 'jobs'
   | 'megaphone'
-  | 'newspaper'
   | 'overview'
   | 'store'
   | 'workers'
@@ -109,15 +108,6 @@ const icons: Record<IconKey, IconComponent> = {
       <path d="M4 13V9h4l9-4v12l-9-4z" />
       <path d="m8 13 1.5 5h3" />
       <path d="M19 9.5a3 3 0 0 1 0 3" />
-    </svg>
-  ),
-  newspaper: (props) => (
-    <svg {...baseProps} {...props}>
-      <path d="M4 5h13a3 3 0 0 1 3 3v10a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2z" />
-      <path d="M17 5v12a2 2 0 0 1-2 2" />
-      <path d="M7 9h6" />
-      <path d="M7 13h7" />
-      <path d="M7 16h4" />
     </svg>
   ),
   overview: (props) => (

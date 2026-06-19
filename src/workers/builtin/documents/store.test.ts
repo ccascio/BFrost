@@ -16,12 +16,10 @@ async function withDocStore(run: () => Promise<void>): Promise<void> {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-docs-'));
   const previousDbPath = config.appDbPath;
   const previousProvider = config.embeddingProvider;
-  const previousKey = config.openaiApiKey;
   config.appDbPath = path.join(dir, 'app.sqlite');
   // Force the keyword path: an unconfigured embed provider makes embedText throw,
   // which the store treats as "no embeddings available". Keeps the test offline.
-  config.embeddingProvider = 'openai';
-  config.openaiApiKey = '';
+  config.embeddingProvider = 'unconfigured-test-provider';
   resetDocumentStoreForTests();
   try {
     await hydrateProjects();
@@ -29,7 +27,6 @@ async function withDocStore(run: () => Promise<void>): Promise<void> {
   } finally {
     config.appDbPath = previousDbPath;
     config.embeddingProvider = previousProvider;
-    config.openaiApiKey = previousKey;
     resetDocumentStoreForTests();
     closeDb();
     await rm(dir, { recursive: true, force: true });

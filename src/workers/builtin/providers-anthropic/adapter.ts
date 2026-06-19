@@ -1,6 +1,7 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
-import { config, type ProviderModelOption } from '../../../config';
+import type { ProviderModelOption } from '../../../config';
 import type { ProviderAdapter } from '../../module';
+import { resolveAnthropicApiKey } from './credentials';
 
 const PROVIDER_ID = 'anthropic';
 const ANTHROPIC_API_VERSION = '2023-06-01';
@@ -33,31 +34,33 @@ async function fetchModelList(apiKey: string): Promise<ProviderModelOption[]> {
 }
 
 export function createAnthropicProviderAdapter(): ProviderAdapter {
-  let client = createAnthropic({ apiKey: config.anthropicApiKey });
-  let lastKey = config.anthropicApiKey;
+  let client = createAnthropic({ apiKey: resolveAnthropicApiKey() });
+  let lastKey = resolveAnthropicApiKey();
 
   function refreshClientIfKeyChanged() {
-    if (config.anthropicApiKey !== lastKey) {
-      client = createAnthropic({ apiKey: config.anthropicApiKey });
-      lastKey = config.anthropicApiKey;
+    const key = resolveAnthropicApiKey();
+    if (key !== lastKey) {
+      client = createAnthropic({ apiKey: key });
+      lastKey = key;
     }
   }
 
   return {
     providerId: PROVIDER_ID,
     isConfigured() {
-      return Boolean(config.anthropicApiKey);
+      return Boolean(resolveAnthropicApiKey());
     },
     getChatModel(modelId: string) {
-      if (!config.anthropicApiKey) {
+      if (!resolveAnthropicApiKey()) {
         throw new Error('ANTHROPIC_API_KEY is required to use Anthropic models.');
       }
       refreshClientIfKeyChanged();
       return client(modelId);
     },
     async listAvailableModels() {
-      if (!config.anthropicApiKey) return [];
-      return fetchModelList(config.anthropicApiKey);
+      const key = resolveAnthropicApiKey();
+      if (!key) return [];
+      return fetchModelList(key);
     },
   };
 }

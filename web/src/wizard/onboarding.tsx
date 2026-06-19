@@ -125,14 +125,14 @@ export function StepWelcome({
         <h2>Welcome to BFrost</h2>
         <p className="wizard-lead">
           BFrost is a <strong>worker-first local AI operations platform</strong>. Every
-          capability - news digests, research, publishing - is a worker you install, configure, and schedule. Nothing runs in the cloud unless you choose it.
+          capability - collecting, analyzing, publishing - is a worker you install, configure, and schedule. Nothing runs in the cloud unless you choose it.
         </p>
         <OnboardingActions dashboard={dashboard} onRefresh={onRefresh} onRunDemoAction={onRunDemoAction} />
         <ul className="wizard-bullets">
           <li>All data stays on your machine by default</li>
-          <li>Works with local models (LM Studio / Ollama) or cloud APIs (OpenAI, Anthropic)</li>
+          <li>Works with local runtimes or cloud provider APIs</li>
           <li>Workers run on a schedule you control, or on demand</li>
-          <li>Delivers results to Telegram, Discord, or the built-in dashboard chat</li>
+          <li>Delivers results to installed channels or the built-in dashboard chat</li>
         </ul>
         <p className="wizard-footnote">This wizard takes about 3 minutes. Every step is skippable.</p>
       </div>

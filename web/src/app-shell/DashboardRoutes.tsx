@@ -153,6 +153,7 @@ export function DashboardRoutes(props: any) {
           chatLogRef={chat.chatLogRef}
           chatInputRef={chat.chatInputRef}
           createChatProject={chat.createChatProject}
+          renameChatProject={chat.renameChatProject}
           startNewChat={chat.startNewChat}
           openChatThread={chat.openChatThread}
           renameChatThread={chat.renameChatThread}

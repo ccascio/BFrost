@@ -136,7 +136,7 @@ export function useDashboardData({
   function seedEmptySections(shell: DashboardState): DashboardState {
     return {
       ...shell,
-      lmStudio: { ...shell.lmStudio, loadedModels: shell.lmStudio.loadedModels ?? [] },
+      localRuntime: { ...shell.localRuntime, loadedModels: shell.localRuntime.loadedModels ?? [] },
       cron: { ...shell.cron, runs: shell.cron.runs ?? [] },
       queue: shell.queue ?? {
         total: 0, queued: 0, approved: 0, posted: 0, rejected: 0,
@@ -166,9 +166,9 @@ export function useDashboardData({
         if (!prev) return seeded;
         return {
           ...seeded,
-          lmStudio: loadedSectionsRef.current.has('lmStudioModels')
-            ? { ...seeded.lmStudio, loadedModels: prev.lmStudio.loadedModels }
-            : seeded.lmStudio,
+          localRuntime: loadedSectionsRef.current.has('localRuntimeModels')
+            ? { ...seeded.localRuntime, loadedModels: prev.localRuntime.loadedModels }
+            : seeded.localRuntime,
           cron: loadedSectionsRef.current.has('cronRuns')
             ? { ...seeded.cron, runs: prev.cron.runs }
             : seeded.cron,

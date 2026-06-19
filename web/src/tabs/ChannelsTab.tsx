@@ -27,11 +27,11 @@ export function ChannelsTab({
           <div className="panel-head">
             <div>
               <p className="panel-kicker">Communication channels</p>
-              <h2>Channels <HelpTip>Channels are how BFrost delivers your content and receives your commands. Telegram lets you get a daily news digest as a message; Discord does the same. The dashboard chat is always available as a built-in channel. Enable a channel worker from the Workers tab, then connect it here.</HelpTip></h2>
+              <h2>Channels <HelpTip>Channels are how BFrost delivers your content and receives your commands. Installed channel workers decide which messaging surfaces are available. The dashboard chat is always available as a built-in channel. Enable a channel worker from the Workers tab, then connect it here.</HelpTip></h2>
             </div>
           </div>
           <p className="empty-state">
-            No channel workers are installed. Enable a channel worker (Telegram, Discord, …) from the Workers tab to connect it here.
+            No channel workers are installed. Enable a channel worker from the Workers tab to connect it here.
           </p>
         </section>
       );
@@ -42,7 +42,7 @@ export function ChannelsTab({
         <div className="panel-head">
           <div>
             <p className="panel-kicker">Communication channels</p>
-            <h2>Channels <HelpTip>Channels are how BFrost delivers your content and receives your commands. Telegram lets you get a daily news digest as a message; Discord does the same. The dashboard chat is always available as a built-in channel. Enable a channel worker from the Workers tab, then connect it here.</HelpTip></h2>
+            <h2>Channels <HelpTip>Channels are how BFrost delivers your content and receives your commands. Installed channel workers decide which messaging surfaces are available. The dashboard chat is always available as a built-in channel. Enable a channel worker from the Workers tab, then connect it here.</HelpTip></h2>
           </div>
           <StatusPill tone="muted">
             {`${channelWorkers.filter((w) => w.healthState === 'healthy').length}/${channelWorkers.length} connected`}

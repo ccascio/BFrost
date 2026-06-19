@@ -6,7 +6,7 @@
 
 BFrost has exactly one load-bearing rule (see [`CLAUDE.md`](./CLAUDE.md)): *every capability is a worker; the core only installs, configures, schedules, runs, observes, and uninstalls them.* So the question for every refactor in this document is not "is this cleaner?" but **"does this make `src/` (outside `src/workers/`) more worker-agnostic, or less?"** A change that shrinks a file but leaves core owning worker-shaped logic is a half-fix. Each item below is framed as contract-reinforcing.
 
-This roadmap began with two pressure points. As of **2026-06-18**, the backend monolith is dissolved and Phase 1.2 has reduced the frontend shell/helper pressure points below the ~600 LOC threshold.
+This roadmap began with two pressure points. As of **2026-06-18**, **Phase 1 is complete**: the backend HTTP monolith is dissolved, the frontend shell/helper pressure points are below the ~600 LOC threshold, and the design-token layer exit criterion is already met. **Phase 3.1 is also complete**: the worker-first contract is now machine-enforced across production core files, and the main provider/channel/config leaks have been moved behind generic or worker-owned contracts. The next meaningful work is reliability: detached failure handling, scheduled-job retry/backoff, and the remaining HTTP hardening.
 
 | File | Original LOC | Current LOC | Status |
 |---|---:|---:|---|
@@ -15,9 +15,9 @@ This roadmap began with two pressure points. As of **2026-06-18**, the backend m
 | `web/src/App.tsx` | 7,076 | 594 | **Done**: core shell delegates data, overview, chat, store, operations, routes, queue/detail, auth, and special-mode banners to focused modules. |
 | `web/src/app-types.ts` | 677 after extraction | 593 | **Done**: compatibility barrel; store permission/schema types moved to `web/src/app-types/store.ts`. |
 | `web/src/app-helpers.tsx` | 1,008 after extraction | 10 | **Done**: compatibility barrel over focused helper modules; largest helper module is 206 LOC. |
-| `web/src/Wizard.tsx` | 1,197 | 235 | **Done for Phase 1.2 size**: shell split from step modules; provider-specific assumptions remain Phase 3.1 work. |
+| `web/src/Wizard.tsx` | 1,197 | 235 | **Done**: shell split from step modules; provider-specific assumptions moved behind worker/provider contracts in Phase 3.1. |
 
-Everything else is comparatively healthy. This roadmap deliberately does **not** invent rot that isn't there — it targets the remaining monolith pressure, a small set of real reliability gaps, and a couple of contract guards.
+Everything else is comparatively healthy. This roadmap deliberately does **not** invent rot that isn't there — Phase 1 and Phase 3.1 are done, and the remaining work is a small set of real reliability gaps plus typed-adapter and observability hardening.
 
 ---
 
@@ -41,7 +41,7 @@ Everything else is comparatively healthy. This roadmap deliberately does **not**
 - `src/admin-worker-ops.ts` (701) — catalog / upload / describe-scaffold / store install / dashboard-bundle / archive-safety.
 - `src/admin-auth.ts` (243) — single-owner `sessions` Map + cookie/password helpers (kept cohesive; consumed by `handleRequest` and the core-settings route).
 
-Verified: full `npm test` clean (204 backend tests + frontend typecheck), route collision tests, and Phase 1 contract-surface scan. Remaining backend monolith work is no longer Phase 1.1; any remaining provider/channel-specific handling belongs under Phase 3.1 / Phase 4 contract work.
+Verified: `npm run build:server && node --test dist/worker-first-contract.test.js` clean on 2026-06-18, plus full `npm test` clean (203 backend tests + frontend typecheck), route collision tests, and the recursive worker-first production-core scan. Remaining backend monolith work is no longer Phase 1.1; reliability and observability follow-ups belong under Phase 2 / Phase 4.
 
 ### 1.2 Split `App.tsx` into a core shell + per-tab feature modules
 **Problem.** `web/src/App.tsx:681` is the entire app in one function: every tab (`overview`, `channels`, `workers`, `jobs`, `config`, `chat`, `system`, `store`, `actions`, `health`, `pipeline`) renders from the same 105-hook component. Any tab re-renders on any state change; the frontend has **no typecheck gate** (vite build skips `web/src`, see memory `frontend-has-no-typecheck-gate`) so this size is unguarded.
@@ -68,13 +68,13 @@ Done:
   - `useChatController`, `useStoreController`, and `useDashboardOperations` own tab-side effects and mutations.
   - `DashboardRoutes`, `QueueViews`, `AuthScreens`, and `SpecialModeBanners` own render-only shell surfaces.
 - ✅ `app-types.ts` split below threshold; store permission/schema types live in `web/src/app-types/store.ts`.
-- ✅ Worker-first contract scan covers the Phase 1 frontend/backend core surfaces, including `app-helpers`, `app-shell`, `app-types`, route modules, and tab modules; new files in those trees must be explicitly added.
+- ✅ Worker-first contract scan now recursively covers production core files under `src/` and `web/src`, excluding worker trees and tests.
 - ✅ Size exit criterion met: no non-worker `web/src` TS/TSX file is over ~600 LOC (`App.tsx` 594, `app-types.ts` 593; next largest smoke/test fixture 549).
-- ✅ Latest verification: `npm run build:web && npm run smoke:web` green (25 render-smoke components), `npm run build:server && node --test dist/worker-first-contract.test.js` green, `git diff --check` green, and full `npm test` green (204 backend tests + `check:web`).
+- ✅ Latest verification: `npm run build:web && npm run smoke:web` green (25 render-smoke components), `npm run build:server && node --test dist/worker-first-contract.test.js` green, `git diff --check` green, and full `npm test` green (203 backend tests + `check:web`).
 - **App.tsx: 7,076 → 594 LOC** (about -92%).
 
 Remaining follow-up (not Phase 1.2):
-- [ ] Move remaining wizard provider-specific assumptions behind generic worker/provider surfaces, then add `web/src/wizard/*` to the worker-first contract scan under Phase 3.1.
+- [x] Finish the embedding-provider/config/health contract cleanup under Phase 3.1; the wizard credential step itself is generic and scanned.
 
 ### 1.3 Extract a design-token layer under `styles.css`
 **Problem.** `web/src/styles.css` is **5,945 lines** of hand-rolled CSS with no token system, no router, no UI framework. Visual consistency is maintained by copy-paste.
@@ -123,7 +123,16 @@ Remaining follow-up (not Phase 1.2):
 
 **Exit criterion.** Reintroducing a worker name into core fails `npm test`.
 
-**Status — PARTIAL (2026-06-18).** `src/worker-first-contract.test.ts` now enforces forbidden worker/provider/route tokens across the Phase 1 core route, helper, shell, type, and tab surfaces, and also fails when new files in those scanned trees are not added to the scan. It is not yet the full-roadmap version: it does not scan all core files under `src/` and `web/src/`, and remaining provider/channel assumptions still exist outside the Phase 1 scan (notably setup wizard/config/health paths).
+**Status — DONE (2026-06-18).** `src/worker-first-contract.test.ts` now recursively scans production core files under `src/` and `web/src`, excluding worker trees and tests. The deny-list covers the explicit worker/provider/channel names from the contract, legacy worker route names, and provider-specific core endpoints such as `/api/lmstudio`, `/api/dashboard/lmstudio-models`, and `/api/workers/providers-*`.
+
+Contract cleanup completed alongside the broader scan:
+- Core UI uses generic local-runtime endpoints and payloads (`/api/local-runtime`, `/api/dashboard/local-runtime-models`, `dashboard.localRuntime`) instead of provider-specific names.
+- Provider credentials, default model seeds, local-runtime settings, embedding dispatch, and provider capability summaries are now owned by provider workers or generic provider contracts.
+- Health dependencies are collected dynamically from provider/channel adapters plus worker-owned health checks instead of fixed provider/channel rows.
+- Item Bus storage/config paths, queue keys, comments, CSS classes, and frontend copy no longer encode worker names in production core.
+- Channel id normalization, factory-reset credential cleanup, and dashboard dependency rendering are generic.
+
+Verified on 2026-06-18: the manual forbidden-token production-core scan is clean; `node --test dist/worker-first-contract.test.js` passes; full `npm test` passes with **203 backend tests** plus `npm run check:web`.
 
 ### 3.2 Eliminate the `as unknown as` internal-API casts
 **Problem.** 6 `as unknown as` in non-test backend code. The load-bearing one is `getMissedSlotTime` in `scheduler.ts` reaching into node-cron's undocumented `timeMatcher`. It's guarded by try/catch, but it's a silent-break risk on dependency upgrade.
@@ -151,7 +160,7 @@ These were the engineering carryovers from the v1.0 technical roadmap (originall
 - [ ] **Per-worker metrics** surfaced consistently (`buildJobMetricsSection` in `admin-server.ts:1273` already computes percentiles — generalize and test).
 - [ ] **Sandbox network-domain / credential-scope allowlists; Playwright session primitive** (was ROADMAP Workstream 5) — reliability + security; relevant to `src/actions/primitives.ts`.
 - [ ] **Item Bus multi-consumer fan-out** (was ROADMAP Workstream 3) — when a real use case appears. Keep the queue schema generic (`RawQueueItemSchema`, `src/jobs/queue.ts`); fan-out must stay in the bus, not in worker-specific columns.
-- [ ] **Per-worker secrets / env access** (was ROADMAP Workstream 2) — generalize credential/env access so a worker reads its own secrets without core naming them (today `telegramBotToken` leaks into `src/config.ts` / `src/health.ts`). This is also a **contract fix** (Phase 3.1): the deny-list test will flag those references.
+- [ ] **Per-worker secrets / env access** (was ROADMAP Workstream 2) — Phase 3.1 removed the known provider/channel credential leaks from production core; the remaining work is to formalize this as a first-class per-worker secret API instead of the current worker-owned helper modules.
 
 ---
 
@@ -163,12 +172,11 @@ These were the engineering carryovers from the v1.0 technical roadmap (originall
 
 ## Sequencing
 
-1. **Phase 1.1 (router)** first — it unblocks 2.3 and shrinks the highest-risk core file.
-2. **Phase 3.1 + 3.3 (contract test + FE typecheck)** next — cheap guardrails that protect every later refactor, especially the App.tsx split.
-3. **Phase 1.2 (App.tsx split)** — done; preserve it with the typecheck, smoke harness, and worker-first contract scan.
-4. **Phase 3.1 completion** — expand the contract test beyond Phase 1 surfaces once wizard/provider assumptions are genericized.
-5. **Phase 2 (reliability)** in parallel — independent of the refactors.
-6. **Phase 1.3 (tokens)** as the handoff to [`UX_ROADMAP.md`](./UX_ROADMAP.md).
+1. **Phase 1 (monolith dissolution)** — done; preserve it with the typecheck, smoke harness, and worker-first contract scan.
+2. **Phase 3.1 (worker-first contract guardrail)** — done; production core is scanned recursively and the main provider/channel/config leaks have been dissolved.
+3. **Phase 2 reliability gaps** — global crash/rejection handling, scheduled-job retry/backoff, and the remaining HTTP hardening.
+4. **Phase 3.2** — wrap the node-cron/internal API casts in one typed, tested adapter.
+5. **Phase 4 testing/observability** — richer schema-form smoke coverage, per-worker metrics, scoped secrets, and longer-tail platform hardening.
 
 ## Global exit criterion
 

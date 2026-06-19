@@ -1,36 +1,38 @@
 import { useEffect, useState } from 'react';
-import type { DashboardSnapshot, IntegrationStatus } from './types';
+import type { DashboardSnapshot, WorkerDashboardField, WorkerDashboardSurface, WorkerSummary } from './types';
 
 export function StepModel({ dashboard, onRefresh }: { dashboard: DashboardSnapshot; onRefresh: () => Promise<void> }) {
-  const [tab, setTab] = useState<'local' | 'openai' | 'anthropic'>('openai');
-  const [openaiKey, setOpenaiKey] = useState('');
-  const [anthropicKey, setAnthropicKey] = useState('');
+  const credentialProviders = findCredentialProviders(dashboard.workers);
+  const localRuntimeTabId = 'local-runtime';
+  const firstProviderId = credentialProviders[0]?.worker.id ?? localRuntimeTabId;
+  const [tab, setTab] = useState(firstProviderId);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState<'openai' | 'anthropic' | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const openaiOk = (dashboard.integrations['openai'] ?? dashboard.integrations['openaiConfigured'] as unknown as IntegrationStatus)?.ok ?? false;
-  const anthropicOk = (dashboard.integrations['anthropic'] ?? dashboard.integrations['anthropicConfigured'] as unknown as IntegrationStatus)?.ok ?? false;
-  const lmRunning = dashboard.lmStudio?.running ?? false;
+  const runtimeRunning = dashboard.localRuntime?.running ?? false;
+  const tabs = [...credentialProviders.map((provider) => provider.worker.id), localRuntimeTabId];
 
-  async function saveKey(provider: 'openai' | 'anthropic') {
-    const key = provider === 'openai' ? openaiKey : anthropicKey;
+  useEffect(() => {
+    if (!tabs.includes(tab)) setTab(tabs[0] ?? localRuntimeTabId);
+  }, [tabs.join('\n'), tab]);
+
+  async function saveKey(provider: CredentialProvider) {
+    const draftKey = provider.worker.id;
+    const key = drafts[draftKey] ?? '';
     if (!key.trim()) return;
     setSaving(true);
     setError(null);
     try {
-      const endpoint = provider === 'openai'
-        ? '/api/workers/providers-openai/credentials'
-        : '/api/workers/providers-anthropic/credentials';
-      const res = await fetch(endpoint, {
+      const res = await fetch(provider.surface.path!, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey: key.trim() }),
+        body: JSON.stringify({ [provider.field.key]: key.trim() }),
       });
       if (!res.ok) throw new Error(await res.text());
-      setSaved(provider);
-      if (provider === 'openai') setOpenaiKey('');
-      else setAnthropicKey('');
+      setSaved(draftKey);
+      setDrafts((current) => ({ ...current, [draftKey]: '' }));
       await onRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed');
@@ -45,7 +47,11 @@ export function StepModel({ dashboard, onRefresh }: { dashboard: DashboardSnapsh
       <p className="wizard-lead">BFrost needs at least one model to run workers. Choose how you want to connect.</p>
 
       <div className="wizard-tabs" role="tablist" aria-label="Model provider">
-        {(['openai', 'anthropic', 'local'] as const).map((t) => (
+        {tabs.map((t) => {
+          const provider = credentialProviders.find((item) => item.worker.id === t);
+          const configured = provider ? isProviderConfigured(provider.worker) : runtimeRunning;
+          const label = provider ? provider.worker.displayName ?? provider.worker.name : 'Local runtime';
+          return (
           <button
             key={t}
             id={`wizard-tab-${t}`}
@@ -57,78 +63,58 @@ export function StepModel({ dashboard, onRefresh }: { dashboard: DashboardSnapsh
             className={`wizard-tab${tab === t ? ' active' : ''}`}
             onClick={() => setTab(t)}
             onKeyDown={(e) => {
-              const tabs = ['openai', 'anthropic', 'local'] as const;
               const idx = tabs.indexOf(t);
               if (e.key === 'ArrowRight') setTab(tabs[(idx + 1) % tabs.length]);
               if (e.key === 'ArrowLeft') setTab(tabs[(idx + tabs.length - 1) % tabs.length]);
             }}
           >
-            {t === 'openai' ? 'OpenAI' : t === 'anthropic' ? 'Anthropic' : 'Local (LM Studio)'}
-            {t === 'openai' && openaiOk ? ' ✓' : ''}
-            {t === 'anthropic' && anthropicOk ? ' ✓' : ''}
-            {t === 'local' && lmRunning ? ' ✓' : ''}
+            {label}{configured ? ' ✓' : ''}
           </button>
-        ))}
+        );
+        })}
       </div>
 
-      <ProviderKeyPanel
-        id="openai"
-        active={tab === 'openai'}
-        configured={openaiOk}
-        label="OpenAI"
-        inputLabel="OpenAI API key"
-        placeholder={openaiOk ? 'Configured - enter new key to update' : 'sk-...'}
-        value={openaiKey}
-        setValue={setOpenaiKey}
-        saving={saving}
-        saved={saved === 'openai'}
-        docsUrl="https://platform.openai.com/api-keys"
-        docsLabel="platform.openai.com/api-keys"
-        onSave={() => void saveKey('openai')}
-      />
-
-      <ProviderKeyPanel
-        id="anthropic"
-        active={tab === 'anthropic'}
-        configured={anthropicOk}
-        label="Anthropic"
-        inputLabel="Anthropic API key"
-        placeholder={anthropicOk ? 'Configured - enter new key to update' : 'sk-ant-...'}
-        value={anthropicKey}
-        setValue={setAnthropicKey}
-        saving={saving}
-        saved={saved === 'anthropic'}
-        docsUrl="https://console.anthropic.com/account/keys"
-        docsLabel="console.anthropic.com"
-        onSave={() => void saveKey('anthropic')}
-      />
+      {credentialProviders.map((provider) => (
+        <ProviderKeyPanel
+          key={provider.worker.id}
+          id={provider.worker.id}
+          active={tab === provider.worker.id}
+          configured={isProviderConfigured(provider.worker)}
+          label={provider.worker.displayName ?? provider.worker.name}
+          inputLabel={provider.field.label}
+          description={provider.surface.description}
+          placeholder={
+            isProviderConfigured(provider.worker)
+              ? 'Configured - enter a new secret to update'
+              : provider.field.placeholder ?? ''
+          }
+          value={drafts[provider.worker.id] ?? ''}
+          setValue={(value) => setDrafts((current) => ({ ...current, [provider.worker.id]: value }))}
+          saving={saving}
+          saved={saved === provider.worker.id}
+          helpText={provider.field.helpText}
+          onSave={() => void saveKey(provider)}
+        />
+      ))}
 
       <div
-        id="wizard-panel-local"
+        id={`wizard-panel-${localRuntimeTabId}`}
         role="tabpanel"
-        aria-labelledby="wizard-tab-local"
-        hidden={tab !== 'local'}
+        aria-labelledby={`wizard-tab-${localRuntimeTabId}`}
+        hidden={tab !== localRuntimeTabId}
         className="wizard-tab-panel"
       >
-        {lmRunning ? (
-          <p className="wizard-status-ok">✓ LM Studio is running with {dashboard.lmStudio.loadedCount} model(s) loaded.</p>
+        {runtimeRunning ? (
+          <p className="wizard-status-ok">✓ Local runtime is running with {dashboard.localRuntime.loadedCount} model(s) loaded.</p>
         ) : (
           <>
-            <p>LM Studio is not detected. Download it to run AI models fully locally.</p>
-            <a
-              href="https://lmstudio.ai"
-              target="_blank"
-              rel="noreferrer"
-              className="wizard-external-link"
-            >
-              Download LM Studio →
-            </a>
-            <p className="wizard-footnote">Once installed and running, load a model in LM Studio, then come back.</p>
+            <p>No local AI runtime is detected. Start your configured local provider to run models fully locally.</p>
+            <p className="wizard-footnote">Once it is running, load a model there, then come back.</p>
           </>
         )}
-        {dashboard.lmStudio.loadedModels.length > 0 && (
+        {dashboard.localRuntime.loadedModels.length > 0 && (
           <ul className="wizard-bullets">
-            {dashboard.lmStudio.loadedModels.map((m) => (
+            {dashboard.localRuntime.loadedModels.map((m) => (
               <li key={m}>{m}</li>
             ))}
           </ul>
@@ -140,33 +126,65 @@ export function StepModel({ dashboard, onRefresh }: { dashboard: DashboardSnapsh
   );
 }
 
+interface CredentialProvider {
+  worker: WorkerSummary;
+  surface: WorkerDashboardSurface;
+  field: SecretDashboardField;
+}
+
+type SecretDashboardField = WorkerDashboardField & {
+  type: 'secret-reference';
+  defaultValue: string;
+  placeholder?: string;
+  helpText?: string;
+};
+
+function findCredentialProviders(workers: WorkerSummary[]): CredentialProvider[] {
+  return workers
+    .filter((worker) => worker.kind === 'provider')
+    .flatMap((worker) => {
+      const settings = worker.dashboard?.settings ?? [];
+      const credentialSurface = settings.find((surface) =>
+        Boolean(surface.path) && (surface.fields ?? []).some((field) => field.type === 'secret-reference'),
+      );
+      const field = credentialSurface?.fields?.find((item): item is SecretDashboardField =>
+        item.type === 'secret-reference',
+      );
+      return credentialSurface?.path && field ? [{ worker, surface: credentialSurface, field }] : [];
+    });
+}
+
+function isProviderConfigured(worker: WorkerSummary): boolean {
+  return worker.enabled && worker.healthState === 'healthy';
+}
+
 function ProviderKeyPanel({
   id,
   active,
   configured,
   label,
   inputLabel,
+  description,
   placeholder,
   value,
   setValue,
   saving,
   saved,
-  docsUrl,
-  docsLabel,
+  helpText,
   onSave,
 }: {
-  id: 'openai' | 'anthropic';
+  id: string;
   active: boolean;
   configured: boolean;
   label: string;
   inputLabel: string;
+  description: string;
   placeholder: string;
   value: string;
   setValue: (value: string) => void;
   saving: boolean;
   saved: boolean;
-  docsUrl: string;
-  docsLabel: string;
+  helpText?: string;
   onSave: () => void;
 }) {
   return (
@@ -178,8 +196,9 @@ function ProviderKeyPanel({
       className="wizard-tab-panel"
     >
       {configured ? (
-        <p className="wizard-status-ok">✓ {label} API is configured.</p>
+        <p className="wizard-status-ok">✓ {label} is configured.</p>
       ) : null}
+      <p>{description}</p>
       <label className="wizard-field-label" htmlFor={`wizard-${id}-key`}>{inputLabel}</label>
       <div className="wizard-key-row">
         <input
@@ -200,7 +219,7 @@ function ProviderKeyPanel({
         </button>
       </div>
       {saved ? <p className="wizard-status-ok">✓ Saved successfully.</p> : null}
-      <p className="wizard-footnote">Get your key at <a href={docsUrl} target="_blank" rel="noreferrer">{docsLabel}</a></p>
+      {helpText ? <p className="wizard-footnote">{helpText}</p> : null}
     </div>
   );
 }
@@ -208,9 +227,8 @@ function ProviderKeyPanel({
 export function StepEmbedding({ dashboard, onRefresh }: { dashboard: DashboardSnapshot; onRefresh: () => Promise<void> }) {
   const platform = dashboard.platform;
   const reachable = dashboard.dependencies?.embeddingModelReachable?.ok ?? false;
-  const [provider, setProvider] = useState<'local' | 'openai'>(
-    platform?.embeddingProvider === 'openai' ? 'openai' : 'local',
-  );
+  const embeddingProviders = findEmbeddingProviders(dashboard.workers);
+  const [provider, setProvider] = useState(platform?.embeddingProvider ?? 'local');
   const [model, setModel] = useState(platform?.embeddingModel ?? '');
   const [localModels, setLocalModels] = useState<Array<{ id: string; label: string }>>([]);
   const [saving, setSaving] = useState(false);
@@ -256,7 +274,7 @@ export function StepEmbedding({ dashboard, onRefresh }: { dashboard: DashboardSn
       <h2>Long-term memory embeddings</h2>
       <p className="wizard-lead">
         Workers that remember things turn text into vectors with an embedding model. Pick where those
-        embeddings come from - a local model keeps everything on your machine; OpenAI is faster to set up.
+        embeddings come from - a local model keeps everything on your machine; a configured cloud provider can be faster to set up.
       </p>
       {reachable ? (
         <p className="wizard-status-ok">✓ Current embedding model is reachable ({platform?.embeddingProvider} · {platform?.embeddingModel}).</p>
@@ -267,13 +285,17 @@ export function StepEmbedding({ dashboard, onRefresh }: { dashboard: DashboardSn
         id="wizard-embedding-provider"
         value={provider}
         onChange={(e) => {
-          setProvider(e.target.value as 'local' | 'openai');
+          setProvider(e.target.value);
           setModel('');
           setSaved(false);
         }}
       >
-        <option value="local">Local (LM Studio / Ollama)</option>
-        <option value="openai">OpenAI</option>
+        <option value="local">Local runtime</option>
+        {embeddingProviders.map((item) => (
+          <option key={item.provider.id} value={item.provider.id}>
+            {item.provider.label}
+          </option>
+        ))}
       </select>
 
       <label className="wizard-field-label" htmlFor="wizard-embedding-model">Model</label>
@@ -294,7 +316,7 @@ export function StepEmbedding({ dashboard, onRefresh }: { dashboard: DashboardSn
               value={model}
               onChange={(e) => setModel(e.target.value)}
             />
-            <p className="wizard-footnote">No local embedding models detected. Load one in LM Studio / Ollama, or type its id.</p>
+            <p className="wizard-footnote">No local embedding models detected. Load one in your local runtime, or type its id.</p>
           </>
         )
       ) : (
@@ -302,11 +324,11 @@ export function StepEmbedding({ dashboard, onRefresh }: { dashboard: DashboardSn
           <input
             id="wizard-embedding-model"
             type="text"
-            placeholder="e.g. text-embedding-3-small"
+            placeholder="Embedding model id"
             value={model}
             onChange={(e) => setModel(e.target.value)}
           />
-          <p className="wizard-footnote">Uses your OpenAI API key from the Model step. Requires the embeddings endpoint.</p>
+          <p className="wizard-footnote">Uses the selected provider's credential from the Model step. Requires embeddings support.</p>
         </>
       )}
 
@@ -320,4 +342,14 @@ export function StepEmbedding({ dashboard, onRefresh }: { dashboard: DashboardSn
       <p className="wizard-footnote">Optional - skip to keep the default. You can change this later from the Config tab.</p>
     </div>
   );
+}
+
+function findEmbeddingProviders(workers: WorkerSummary[]) {
+  return workers
+    .filter((worker) => worker.enabled && worker.healthState === 'healthy')
+    .flatMap((worker) =>
+      (worker.providers ?? [])
+        .filter((provider) => provider.capabilities.embeddings && !provider.capabilities.localRuntime)
+        .map((provider) => ({ worker, provider })),
+    );
 }

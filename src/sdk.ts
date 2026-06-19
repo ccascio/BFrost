@@ -53,7 +53,7 @@ export async function getJobPrompt(jobId: string, fallback = ''): Promise<string
 
 /**
  * Broadcast a message to every configured operator-notification channel
- * (Telegram / Discord / email / …). This is a *generic* core capability — it
+ * (messaging apps, email, local dashboards, …). This is a *generic* core capability — it
  * iterates the registered channels and references no specific worker — so it is
  * safe to expose. Lazily resolved to avoid importing the registry module (a
  * live-mutator surface) at SDK load; only this one broadcast helper is exposed,

@@ -7,6 +7,12 @@ import { registerCoreRoutes } from './admin-routes';
 import { HttpRouter } from './http/router';
 
 const FORBIDDEN_WORKER_TOKENS = [
+  'news',
+  'research',
+  'telegram',
+  'openai',
+  'anthropic',
+  'lmstudio',
   'core.news',
   'core.research',
   'core.providers',
@@ -15,60 +21,14 @@ const FORBIDDEN_WORKER_TOKENS = [
   'publisher-x',
   'convertprivately',
   '/api/lmstudio',
+  '/api/dashboard/lmstudio-models',
   '/api/workers/providers-openai',
   '/api/workers/providers-anthropic',
   '/api/workers/core.providers',
 ];
 
-const PHASE_1_CORE_SURFACES = [
-  'src/admin-server.ts',
-  'src/admin-routes.ts',
-  'src/http/routes/actions.ts',
-  'src/http/routes/auth.ts',
-  'src/http/routes/admin.ts',
-  'src/http/routes/backups.ts',
-  'src/http/routes/chat.ts',
-  'src/http/routes/config.ts',
-  'src/http/routes/dashboard.ts',
-  'src/http/routes/workers.ts',
-  'web/src/app-types.ts',
-  'web/src/app-types/store.ts',
-  'web/src/app-helpers.tsx',
-  'web/src/app-helpers/chat.tsx',
-  'web/src/app-helpers/dashboard.ts',
-  'web/src/app-helpers/display.tsx',
-  'web/src/app-helpers/fields.ts',
-  'web/src/app-helpers/pipeline.tsx',
-  'web/src/app-helpers/run-queue.ts',
-  'web/src/app-helpers/store.tsx',
-  'web/src/app-helpers/worker.tsx',
-  'web/src/app-shell/AuthScreens.tsx',
-  'web/src/app-shell/DashboardRoutes.tsx',
-  'web/src/app-shell/QueueViews.tsx',
-  'web/src/app-shell/SpecialModeBanners.tsx',
-  'web/src/app-shell/useChatController.ts',
-  'web/src/app-shell/useDashboardData.ts',
-  'web/src/app-shell/useDashboardOperations.ts',
-  'web/src/app-shell/useOverviewController.ts',
-  'web/src/app-shell/useStoreController.ts',
-  'web/src/tabs/ActionsTab.tsx',
-  'web/src/tabs/ChannelsTab.tsx',
-  'web/src/tabs/ChatTab.tsx',
-  'web/src/tabs/ConfigTab.tsx',
-  'web/src/tabs/DashboardFieldEditor.tsx',
-  'web/src/tabs/HealthTab.tsx',
-  'web/src/tabs/JobOperationsPanel.tsx',
-  'web/src/tabs/JobsTab.tsx',
-  'web/src/tabs/OverviewModelPanel.tsx',
-  'web/src/tabs/OverviewRecipesPanel.tsx',
-  'web/src/tabs/OverviewSetupPanels.tsx',
-  'web/src/tabs/OverviewTab.tsx',
-  'web/src/tabs/PlatformConfigPanels.tsx',
-  'web/src/tabs/StoreTab.tsx',
-  'web/src/tabs/SystemTab.tsx',
-  'web/src/tabs/WorkerConfigPage.tsx',
-  'web/src/tabs/WorkersTab.tsx',
-];
+const CONTRACT_CORE_ROOTS = ['src', 'web/src'];
+const CONTRACT_FILE_EXTENSIONS = new Set(['.ts', '.tsx', '.css']);
 
 test('core and built-in worker API routes do not collide', () => {
   const router = new HttpRouter();
@@ -82,13 +42,14 @@ test('core and built-in worker API routes do not collide', () => {
   }
 });
 
-test('Phase 1 core surfaces do not name specific workers', async () => {
+test('production core files do not name specific workers', async () => {
   const hits: string[] = [];
 
-  for (const relPath of PHASE_1_CORE_SURFACES) {
+  for (const relPath of await listContractCoreFiles()) {
     const absPath = path.join(process.cwd(), relPath);
     const content = await readFile(absPath, 'utf8');
-    const tokens = FORBIDDEN_WORKER_TOKENS.filter((token) => content.includes(token));
+    const lower = content.toLowerCase();
+    const tokens = FORBIDDEN_WORKER_TOKENS.filter((token) => lower.includes(token.toLowerCase()));
     if (tokens.length > 0) {
       hits.push(`${relPath}: ${tokens.join(', ')}`);
     }
@@ -97,30 +58,29 @@ test('Phase 1 core surfaces do not name specific workers', async () => {
   assert.deepEqual(hits, []);
 });
 
-test('new core files must be added to the worker-first contract scan', async () => {
-  const scanned = new Set(PHASE_1_CORE_SURFACES);
-  const required = [
-    'src/admin-server.ts',
-    'src/admin-routes.ts',
-    ...(await listFiles('src/http/routes', '.ts')),
-    'web/src/app-types.ts',
-    ...(await listFiles('web/src/app-types', '.ts')),
-    'web/src/app-helpers.tsx',
-    ...(await listFiles('web/src/app-helpers', '.ts')),
-    ...(await listFiles('web/src/app-helpers', '.tsx')),
-    ...(await listFiles('web/src/app-shell', '.ts')),
-    ...(await listFiles('web/src/app-shell', '.tsx')),
-    ...(await listFiles('web/src/tabs', '.tsx')),
-  ].sort();
+async function listContractCoreFiles(): Promise<string[]> {
+  const results: string[] = [];
+  for (const root of CONTRACT_CORE_ROOTS) {
+    await walk(root, results);
+  }
+  return results.sort();
+}
 
-  const missing = required.filter((relPath) => !scanned.has(relPath));
-  assert.deepEqual(missing, []);
-});
+async function walk(relDir: string, results: string[]): Promise<void> {
+  if (relDir === 'src/workers' || relDir.startsWith('src/workers/')) return;
+  if (relDir === 'web/src/workers' || relDir.startsWith('web/src/workers/')) return;
 
-async function listFiles(dir: string, suffix: string): Promise<string[]> {
-  const entries = await readdir(path.join(process.cwd(), dir), { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(suffix))
-    .map((entry) => `${dir}/${entry.name}`)
-    .sort();
+  const entries = await readdir(path.join(process.cwd(), relDir), { withFileTypes: true });
+  for (const entry of entries) {
+    const relPath = `${relDir}/${entry.name}`;
+    if (entry.isDirectory()) {
+      await walk(relPath, results);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    const ext = path.extname(entry.name);
+    if (!CONTRACT_FILE_EXTENSIONS.has(ext)) continue;
+    if (entry.name.includes('.test.')) continue;
+    results.push(relPath);
+  }
 }

@@ -8,6 +8,7 @@ import { fetchArticle } from '../article-fetch/module';
 import { searchGoogle, type SearchResult } from '../search-google/module';
 import { loadKvJson, saveKvJson } from '../../../sqlite';
 import { recordEventSafe } from '../../../event-log';
+import { getResearchStoreDir } from './settings';
 
 const ARTICLE_FETCH_CONCURRENCY = 3;
 const RESEARCH_INDEX_KEY = 'research.notes';
@@ -293,10 +294,11 @@ async function saveResearchNote(
   const slug = slugify(topics[0] || 'research');
   const id = `${createdAt.replace(/[:.]/g, '-')}-${slug}`;
   const title = `${topics.join(', ')} — ${createdAt.slice(0, 10)}`;
-  const filePath = path.join(config.researchStoreDir, `${id}.md`);
+  const storeDir = getResearchStoreDir();
+  const filePath = path.join(storeDir, `${id}.md`);
   const body = `# ${title}\n\n${markdown}\n`;
 
-  await fs.mkdir(config.researchStoreDir, { recursive: true });
+  await fs.mkdir(storeDir, { recursive: true });
   await fs.writeFile(filePath, body, 'utf8');
 
   const record: ResearchNoteRecord = {

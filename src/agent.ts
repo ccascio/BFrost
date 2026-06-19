@@ -2,7 +2,7 @@ import { generateText, jsonSchema, stepCountIs, tool, ModelMessage, UserContent 
 import { getChatModel } from './llm';
 import { findModel } from './config';
 import { getHistory, addUserMessage, addAssistantMessage, getSelectedModel } from './conversation';
-import { runWithChatContext } from './chat-context';
+import { runWithChatContext, getActiveChatContext } from './chat-context';
 import { listRegisteredTools } from './workers/registry';
 import { buildJobToolCatalog } from './workers/job-tools';
 import type { WorkerToolManifest } from './workers/types';
@@ -77,9 +77,14 @@ export async function runAgent(messages: ModelMessage[], modelId: string): Promi
     throw new Error(`Unknown model: ${modelId}`);
   }
 
+  const { projectId } = getActiveChatContext();
+  const system = projectId
+    ? `${SYSTEM_PROMPT}\n\nProject context: the user has a project active. They may have uploaded documents to it. Always call your document-search tool before answering any topic-specific question — even if you believe you already know the answer from general knowledge. Project files are the authoritative source for anything in them.`
+    : SYSTEM_PROMPT;
+
   const result = await generateText({
     model: getChatModel(modelOption),
-    system: SYSTEM_PROMPT,
+    system,
     tools: buildAgentToolCatalog(),
     stopWhen: stepCountIs(3),
     timeout: 600000,

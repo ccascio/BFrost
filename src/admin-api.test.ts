@@ -6,7 +6,7 @@ import {
   ChatMessageBodySchema,
   DefaultModelBodySchema,
   JobDashboardFieldSchema,
-  LmStudioActionBodySchema,
+  LocalRuntimeActionBodySchema,
   QueueItemActionBodySchema,
   SourceQualityRulesSchema,
   JobMetricsResponseSchema,
@@ -38,11 +38,11 @@ test('admin API schemas accept expected dashboard payloads', () => {
     },
   );
   assert.deepEqual(
-    LmStudioActionBodySchema.parse({ action: 'load-default' }),
+    LocalRuntimeActionBodySchema.parse({ action: 'load-default' }),
     { action: 'load-default' },
   );
   assert.deepEqual(
-    LmStudioActionBodySchema.parse({ action: 'unload-all' }),
+    LocalRuntimeActionBodySchema.parse({ action: 'unload-all' }),
     { action: 'unload-all' },
   );
   assert.deepEqual(
@@ -127,7 +127,7 @@ test('admin API schemas accept expected dashboard payloads', () => {
 
 test('admin API schemas reject unexpected actions and keys', () => {
   assert.equal(QueueItemActionBodySchema.safeParse({ id: 'q_123', action: 'delete' }).success, false);
-  assert.equal(LmStudioActionBodySchema.safeParse({ action: 'restart' }).success, false);
+  assert.equal(LocalRuntimeActionBodySchema.safeParse({ action: 'restart' }).success, false);
   assert.equal(DefaultModelBodySchema.safeParse({ alias: 'local-model', extra: true }).success, false);
 });
 
@@ -142,7 +142,7 @@ test('dashboard response schema accepts the control-room payload shape', () => {
     },
     models: [{ alias: 'local-model', id: 'local/model', label: 'Local Model', provider: 'lmstudio' }],
     defaultModel: { alias: 'local-model', id: 'local/model', label: 'Local Model', provider: 'lmstudio' },
-    lmStudio: {
+    localRuntime: {
       running: true,
       loadedModels: ['local/model'],
       loadedCount: 1,
@@ -294,6 +294,7 @@ test('dashboard response schema accepts the control-room payload shape', () => {
             },
           ],
         },
+        providers: [],
         jobs: [
           {
             id: 'tweet-post',

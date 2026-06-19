@@ -81,7 +81,7 @@ export function renderPipelineTab(dashboard: DashboardState, onRunDemo: () => vo
             <p>The bus is empty - no items have been produced yet.</p>
             <p className="footnote">
               Run the demo to see a live producer to bus to consumer graph, or enable the
-              news and research workers to start a real pipeline.
+              producer and consumer workers to start a real pipeline.
             </p>
             <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
               <button type="button" className="primary" onClick={onRunDemo}>

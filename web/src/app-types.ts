@@ -283,6 +283,18 @@ export interface WorkerHealthRequirementStatus {
 
 export type WorkerKind = 'feature' | 'channel' | 'provider';
 
+export interface WorkerProviderSummary {
+  id: string;
+  label: string;
+  description: string;
+  capabilities: {
+    chat: boolean;
+    embeddings: boolean;
+    vision: boolean;
+    localRuntime: boolean;
+  };
+}
+
 export interface PlatformSettings {
   activeLocalProviderId: string;
   primaryChannelId: string;
@@ -330,6 +342,7 @@ export interface WorkerSummary {
   health: WorkerHealthRequirementStatus[];
   ownedSettings: WorkerOwnedSetting[];
   dashboard: WorkerDashboardManifest;
+  providers: WorkerProviderSummary[];
   jobs: WorkerJobSummary[];
 }
 
@@ -471,7 +484,7 @@ export interface JobMetricsResponse {
   computedAt: string;
 }
 
-export type DashboardSectionName = 'queue' | 'cronRuns' | 'events' | 'backups' | 'workerData' | 'lmStudioModels';
+export type DashboardSectionName = 'queue' | 'cronRuns' | 'events' | 'backups' | 'workerData' | 'localRuntimeModels';
 
 export interface RecipeInputStorage {
   type: 'worker-kv' | 'global-kv-array';
@@ -512,7 +525,7 @@ export interface DashboardState {
   };
   models: ModelOption[];
   defaultModel: ModelOption;
-  lmStudio: {
+  localRuntime: {
     running: boolean;
     loadedModels: string[];
     loadedCount: number;
@@ -544,14 +557,7 @@ export interface DashboardState {
   // checks (cloud LLM providers, allowed-user gate). Don't add hardcoded keys
   // here — read what the backend sends and let workers declare their own.
   integrations: Record<string, HealthStatus>;
-  dependencies: {
-    lmStudioCli: HealthStatus;
-    ffmpeg: HealthStatus;
-    whisperCli: HealthStatus;
-    whisperModel: HealthStatus;
-    sqliteCli: HealthStatus;
-    embeddingModelReachable: HealthStatus;
-  };
+  dependencies: Record<string, HealthStatus>;
   events: EventLogRecord[];
   backups: AppBackupRecord[];
   recipes: WorkerRecipe[];

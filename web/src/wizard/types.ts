@@ -33,6 +33,73 @@ export interface WorkerSummary {
   jobCount: number;
   enabledJobCount: number;
   onboarding?: WorkerOnboardingAction;
+  dashboard?: WorkerDashboardManifest;
+  providers?: WorkerProviderSummary[];
+}
+
+export interface WorkerProviderSummary {
+  id: string;
+  label: string;
+  description: string;
+  capabilities: {
+    chat: boolean;
+    embeddings: boolean;
+    vision: boolean;
+    localRuntime: boolean;
+  };
+}
+
+export type WorkerDashboardField =
+  | {
+      type: 'text' | 'textarea' | 'secret-reference';
+      key: string;
+      label: string;
+      defaultValue: string;
+      placeholder?: string;
+      helpText?: string;
+    }
+  | {
+      type: 'number';
+      key: string;
+      label: string;
+      defaultValue: number;
+      helpText?: string;
+    }
+  | {
+      type: 'boolean';
+      key: string;
+      label: string;
+      defaultValue: boolean;
+      helpText?: string;
+    }
+  | {
+      type: 'select';
+      key: string;
+      label: string;
+      defaultValue: string;
+      options: Array<{ label: string; value: string }>;
+      helpText?: string;
+    }
+  | {
+      type: 'string-list';
+      key: string;
+      label: string;
+      defaultValue: string[];
+      helpText?: string;
+    };
+
+export interface WorkerDashboardSurface {
+  id: string;
+  label: string;
+  description: string;
+  path?: string;
+  tab?: string;
+  fields?: WorkerDashboardField[];
+}
+
+export interface WorkerDashboardManifest {
+  settings: WorkerDashboardSurface[];
+  routes: WorkerDashboardSurface[];
 }
 
 export interface SchedulerJobState {
@@ -66,7 +133,7 @@ export interface DashboardSnapshot {
   workers: WorkerSummary[];
   cron: { jobs: SchedulerJobState[] };
   integrations: Record<string, IntegrationStatus>;
-  lmStudio: { running: boolean; loadedModels: string[]; loadedCount: number };
+  localRuntime: { running: boolean; loadedModels: string[]; loadedCount: number };
   platform: PlatformSettings;
   dependencies?: { embeddingModelReachable?: { ok: boolean } };
 }

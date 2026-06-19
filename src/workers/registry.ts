@@ -6,6 +6,7 @@ import type {
   ChannelAdapterFactory,
   ProviderAdapter,
   ProviderAdapterFactory,
+  WorkerHealthCheck,
 } from './module';
 import type {
   WorkerChannelManifest,
@@ -195,6 +196,10 @@ export function listWorkers(): WorkerManifest[] {
 
 export function listRegisteredApiRoutes(): AdminApiRoute[] {
   return allModules().flatMap((module) => module.apiRoutes ?? []);
+}
+
+export function listRegisteredHealthChecks(): WorkerHealthCheck[] {
+  return allModules().flatMap((module) => module.healthChecks ?? []);
 }
 
 /** Collect all recipes declared across registered worker manifests. */

@@ -102,7 +102,7 @@ export const dashboardView: WorkerDashboardViewDefinition = {
   kind: 'queue',
   surfaceIds: ['news-runs', 'source-quality-rules'],
   menu: {
-    icon: 'newspaper',
+    icon: 'article',
     group: 'Workers',
     order: 10,
     label: 'News',
@@ -223,7 +223,7 @@ export const dashboardView: WorkerDashboardViewDefinition = {
             <StatusPill tone="muted">{filteredNewsItems.length} shown</StatusPill>
           </div>
 
-          <div className="queue-workspace news-queue-workspace section-break">
+          <div className="queue-workspace article-queue-workspace section-break">
             <div className="stack-list queue-list">
               {filteredNewsItems.map((item: any) => (
                 <div className={`queue-item${selectedNewsItem?.id === item.id ? ' selected' : ''}`} key={item.id}>
@@ -280,8 +280,8 @@ export const dashboardView: WorkerDashboardViewDefinition = {
               ) : null}
             </div>
 
-            <aside className="queue-detail-column news-item-detail-column">
-              <section className="detail-panel news-item-detail-panel">
+            <aside className="queue-detail-column article-item-detail-column">
+              <section className="detail-panel article-item-detail-panel">
                 <div className="panel-head">
                   <div>
                     <p className="panel-kicker">Item detail</p>

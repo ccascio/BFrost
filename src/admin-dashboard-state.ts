@@ -82,7 +82,8 @@ import {
   DashboardStateSchema,
   DefaultModelBodySchema,
   EventsSectionSchema,
-  LmStudioActionBodySchema,
+  LocalRuntimeActionBodySchema,
+  LocalRuntimeModelsSectionSchema,
   LocalEmbeddingModelsSectionSchema,
   type LocalEmbeddingModelsSection,
   StoreInstallBodySchema,
@@ -97,6 +98,7 @@ import {
   type CronRunsSection,
   type DashboardState,
   type EventsSection,
+  type LocalRuntimeModelsSection,
   type WorkerDataSection,
   type QueueSection,
   type JobMetricsResponse,
@@ -151,7 +153,7 @@ export async function buildDashboardState(): Promise<DashboardState> {
   await syncHiddenBuiltIns();
 
   const localProvider = getActiveLocalProvider();
-  const [scheduler, lmStudioRunning, loadedCount, health, localResult, pinnedModelId] = await Promise.all([
+  const [scheduler, localRuntimeRunning, loadedCount, health, localResult, pinnedModelId] = await Promise.all([
     getSchedulerSnapshot(),
     localProvider?.getRuntimeStatus ? localProvider.getRuntimeStatus() : Promise.resolve(false),
     countLoadedModels(localProvider),
@@ -184,8 +186,8 @@ export async function buildDashboardState(): Promise<DashboardState> {
     },
     models: availableModels,
     defaultModel,
-    lmStudio: {
-      running: lmStudioRunning,
+    localRuntime: {
+      running: localRuntimeRunning,
       loadedCount,
       pinnedModelId,
     },
@@ -260,10 +262,22 @@ export async function buildWorkerDataSection(): Promise<WorkerDataSection> {
   return WorkerDataSectionSchema.parse({ workerData: workerDashboardData });
 }
 
+export async function buildLocalRuntimeModelsSection(): Promise<LocalRuntimeModelsSection> {
+  const localProvider = getActiveLocalProvider();
+  if (!localProvider?.listLoadedModels) {
+    return LocalRuntimeModelsSectionSchema.parse({ loadedModels: [] });
+  }
+
+  const loaded = await localProvider.listLoadedModels();
+  return LocalRuntimeModelsSectionSchema.parse({
+    loadedModels: loaded.map((item) => item.modelKey || item.identifier || 'unknown'),
+  });
+}
+
 export async function buildLocalEmbeddingModelsSection(): Promise<LocalEmbeddingModelsSection> {
   const localProvider = getActiveLocalProvider();
 
-  // Prefer the provider's own type-filtered list (LM Studio knows the model type).
+  // Prefer the provider's own type-filtered list when available.
   if (localProvider?.listEmbeddingModels) {
     const models = await localProvider.listEmbeddingModels();
     if (models.length > 0) {
@@ -273,7 +287,7 @@ export async function buildLocalEmbeddingModelsSection(): Promise<LocalEmbedding
     }
   }
 
-  // Fallback: query the OpenAI-compatible /v1/models and filter by "embed" in the id.
+  // Fallback: query the configured compatible /v1/models endpoint and filter by "embed" in the id.
   try {
     const base = config.ollamaBaseUrl.replace(/\/+$/, '');
     const response = await fetch(`${base}/models`, { signal: AbortSignal.timeout(5000) });
@@ -597,6 +611,12 @@ export function listWorkerSummaries(
         settings: worker.dashboard?.settings ?? [],
         routes: worker.dashboard?.routes ?? [],
       },
+      providers: (worker.providers ?? []).map((provider) => ({
+        id: provider.id,
+        label: provider.label,
+        description: provider.description,
+        capabilities: provider.capabilities,
+      })),
       jobs: workerJobs.map((job) => ({
         id: job.name,
         label: job.label,

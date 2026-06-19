@@ -1,6 +1,6 @@
 import { loadKvJson, saveKvJson } from './sqlite';
 
-const PIN_KV_KEY = 'lmstudio.pinnedModel';
+const PIN_KV_KEY = 'localRuntime.pinnedModel';
 
 interface PinPayload {
   modelId: string | null;

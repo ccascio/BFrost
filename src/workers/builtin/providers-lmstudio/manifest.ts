@@ -31,7 +31,7 @@ export const lmStudioProviderWorker: WorkerManifest = {
       description: 'Local OpenAI-compatible chat model server managed by the LM Studio CLI.',
       capabilities: {
         chat: true,
-        embeddings: false,
+        embeddings: true,
         vision: false,
         localRuntime: true,
       },

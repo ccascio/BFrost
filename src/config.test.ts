@@ -8,14 +8,17 @@ import {
   getDefaultModelAlias,
   replaceDiscoveredProviderModels,
 } from './config';
+import { seedDeclaredProviderModels } from './model-discovery';
 
 test('model lookup accepts aliases and ids', () => {
+  seedDeclaredProviderModels();
   const gpt = findModel('gpt-5.5');
   assert.ok(gpt);
   assert.equal(findModel(gpt.id)?.alias, 'gpt-5.5');
 });
 
 test('default model falls back to configured model when known', () => {
+  seedDeclaredProviderModels();
   const previous = config.ollamaModel;
   config.ollamaModel = 'gpt-5.4-mini';
 
@@ -27,6 +30,7 @@ test('default model falls back to configured model when known', () => {
 });
 
 test('model catalog includes discovered provider models without duplicating built-ins', () => {
+  seedDeclaredProviderModels();
   try {
     replaceDiscoveredProviderModels('lmstudio', [
       {

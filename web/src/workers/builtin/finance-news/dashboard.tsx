@@ -148,7 +148,7 @@ export const dashboardView: WorkerDashboardViewDefinition = {
   kind: 'finance-news',
   surfaceIds: [SURFACE_ID],
   menu: {
-    icon: 'newspaper',
+    icon: 'article',
     group: 'Workers',
     order: 24,
     label: 'Finance News',

@@ -33,7 +33,7 @@ export function StepChannels({ dashboard, onRefresh }: { dashboard: DashboardSna
       <div className="wizard-step-body">
         <h2>Connect a channel</h2>
         <p className="wizard-lead">
-          Channels let BFrost send you messages (Telegram, Discord) or receive your commands. The dashboard chat is always available and needs no setup.
+          Channels let BFrost send you messages or receive your commands. The dashboard chat is always available and needs no setup.
         </p>
         <div className="wizard-empty-notice">
           No channel workers are installed yet. You can install them later from the <strong>Store</strong> or <strong>Workers</strong> tab.

@@ -6,6 +6,7 @@ export interface BackendWorkerModule<TDashboardData = unknown> {
   manifest: WorkerManifest;
   apiRoutes?: AdminApiRoute[];
   loadDashboardData?: () => Promise<TDashboardData>;
+  healthChecks?: WorkerHealthCheck[];
   channelAdapters?: ChannelAdapterFactory[];
   providerAdapters?: ProviderAdapterFactory[];
   /**
@@ -21,6 +22,20 @@ export interface BackendWorkerModule<TDashboardData = unknown> {
    * Workers use these to migrate their owned storage, register watchers, etc. All optional.
    */
   lifecycle?: WorkerLifecycleHooks;
+}
+
+export type WorkerHealthCategory = 'integrations' | 'dependencies';
+
+export interface WorkerHealthStatus {
+  ok: boolean;
+  detail: string;
+}
+
+export interface WorkerHealthCheck {
+  key: string;
+  category: WorkerHealthCategory;
+  label?: string;
+  check(): WorkerHealthStatus | Promise<WorkerHealthStatus>;
 }
 
 export interface WorkerLifecycleContext {
@@ -67,6 +82,8 @@ export interface ProviderAdapter {
   listAvailableModels?(): Promise<ProviderModelOption[]>;
   /** List models that support the embeddings endpoint (type-filtered where the provider supports it). */
   listEmbeddingModels?(): Promise<ProviderModelOption[]>;
+  /** Produce an embedding vector for providers that support embeddings. */
+  embedText?(modelId: string, input: string): Promise<number[]>;
   // ---- Optional local-runtime lifecycle ----
   /** Returns true if the runtime had to be started by this call. */
   startRuntime?(): Promise<boolean>;

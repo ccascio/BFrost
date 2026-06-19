@@ -20,9 +20,9 @@ import {
 
 test('loadQueue normalizes legacy queued items', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-queue-'));
-  const previousDir = config.newsStoreDir;
+  const previousDir = config.itemBusStoreDir;
   const previousDbPath = config.appDbPath;
-  config.newsStoreDir = dir;
+  config.itemBusStoreDir = dir;
   config.appDbPath = path.join(dir, 'app.sqlite');
 
   try {
@@ -45,7 +45,7 @@ test('loadQueue normalizes legacy queued items', async () => {
     assert.equal(queue[0].state, 'queued');
     assert.equal(queue[0].stateChangedAt, queue[0].addedAt);
   } finally {
-    config.newsStoreDir = previousDir;
+    config.itemBusStoreDir = previousDir;
     config.appDbPath = previousDbPath;
     closeDb();
     await rm(dir, { recursive: true, force: true });
@@ -209,16 +209,16 @@ test('queue transition helpers mark retryable and permanent post failures', () =
 
 test('saveQueue creates the configured queue directory', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-queue-'));
-  const previousDir = config.newsStoreDir;
+  const previousDir = config.itemBusStoreDir;
   const previousDbPath = config.appDbPath;
-  config.newsStoreDir = path.join(dir, 'nested', 'news');
+  config.itemBusStoreDir = path.join(dir, 'nested', 'news');
   config.appDbPath = path.join(dir, 'app.sqlite');
 
   try {
     await saveQueue([]);
     assert.deepEqual(await loadQueue(), []);
   } finally {
-    config.newsStoreDir = previousDir;
+    config.itemBusStoreDir = previousDir;
     config.appDbPath = previousDbPath;
     closeDb();
     await rm(dir, { recursive: true, force: true });
@@ -227,16 +227,16 @@ test('saveQueue creates the configured queue directory', async () => {
 
 test('loadQueue surfaces invalid queue files instead of returning an empty queue', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-queue-'));
-  const previousDir = config.newsStoreDir;
+  const previousDir = config.itemBusStoreDir;
   const previousDbPath = config.appDbPath;
-  config.newsStoreDir = dir;
+  config.itemBusStoreDir = dir;
   config.appDbPath = path.join(dir, 'app.sqlite');
 
   try {
     await writeFile(queuePath(), '{not valid json', 'utf8');
     await assert.rejects(() => loadQueue(), /Failed to read/);
   } finally {
-    config.newsStoreDir = previousDir;
+    config.itemBusStoreDir = previousDir;
     config.appDbPath = previousDbPath;
     closeDb();
     await rm(dir, { recursive: true, force: true });

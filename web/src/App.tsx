@@ -368,7 +368,7 @@ export default function App() {
       <TopBar
         notice={notice}
         error={error}
-        environment={dashboard.lmStudio.running ? 'Local runtime online' : 'Local runtime offline'}
+        environment={dashboard.localRuntime.running ? 'Local runtime online' : 'Local runtime offline'}
         adminUrl={dashboard.app.adminUrl}
         pid={dashboard.app.pid}
         models={dashboard.models}
@@ -379,9 +379,9 @@ export default function App() {
             dashboard.platform.activeLocalProviderId
         }
         selectedModelIsPinned={
-          !!dashboard.lmStudio.pinnedModelId &&
+          !!dashboard.localRuntime.pinnedModelId &&
           dashboard.models.find((m) => m.alias === selectedModelAlias)?.id ===
-            dashboard.lmStudio.pinnedModelId
+            dashboard.localRuntime.pinnedModelId
         }
         pinBusy={busyKey === 'toggle-pin'}
         authEnabled={session.authEnabled}
@@ -391,12 +391,12 @@ export default function App() {
         onSaveModel={() => saveDefaultModel(selectedModelAlias)}
         onTogglePin={() => {
           const isPinned =
-            !!dashboard.lmStudio.pinnedModelId &&
+            !!dashboard.localRuntime.pinnedModelId &&
             dashboard.models.find((m) => m.alias === selectedModelAlias)?.id ===
-              dashboard.lmStudio.pinnedModelId;
+              dashboard.localRuntime.pinnedModelId;
           void mutate(
             'toggle-pin',
-            '/api/lmstudio',
+            '/api/local-runtime',
             {
               method: 'POST',
               body: JSON.stringify(

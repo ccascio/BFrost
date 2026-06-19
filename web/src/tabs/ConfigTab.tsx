@@ -32,15 +32,15 @@ export function ConfigTab(props: ConfigTabProps) {
 
   const hasModel = dashboard.workers.some(
     (w) => w.kind === 'provider' && w.enabled && w.healthState === 'healthy',
-  ) || dashboard.lmStudio?.running;
+  ) || dashboard.localRuntime?.running;
   const hasChannel = dashboard.workers.some((w) => w.kind === 'channel' && w.healthState === 'healthy');
   const hasEnabledWorker = dashboard.workers.some((w) => w.enabled && w.healthState === 'healthy');
   const hasRun = dashboard.cron.jobs.some((j) => j.lastStartedAt !== null && j.lastStartedAt !== undefined);
   const allDone = hasModel && hasChannel && hasEnabledWorker && hasRun;
   const steps = [
     { done: hasModel, label: 'Connect a model', detail: 'Configure a model provider — add a cloud API key or start your local AI runtime.', action: () => setActiveTab('config') },
-    { done: hasChannel, label: 'Connect a channel', detail: 'Set up Telegram or Discord so BFrost can reach you.', action: () => setActiveTab('channels') },
-    { done: hasEnabledWorker, label: 'Enable a worker', detail: 'Turn on a worker from the Workers tab — try the News Digest.', action: () => setActiveTab('workers') },
+    { done: hasChannel, label: 'Connect a channel', detail: 'Set up a channel so BFrost can reach you.', action: () => setActiveTab('channels') },
+    { done: hasEnabledWorker, label: 'Enable a worker', detail: 'Turn on a worker from the Workers tab.', action: () => setActiveTab('workers') },
     { done: hasRun, label: 'Let a job run', detail: 'Trigger a job manually from the Jobs tab, or wait for the scheduler.', action: () => setActiveTab('jobs') },
   ];
 
@@ -61,7 +61,7 @@ export function ConfigTab(props: ConfigTabProps) {
               <div className="job-worker-head">
                 <div>
                   <p className="panel-kicker">Platform</p>
-                  <h3>Model providers <HelpTip>A model provider is the AI service BFrost uses to think — OpenAI (GPT-4o), Anthropic (Claude), or a local model via LM Studio. Each provider is a worker you can install separately. Configure your API keys below; BFrost uses the cheapest model that can handle the task unless you specify otherwise.</HelpTip></h3>
+                  <h3>Model providers <HelpTip>A model provider is the AI service BFrost uses to think. Each provider is a worker you can install separately. Configure provider credentials below; BFrost uses the cheapest model that can handle the task unless you specify otherwise.</HelpTip></h3>
                   <span>Local credential configuration</span>
                 </div>
                 {(() => {

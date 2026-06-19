@@ -10,8 +10,10 @@ import { getWorkerJob } from './workers/registry';
 import { saveKvJson, closeDb } from './sqlite';
 import { registerLoadedLocalModule, unregisterLocalWorkerModule } from './workers/registry';
 import type { BackendWorkerModule } from './workers/module';
+import { seedDeclaredProviderModels } from './model-discovery';
 
 test('admin settings normalize defaults and persist valid job updates', async () => {
+  seedDeclaredProviderModels();
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-admin-'));
   const previousDir = config.adminStoreDir;
   const previousDbPath = config.appDbPath;

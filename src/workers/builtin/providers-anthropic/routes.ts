@@ -1,10 +1,10 @@
 import path from 'path';
 import { z } from 'zod';
 import { BadRequestError, type AdminApiRoute } from '../../../admin-route';
-import { setCloudApiKeys } from '../../../config';
 import { upsertEnvValue } from '../../../env-file';
 import { refreshCloudProviderModels } from '../../../model-discovery';
 import { recordEventSafe } from '../../../event-log';
+import { setAnthropicApiKey } from './credentials';
 
 const WORKER_ID = 'core.providers.anthropic';
 
@@ -25,7 +25,7 @@ export const anthropicProviderApiRoutes: AdminApiRoute[] = [
       }
 
       await upsertEnvValue(path.join(process.cwd(), '.env'), 'ANTHROPIC_API_KEY', key);
-      setCloudApiKeys({ anthropicApiKey: key });
+      setAnthropicApiKey(key);
       await refreshCloudProviderModels();
 
       await recordEventSafe({

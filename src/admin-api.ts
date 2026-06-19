@@ -15,7 +15,7 @@ export const PlatformSettingsBodySchema = z.object({
 }).strict();
 
 export const EmbeddingSettingsBodySchema = z.object({
-  provider: z.enum(['local', 'openai']).optional(),
+  provider: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
 }).strict();
 
@@ -35,7 +35,7 @@ export const CoreSettingsBodySchema = z.object({
 export const PlatformSettingsSchema = z.object({
   activeLocalProviderId: z.string(),
   primaryChannelId: z.string(),
-  embeddingProvider: z.enum(['local', 'openai']),
+  embeddingProvider: z.string(),
   embeddingModel: z.string(),
   // Core platform & security settings surfaced read-mostly to the dashboard. `adminPasswordSet`
   // is a boolean presence flag — the password itself is never sent to the client.
@@ -84,7 +84,7 @@ export const SourceQualityRulesSchema = z.object({
   lowQualityHosts: z.array(z.string()),
 }).strict();
 
-export const LmStudioActionBodySchema = z.object({
+export const LocalRuntimeActionBodySchema = z.object({
   action: z.enum(['start', 'stop', 'load-default', 'unload-default', 'unload-all', 'pin-load', 'pin-unload']),
   alias: z.string().min(1).optional(),
 }).strict();
@@ -311,6 +311,18 @@ export const WorkerDashboardManifestSchema = z.object({
   routes: z.array(WorkerDashboardSurfaceSchema),
 }).strict();
 
+export const WorkerProviderSummarySchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  description: z.string(),
+  capabilities: z.object({
+    chat: z.boolean(),
+    embeddings: z.boolean(),
+    vision: z.boolean(),
+    localRuntime: z.boolean(),
+  }).strict(),
+}).strict();
+
 export const WorkerChatPromptExampleSchema = z.object({
   label: z.string(),
   description: z.string(),
@@ -395,6 +407,7 @@ export const WorkerSummarySchema = z.object({
   health: z.array(WorkerHealthRequirementStatusSchema),
   ownedSettings: z.array(WorkerOwnedSettingSchema),
   dashboard: WorkerDashboardManifestSchema,
+  providers: z.array(WorkerProviderSummarySchema),
   jobs: z.array(WorkerJobSummarySchema),
 }).strict();
 
@@ -487,8 +500,8 @@ export const FactoryResetBodySchema = z.object({
 });
 export type FactoryResetBody = z.infer<typeof FactoryResetBodySchema>;
 
-// Heavy sections (queue, cron runs, events, backups, worker data, loaded LM Studio
-// models, research slice, source rules) are fetched lazily by per-tab endpoints. The
+// Heavy sections (queue, cron runs, events, backups, worker data, loaded local-runtime
+// models, worker-owned slices, source rules) are fetched lazily by per-tab endpoints. The
 // shell response below carries everything needed to render the tab bar + overview at
 // console open time; tabs request their slice when the user navigates to them.
 export const DashboardStateSchema = z.object({
@@ -501,7 +514,7 @@ export const DashboardStateSchema = z.object({
   }).strict(),
   models: z.array(ModelOptionSchema),
   defaultModel: ModelOptionSchema,
-  lmStudio: z.object({
+  localRuntime: z.object({
     running: z.boolean(),
     loadedModels: z.array(z.string()).optional(),
     loadedCount: z.number(),
@@ -519,14 +532,7 @@ export const DashboardStateSchema = z.object({
   availableChannels: z.array(RegisteredPlatformEntrySchema),
   queue: QueueDashboardSchema.optional(),
   integrations: z.record(HealthStatusSchema),
-  dependencies: z.object({
-    lmStudioCli: HealthStatusSchema,
-    ffmpeg: HealthStatusSchema,
-    whisperCli: HealthStatusSchema,
-    whisperModel: HealthStatusSchema,
-    sqliteCli: HealthStatusSchema,
-    embeddingModelReachable: HealthStatusSchema,
-  }).strict(),
+  dependencies: z.record(HealthStatusSchema),
   events: z.array(EventLogRecordSchema).optional(),
   backups: z.array(AppBackupRecordSchema).optional(),
   workerData: z.record(z.unknown()).default({}),
@@ -555,7 +561,7 @@ export const WorkerDataSectionSchema = z.object({
   workerData: z.record(z.unknown()),
 }).strict();
 
-export const LmStudioModelsSectionSchema = z.object({
+export const LocalRuntimeModelsSectionSchema = z.object({
   loadedModels: z.array(z.string()),
 }).strict();
 
@@ -570,7 +576,7 @@ export type CronRunsSection = z.infer<typeof CronRunsSectionSchema>;
 export type EventsSection = z.infer<typeof EventsSectionSchema>;
 export type BackupsSection = z.infer<typeof BackupsSectionSchema>;
 export type WorkerDataSection = z.infer<typeof WorkerDataSectionSchema>;
-export type LmStudioModelsSection = z.infer<typeof LmStudioModelsSectionSchema>;
+export type LocalRuntimeModelsSection = z.infer<typeof LocalRuntimeModelsSectionSchema>;
 
 export type DashboardState = z.infer<typeof DashboardStateSchema>;
 

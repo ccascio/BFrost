@@ -7,6 +7,7 @@ import {
   buildEventsSection,
   buildBackupsSection,
   buildWorkerDataSection,
+  buildLocalRuntimeModelsSection,
   buildLocalEmbeddingModelsSection,
   buildJobMetricsSection,
 } from '../../admin-dashboard-state';
@@ -29,6 +30,9 @@ export function registerDashboardRoutes(router: HttpRouter): void {
   });
   router.add('GET', '/api/dashboard/worker-data', async (_req, res) => {
     return sendJson(res, 200, await buildWorkerDataSection());
+  });
+  router.add('GET', '/api/dashboard/local-runtime-models', async (_req, res) => {
+    return sendJson(res, 200, await buildLocalRuntimeModelsSection());
   });
   router.add('GET', '/api/dashboard/local-embedding-models', async (_req, res) => {
     return sendJson(res, 200, await buildLocalEmbeddingModelsSection());

@@ -1,8 +1,7 @@
 import { readFile } from 'fs/promises';
-import https from 'https';
-import http from 'http';
 import { config } from '../../../config';
 import { loadKvJson, saveKvJson } from '../../../sqlite';
+import { embedText } from '../../../embeddings';
 
 const MEMORY_STORE_KEY = 'assistant.memory';
 
@@ -39,47 +38,7 @@ async function save(): Promise<void> {
 }
 
 async function embed(text: string): Promise<number[]> {
-  const isOpenAI = config.embeddingProvider === 'openai';
-  const baseUrl = isOpenAI ? 'https://api.openai.com/v1' : config.ollamaBaseUrl.replace(/\/$/, '');
-  const endpoint = isOpenAI ? `${baseUrl}/embeddings` : `${baseUrl}/embeddings`;
-
-  if (isOpenAI && !config.openaiApiKey) {
-    throw new Error('OpenAI API key is not configured. Set it in Config → Cloud API keys.');
-  }
-
-  const body = JSON.stringify({
-    model: config.embeddingModel,
-    input: text,
-  });
-
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (isOpenAI) headers['Authorization'] = `Bearer ${config.openaiApiKey}`;
-
-  return new Promise((resolve, reject) => {
-    const url = new URL(endpoint);
-    const client = url.protocol === 'https:' ? https : http;
-
-    const req = client.request(url, {
-      method: 'POST',
-      headers,
-    }, (res) => {
-      const chunks: Buffer[] = [];
-      res.on('data', (chunk: Buffer) => chunks.push(chunk));
-      res.on('end', () => {
-        try {
-          const data = JSON.parse(Buffer.concat(chunks).toString());
-          resolve(data.data[0].embedding);
-        } catch (err) {
-          reject(err);
-        }
-      });
-      res.on('error', reject);
-    });
-
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
+  return (await embedText(text)).embedding;
 }
 
 function cosineSimilarity(a: number[], b: number[]): number {

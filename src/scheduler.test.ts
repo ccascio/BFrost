@@ -8,9 +8,13 @@ import { config } from './config';
 import { closeDb } from './sqlite';
 import { listSchedulerRuns } from './scheduler-runs';
 import { CATCHUP_WINDOW_MS, getSchedulerSnapshot, isRecoverableSlotAge, triggerJobNow } from './scheduler';
+import { seedDeclaredProviderModels } from './model-discovery';
 import { registerLoadedLocalModule, unregisterLocalWorkerModule } from './workers/registry';
 import type { BackendWorkerModule } from './workers/module';
 import type { WorkerManifest } from './workers/types';
+import { resolveOpenAIApiKey, setOpenAIApiKey } from './workers/builtin/providers-openai/credentials';
+
+seedDeclaredProviderModels();
 
 async function pollUntil<T>(
   fn: () => Promise<T>,
@@ -137,11 +141,11 @@ test('catch-up window — only recovers past slots within the window', () => {
 test('scheduler integration — successful job produces a success run record and correct snapshot state', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-sched-integration-'));
   const prevDbPath = config.appDbPath;
-  const prevOpenaiKey = config.openaiApiKey;
+  const prevOpenaiKey = resolveOpenAIApiKey();
   const prevFallbacks = config.modelFallbackAliases;
 
   config.appDbPath = path.join(dir, 'app.sqlite');
-  config.openaiApiKey = 'test-key';
+  setOpenAIApiKey('test-key');
   config.modelFallbackAliases = [];
 
   registerLoadedLocalModule(buildFakeWorkerModule());
@@ -172,7 +176,7 @@ test('scheduler integration — successful job produces a success run record and
   } finally {
     unregisterLocalWorkerModule(FAKE_WORKER_ID);
     config.appDbPath = prevDbPath;
-    config.openaiApiKey = prevOpenaiKey;
+    setOpenAIApiKey(prevOpenaiKey);
     config.modelFallbackAliases = prevFallbacks;
     closeDb();
     await rm(dir, { recursive: true, force: true });
@@ -182,11 +186,11 @@ test('scheduler integration — successful job produces a success run record and
 test('scheduler integration — failing job produces an error run record and correct snapshot state', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-sched-integration-'));
   const prevDbPath = config.appDbPath;
-  const prevOpenaiKey = config.openaiApiKey;
+  const prevOpenaiKey = resolveOpenAIApiKey();
   const prevFallbacks = config.modelFallbackAliases;
 
   config.appDbPath = path.join(dir, 'app.sqlite');
-  config.openaiApiKey = 'test-key';
+  setOpenAIApiKey('test-key');
   config.modelFallbackAliases = [];
 
   registerLoadedLocalModule(buildFakeWorkerModule());
@@ -215,7 +219,7 @@ test('scheduler integration — failing job produces an error run record and cor
   } finally {
     unregisterLocalWorkerModule(FAKE_WORKER_ID);
     config.appDbPath = prevDbPath;
-    config.openaiApiKey = prevOpenaiKey;
+    setOpenAIApiKey(prevOpenaiKey);
     config.modelFallbackAliases = prevFallbacks;
     closeDb();
     await rm(dir, { recursive: true, force: true });
@@ -225,11 +229,11 @@ test('scheduler integration — failing job produces an error run record and cor
 test('scheduler snapshot refreshes cached settings when a new worker job appears', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-sched-late-worker-'));
   const prevDbPath = config.appDbPath;
-  const prevOpenaiKey = config.openaiApiKey;
+  const prevOpenaiKey = resolveOpenAIApiKey();
   const prevFallbacks = config.modelFallbackAliases;
 
   config.appDbPath = path.join(dir, 'app.sqlite');
-  config.openaiApiKey = 'test-key';
+  setOpenAIApiKey('test-key');
   config.modelFallbackAliases = [];
 
   try {
@@ -244,7 +248,7 @@ test('scheduler snapshot refreshes cached settings when a new worker job appears
   } finally {
     unregisterLocalWorkerModule(LATE_WORKER_ID);
     config.appDbPath = prevDbPath;
-    config.openaiApiKey = prevOpenaiKey;
+    setOpenAIApiKey(prevOpenaiKey);
     config.modelFallbackAliases = prevFallbacks;
     closeDb();
     await rm(dir, { recursive: true, force: true });

@@ -7,7 +7,7 @@ export function sectionEndpoint(name: DashboardSectionName): string {
     case 'events': return '/api/dashboard/events';
     case 'backups': return '/api/dashboard/backups';
     case 'workerData': return '/api/dashboard/worker-data';
-    case 'lmStudioModels': return '/api/dashboard/lmstudio-models';
+    case 'localRuntimeModels': return '/api/dashboard/local-runtime-models';
   }
 }
 
@@ -27,13 +27,13 @@ export function mergeSection(
       return { ...dashboard, backups: payload.backups };
     case 'workerData':
       return { ...dashboard, workerData: payload.workerData } as DashboardState;
-    case 'lmStudioModels':
-      return { ...dashboard, lmStudio: { ...dashboard.lmStudio, loadedModels: payload.loadedModels } };
+    case 'localRuntimeModels':
+      return { ...dashboard, localRuntime: { ...dashboard.localRuntime, loadedModels: payload.loadedModels } };
   }
 }
 
 export function sectionsForTab(tab: DashboardTab): DashboardSectionName[] {
-  if (tab === 'overview') return ['queue', 'events', 'lmStudioModels'];
+  if (tab === 'overview') return ['queue', 'events', 'localRuntimeModels'];
   if (tab === 'pipeline') return ['queue'];
   if (tab === 'channels') return ['workerData'];
   if (tab === 'jobs') return ['cronRuns', 'queue'];

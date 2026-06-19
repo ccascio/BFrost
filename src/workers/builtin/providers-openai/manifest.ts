@@ -51,10 +51,22 @@ export const openaiProviderWorker: WorkerManifest = {
       description: 'OpenAI Chat Completions API.',
       capabilities: {
         chat: true,
-        embeddings: false,
+        embeddings: true,
         vision: false,
         localRuntime: false,
       },
+      defaultModels: [
+        {
+          alias: 'gpt-5.5',
+          id: 'gpt-5.5',
+          label: 'GPT-5.5',
+        },
+        {
+          alias: 'gpt-5.4-mini',
+          id: 'gpt-5.4-mini',
+          label: 'GPT-5.4 mini',
+        },
+      ],
     },
   ],
 };

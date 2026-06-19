@@ -18,6 +18,7 @@ import {
 } from './near-duplicates';
 import { config, findModel, type ModelOption } from '../../../config';
 import { createQueueItem, loadQueue, saveQueue, pruneQueue, withQueueLock, QueueItem } from '../../../jobs/queue';
+import { getNewsStoreDir } from './settings';
 
 function newsProducerHeader(): Partial<QueueItem> {
   return {
@@ -359,7 +360,7 @@ export async function runNewsDigest(modelId: string, params: NewsDigestParams = 
   // decisions, then re-acquire the lock briefly at the end to merge and save —
   // re-checking against the *current* queue inside the lock so concurrent writers
   // can't get clobbered.
-  const storeDir = config.newsStoreDir;
+  const storeDir = getNewsStoreDir();
   const statePath = path.join(storeDir, 'state.json');
     const modelInputProfile = resolveNewsModelInputProfile(modelId);
     const nowIso = new Date().toISOString();

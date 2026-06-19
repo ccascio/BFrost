@@ -26,7 +26,7 @@ export function JobsTab(props: JobsTabProps) {
       <div className="panel-head">
         <div>
           <p className="panel-kicker">Cron jobs</p>
-          <h2>Schedules and run status <HelpTip>Each worker can run one or more scheduled jobs — cron-based tasks that fire automatically (e.g. "fetch news every morning at 7am"). Select a job on the left to change its schedule, adjust parameters, or trigger it manually. The last-run timestamp and any errors are shown inline.</HelpTip></h2>
+          <h2>Schedules and run status <HelpTip>Each worker can run one or more scheduled jobs — cron-based tasks that fire automatically. Select a job on the left to change its schedule, adjust parameters, or trigger it manually. The last-run timestamp and any errors are shown inline.</HelpTip></h2>
         </div>
         <StatusPill tone="muted">{dashboard.cron.timezone}</StatusPill>
       </div>

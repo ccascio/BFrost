@@ -8,7 +8,14 @@ import {
   listRegisteredProviders,
 } from './workers/registry';
 
+export function seedDeclaredProviderModels(): void {
+  for (const registered of listRegisteredProviders()) {
+    replaceDiscoveredProviderModels(registered.manifest.id, registered.manifest.defaultModels ?? []);
+  }
+}
+
 export async function refreshActiveLocalProviderModels(): Promise<void> {
+  seedDeclaredProviderModels();
   const activeProvider = getActiveLocalProvider();
   const activeProviderId = activeProvider?.providerId ?? null;
 
@@ -40,6 +47,7 @@ export async function refreshActiveLocalProviderModels(): Promise<void> {
  * dashboard model picker reflects what the user can actually use.
  */
 export async function refreshCloudProviderModels(): Promise<void> {
+  seedDeclaredProviderModels();
   for (const registered of listRegisteredProviders()) {
     if (registered.manifest.capabilities.localRuntime) continue;
     const providerId = registered.manifest.id;

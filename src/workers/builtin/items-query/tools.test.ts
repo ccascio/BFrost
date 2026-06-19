@@ -11,14 +11,14 @@ import { queryItems } from './tools';
 function withTempStore<T>(fn: () => Promise<T>): Promise<T> {
   return (async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-items-query-'));
-    const previousDir = config.newsStoreDir;
+    const previousDir = config.itemBusStoreDir;
     const previousDbPath = config.appDbPath;
-    config.newsStoreDir = dir;
+    config.itemBusStoreDir = dir;
     config.appDbPath = path.join(dir, 'app.sqlite');
     try {
       return await fn();
     } finally {
-      config.newsStoreDir = previousDir;
+      config.itemBusStoreDir = previousDir;
       config.appDbPath = previousDbPath;
       closeDb();
       await rm(dir, { recursive: true, force: true });

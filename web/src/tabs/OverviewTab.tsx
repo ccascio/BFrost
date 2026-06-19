@@ -129,7 +129,7 @@ export function OverviewTab(props: OverviewTabProps) {
           <div className="panel-head">
             <div>
               <p className="panel-kicker">Activity</p>
-              <h2>Recent events <HelpTip>A live log of everything BFrost has done — fetched news, ran a job, published a post, recorded an error. Events are stored locally; nothing is sent to any server.</HelpTip></h2>
+              <h2>Recent events <HelpTip>A live log of everything BFrost has done — collected items, ran a job, published an outcome, recorded an error. Events are stored locally; nothing is sent to any server.</HelpTip></h2>
             </div>
             <StatusPill tone="muted">{`${dashboard.events.length} stored`}</StatusPill>
           </div>

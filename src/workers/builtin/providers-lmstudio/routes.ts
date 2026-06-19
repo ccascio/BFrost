@@ -3,7 +3,7 @@ import { BadRequestError } from '../../../admin-route';
 import { getDefaultModel } from '../../../config';
 import { recordEventSafe } from '../../../event-log';
 import { refreshActiveLocalProviderModels } from '../../../model-discovery';
-import { LmStudioActionBodySchema, LmStudioModelsSectionSchema } from '../../../admin-api';
+import { LocalRuntimeActionBodySchema, LocalRuntimeModelsSectionSchema } from '../../../admin-api';
 import { getActiveLocalProvider } from '../../../workers/registry';
 import { getMemoryCleanupSpec, probeMemoryCleanup, runMemoryCleanup } from './runtime';
 
@@ -30,12 +30,12 @@ export const lmStudioProviderApiRoutes: AdminApiRoute[] = [
     async handle() {
       const localProvider = getActiveLocalProvider();
       if (!localProvider?.listLoadedModels) {
-        return { status: 200, body: LmStudioModelsSectionSchema.parse({ loadedModels: [] }) };
+        return { status: 200, body: LocalRuntimeModelsSectionSchema.parse({ loadedModels: [] }) };
       }
       const loaded = await localProvider.listLoadedModels();
       return {
         status: 200,
-        body: LmStudioModelsSectionSchema.parse({
+        body: LocalRuntimeModelsSectionSchema.parse({
           loadedModels: loaded.map((item) => item.modelKey || item.identifier || 'unknown'),
         }),
       };
@@ -53,7 +53,7 @@ export const lmStudioProviderApiRoutes: AdminApiRoute[] = [
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { pinAndLoadModel, unpinAndUnloadModel } = require('../../../job-runner') as typeof import('../../../job-runner');
 
-      const body = await readJsonBody(req, LmStudioActionBodySchema);
+      const body = await readJsonBody(req, LocalRuntimeActionBodySchema);
       const action = body.action;
       await refreshActiveLocalProviderModels();
       const defaultModel = getDefaultModel();

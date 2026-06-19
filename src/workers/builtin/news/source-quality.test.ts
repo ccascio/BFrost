@@ -6,13 +6,14 @@ import test from 'node:test';
 import { config } from '../../../config';
 import { closeDb } from '../../../sqlite';
 import { loadSourceQualityRules, saveSourceQualityRules } from './source-quality';
+import { getNewsStoreDir, setNewsStoreDirForTests } from './settings';
 
 test('source quality rules persist to SQLite', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-source-rules-'));
   const previousDbPath = config.appDbPath;
-  const previousNewsDir = config.newsStoreDir;
+  const previousNewsDir = getNewsStoreDir();
   config.appDbPath = path.join(dir, 'app.sqlite');
-  config.newsStoreDir = path.join(dir, 'news');
+  setNewsStoreDirForTests(path.join(dir, 'news'));
 
   try {
     await saveSourceQualityRules({
@@ -29,7 +30,7 @@ test('source quality rules persist to SQLite', async () => {
     assert.deepEqual(rules.blockHosts, ['blocked.example']);
   } finally {
     config.appDbPath = previousDbPath;
-    config.newsStoreDir = previousNewsDir;
+    setNewsStoreDirForTests(previousNewsDir);
     closeDb();
     await rm(dir, { recursive: true, force: true });
   }

@@ -18,7 +18,7 @@ export interface CronJobSettings {
 }
 
 export interface PlatformSettings {
-  /** Worker-provider id selected as the active local runtime (e.g. 'lmstudio'). */
+  /** Worker-provider id selected as the active local runtime. */
   activeLocalProviderId: string;
   /** Worker-channel id selected as the primary recipient for operator notifications. */
   primaryChannelId: string;

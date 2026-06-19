@@ -84,8 +84,8 @@ import {
   DashboardStateSchema,
   DefaultModelBodySchema,
   EventsSectionSchema,
-  LmStudioActionBodySchema,
-  LmStudioModelsSectionSchema,
+  LocalRuntimeActionBodySchema,
+  LocalRuntimeModelsSectionSchema,
   LocalEmbeddingModelsSectionSchema,
   type LocalEmbeddingModelsSection,
   StoreInstallBodySchema,
@@ -100,7 +100,7 @@ import {
   type CronRunsSection,
   type DashboardState,
   type EventsSection,
-  type LmStudioModelsSection,
+  type LocalRuntimeModelsSection,
   type WorkerDataSection,
   type QueueSection,
   type JobMetricsResponse,
@@ -340,8 +340,8 @@ export async function generateWorkerFromDescription(
   const realModels = availableModels.filter((m) => m.provider !== 'demo');
   if (realModels.length === 0) {
     throw new BadRequestError(
-      'Creating a worker from a description needs a real model. Connect LM Studio or Ollama, ' +
-        'or add a cloud API key in the Models tab, then try again.',
+      'Creating a worker from a description needs a real model. Connect a local runtime ' +
+        'or add a cloud provider key in the Models tab, then try again.',
     );
   }
   const preferred = getDefaultModel();
