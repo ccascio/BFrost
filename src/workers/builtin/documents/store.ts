@@ -265,6 +265,26 @@ export async function reconcileOrphans(): Promise<number> {
   return removed;
 }
 
+export interface DocumentChunk {
+  id: string;
+  ordinal: number;
+  text: string;
+  hasEmbedding: boolean;
+  charCount: number;
+}
+
+export async function listFileChunks(fileId: string): Promise<DocumentChunk[]> {
+  const { chunks } = await tables();
+  const rows = chunks.findAll({ where: { file_id: fileId }, orderBy: 'ordinal ASC' });
+  return rows.map((row) => ({
+    id: row.id,
+    ordinal: row.ordinal,
+    text: row.text,
+    hasEmbedding: !!row.embedding,
+    charCount: row.text.length,
+  }));
+}
+
 /** Test helper: reset cached table handles so a fresh DB path is picked up. */
 export function resetDocumentStoreForTests(): void {
   filesTable = null;

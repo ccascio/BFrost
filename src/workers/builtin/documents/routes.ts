@@ -1,9 +1,14 @@
+import { generateText } from 'ai';
 import { z } from 'zod';
 import type { AdminApiRoute } from '../../../admin-route';
 import { BadRequestError } from '../../../admin-route';
 import { recordEventSafe } from '../../../event-log';
 import { getProject } from '../../../projects';
-import { DOCUMENTS_WORKER_ID, addFile, deleteFile, listFiles, reconcileOrphans } from './store';
+import { getChatModel } from '../../../llm';
+import { getDefaultModel } from '../../../config';
+import { DOCUMENTS_WORKER_ID, addFile, deleteFile, listFiles, listFileChunks, reconcileOrphans } from './store';
+
+const summaryCache = new Map<string, string>();
 
 // Text/markdown only — binary extraction (PDF/Word) is intentionally out of scope.
 const ALLOWED_EXTENSIONS = ['.txt', '.md', '.markdown', '.text'];
@@ -79,6 +84,48 @@ export const documentsApiRoutes: AdminApiRoute[] = [
       await reconcileOrphans();
       const files = await listFiles(projectId);
       return { status: 200, body: { files } };
+    },
+  },
+  {
+    method: 'GET',
+    path: '/api/documents/chunks',
+    workerIds: [DOCUMENTS_WORKER_ID],
+    async handle({ url }) {
+      const fileId = url.searchParams.get('fileId');
+      if (!fileId) throw new BadRequestError('fileId query parameter is required.');
+      const chunks = await listFileChunks(fileId);
+      return { status: 200, body: { chunks } };
+    },
+  },
+  {
+    method: 'POST',
+    path: '/api/documents/summarize',
+    workerIds: [DOCUMENTS_WORKER_ID],
+    async handle({ req, readJsonBody }) {
+      const body = await readJsonBody(req, z.object({ fileId: z.string().min(1).max(120) }).strict());
+      const cached = summaryCache.get(body.fileId);
+      if (cached) return { status: 200, body: { summary: cached } };
+
+      const chunks = await listFileChunks(body.fileId);
+      if (chunks.length === 0) throw new BadRequestError('File not found or has no content.');
+
+      // Use first chunks up to ~4000 chars as context.
+      let context = '';
+      for (const chunk of chunks) {
+        if (context.length + chunk.text.length > 4000) break;
+        context += (context ? '\n\n' : '') + chunk.text;
+      }
+
+      const modelOption = getDefaultModel();
+      const { text } = await generateText({
+        model: getChatModel(modelOption),
+        system: 'You are a document analysis assistant. Be concise and factual.',
+        prompt: `/no_think\nAnalyze this document and respond with:\n1. A 2–3 sentence summary of what it covers.\n2. A bullet list of the main topics or key points.\n\nDocument:\n${context}`,
+        timeout: 60000,
+      });
+
+      summaryCache.set(body.fileId, text);
+      return { status: 200, body: { summary: text } };
     },
   },
 ];
