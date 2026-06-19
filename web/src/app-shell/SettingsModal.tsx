@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Icon } from '../icons';
 import type { SettingsTab } from '../app-types';
 
-const TABS: Array<{ id: SettingsTab; label: string; icon: string }> = [
+const CORE_TABS: Array<{ id: SettingsTab; label: string; icon: string }> = [
   { id: 'channels', label: 'Channels', icon: 'channels' },
   { id: 'workers', label: 'Workers', icon: 'workers' },
   { id: 'config', label: 'Config', icon: 'config' },
@@ -10,16 +10,24 @@ const TABS: Array<{ id: SettingsTab; label: string; icon: string }> = [
   { id: 'actions', label: 'Actions', icon: 'actions' },
 ];
 
+export interface ExtraSettingsTab {
+  id: SettingsTab;
+  label: string;
+  icon: string;
+}
+
 interface SettingsModalProps {
   isOpen: boolean;
   activeTab: SettingsTab;
   onSetTab: (tab: SettingsTab) => void;
   onClose: () => void;
   renderContent: (tab: SettingsTab) => ReactNode;
+  extraTabs?: ExtraSettingsTab[];
 }
 
-export function SettingsModal({ isOpen, activeTab, onSetTab, onClose, renderContent }: SettingsModalProps) {
+export function SettingsModal({ isOpen, activeTab, onSetTab, onClose, renderContent, extraTabs = [] }: SettingsModalProps) {
   if (!isOpen) return null;
+  const allTabs = [...CORE_TABS, ...extraTabs];
   return (
     <div
       className="settings-modal-overlay"
@@ -33,7 +41,7 @@ export function SettingsModal({ isOpen, activeTab, onSetTab, onClose, renderCont
           </button>
         </div>
         <div className="settings-modal-tabs" role="tablist" aria-label="Settings sections">
-          {TABS.map((tab) => (
+          {allTabs.map((tab) => (
             <button
               key={tab.id}
               type="button"

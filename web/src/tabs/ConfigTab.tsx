@@ -1,7 +1,12 @@
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
-import type { CoreConfigKey, DashboardState, DashboardTab } from '../app-types';
-import { HelpTip, StatusPill } from '../app-helpers';
+import type { CoreConfigKey, DashboardState, DashboardTab, WorkerSummary } from '../app-types';
+import { HelpTip, StatusPill, workerHealthLabel, workerHealthTone } from '../app-helpers';
 import type { WorkerDashboardViewDefinition } from '../workers/types';
+
+export interface SettingsWorkerEntry {
+  worker: WorkerSummary;
+  configPanel: ReactNode;
+}
 
 interface ConfigTabProps {
   dashboard: DashboardState;
@@ -14,6 +19,7 @@ interface ConfigTabProps {
   platformSecurityPanel: ReactNode;
   setActiveTab: (tab: DashboardTab) => void;
   setWizardOpen: Dispatch<SetStateAction<boolean>>;
+  settingsWorkerEntries?: SettingsWorkerEntry[];
 }
 
 export function ConfigTab(props: ConfigTabProps) {
@@ -28,6 +34,7 @@ export function ConfigTab(props: ConfigTabProps) {
     platformSecurityPanel,
     setActiveTab,
     setWizardOpen,
+    settingsWorkerEntries = [],
   } = props;
 
   const hasModel = dashboard.workers.some(
@@ -146,6 +153,38 @@ export function ConfigTab(props: ConfigTabProps) {
                 </button>
               </div>
             </section>
+
+            {settingsWorkerEntries.map(({ worker }) => {
+              const key = `worker:${worker.id}` as CoreConfigKey;
+              return (
+                <section key={worker.id} className="job-worker-group">
+                  <div className="job-worker-head">
+                    <div>
+                      <p className="panel-kicker">System</p>
+                      <h3>{worker.displayName ?? worker.name}</h3>
+                      <span>{worker.description}</span>
+                    </div>
+                    <StatusPill tone={workerHealthTone(worker.healthState)}>
+                      {workerHealthLabel(worker.healthState)}
+                    </StatusPill>
+                  </div>
+                  <div className="stack-list compact">
+                    <button
+                      className={`run-item run-button job-row-button${selectedCoreConfigKey === key ? ' selected' : ''}`}
+                      type="button"
+                      aria-pressed={selectedCoreConfigKey === key}
+                      onClick={() => setSelectedCoreConfigKey(key)}
+                    >
+                      <div>
+                        <strong>{worker.displayName ?? worker.name}</strong>
+                        <span>{worker.tagline ?? worker.description}</span>
+                      </div>
+                      <StatusPill tone="muted">Config</StatusPill>
+                    </button>
+                  </div>
+                </section>
+              );
+            })}
           </div>
 
           <aside className="queue-detail-column config-detail-column">
@@ -163,6 +202,9 @@ export function ConfigTab(props: ConfigTabProps) {
                 ? (dashboardViews.find((v) => v.kind === 'embedding-config')?.render?.(workerViewContext as Parameters<NonNullable<WorkerDashboardViewDefinition['render']>>[0]) ?? null)
                 : null}
               {selectedCoreConfigKey === 'platform-security' ? platformSecurityPanel : null}
+              {selectedCoreConfigKey?.startsWith('worker:')
+                ? (settingsWorkerEntries.find((e) => `worker:${e.worker.id}` === selectedCoreConfigKey)?.configPanel ?? null)
+                : null}
               {!selectedCoreConfigKey ? (
                 <p className="empty-state">Select a platform setting on the left to configure it. Worker settings are in each worker's Config subtab.</p>
               ) : null}

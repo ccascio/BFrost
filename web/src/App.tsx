@@ -30,7 +30,7 @@ export default function App() {
 
   const SETTINGS_TABS = new Set<string>(['channels', 'workers', 'config', 'system', 'actions']);
   function setActiveTab(tab: DashboardTab) {
-    if (SETTINGS_TABS.has(tab)) {
+    if (SETTINGS_TABS.has(tab) || (tab as string).startsWith('worker-settings:')) {
       setSettingsTab(tab as SettingsTab);
       setSettingsOpen(true);
       return;
@@ -90,6 +90,8 @@ export default function App() {
     password,
     setPassword,
     dashboardViews,
+    eventStreamStatus,
+    lastStreamEvent,
     fetchDashboard,
     fetchSection,
     mutate,
@@ -126,6 +128,8 @@ export default function App() {
   });
   const operations = useDashboardOperations({
     activeTab,
+    eventStreamStatus,
+    lastStreamEvent,
     setActiveTab,
     setBusyKey,
     setError,
@@ -364,7 +368,8 @@ export default function App() {
     })),
     // Per-worker Config entries.
     // Workers WITH a dashboard tab → "Config" child under the parent.
-    // Workers WITHOUT a dashboard tab → standalone entry with the worker's name (no orphan "Config").
+    // Workers WITHOUT a dashboard tab AND settingsOnly → hidden from sidebar (appear in Settings modal Config tab instead).
+    // Workers WITHOUT a dashboard tab (and not settingsOnly) → standalone entry with the worker's name.
     ...configGroupsByWorker.flatMap(({ worker }) => {
       const workerTab = workerTabDefinitions.find((t) => t.worker.id === worker.id);
       const baseOrder = workerTab ? (workerTab.definition.menu?.order ?? 1000) : 900;
@@ -380,7 +385,8 @@ export default function App() {
           parentId: workerTab.id as DashboardTab,
         }];
       }
-      // No dashboard tab: use the worker's display name, no parent indentation.
+      // settingsOnly workers with no dashboard tab live in the Settings modal, not the sidebar.
+      if (worker.settingsOnly) return [];
       return [{
         id: `worker-config:${worker.id}` as DashboardTab,
         label: worker.displayName ?? worker.name,
@@ -531,6 +537,13 @@ export default function App() {
         surfaceDrafts={surfaceDrafts}
         setSurfaceDrafts={setSurfaceDrafts}
         saveWorkerConfigurationSurface={saveWorkerConfigurationSurface}
+        extraSettingsTabs={configGroupsByWorker
+          .filter(({ worker }) => worker.settingsOnly && !workerTabDefinitions.some((t) => t.worker.id === worker.id))
+          .map(({ worker }) => ({
+            id: `worker-settings:${worker.id}` as import('./app-types').SettingsTab,
+            label: worker.displayName ?? worker.name,
+            icon: worker.section === 'system' ? 'system' : 'config',
+          }))}
         operations={operations}
         store={store}
       />

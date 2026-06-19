@@ -405,6 +405,7 @@ export const WorkerSummarySchema = z.object({
   deletable: z.boolean().optional(),
   kind: z.enum(['feature', 'channel', 'provider']),
   section: z.enum(['workers', 'system']).optional(),
+  settingsOnly: z.boolean().optional(),
   enabled: z.boolean(),
   missing: z.boolean(),
   sourcePath: z.string().optional(),

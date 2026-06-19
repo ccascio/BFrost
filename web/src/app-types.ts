@@ -55,7 +55,7 @@ export function toAppError(raw: unknown): AppError {
 }
 export type DashboardTab = CoreDashboardTab | `worker:${string}` | `worker-config:${string}`;
 export type QueueFilter = 'all' | QueueItem['state'] | 'retrying';
-export type CoreConfigKey = 'platform-routing' | 'embedding-model' | 'platform-security';
+export type CoreConfigKey = 'platform-routing' | 'embedding-model' | 'platform-security' | `worker:${string}`;
 
 export const DASHBOARD_REFRESH_INTERVAL_MS = 30000;
 export const JOBS_REFRESH_INTERVAL_MS = 5000;
@@ -104,14 +104,14 @@ export const CORE_CHAT_PROMPTS: ChatPromptExample[] = [
 ];
 
 /** Tabs that live inside the Settings modal rather than the sidebar. */
-export type SettingsTab = 'channels' | 'workers' | 'config' | 'system' | 'actions';
+export type SettingsTab = 'channels' | 'workers' | 'config' | 'system' | 'actions' | `worker-settings:${string}`;
 
 export const CORE_MENU_ENTRIES: Array<Omit<SidebarEntry<DashboardTab>, 'count'>> = [
   { id: 'overview', label: 'Overview', icon: 'overview', group: 'Workspace', order: 10 },
+  { id: 'chat', label: 'Chat', icon: 'chat', group: 'Workspace', order: 15 },
   { id: 'jobs', label: 'Jobs', icon: 'jobs', group: 'Workspace', order: 20 },
   { id: 'store', label: 'Store', icon: 'store', group: 'Workspace', order: 35 },
   { id: 'health', label: 'Health', icon: 'health', group: 'System', order: 3 },
-  { id: 'chat', label: 'Chat', icon: 'chat', group: 'System', order: 10 },
   // pipeline merged into Overview; channels/workers/config/actions/system → Settings modal
 ];
 
@@ -340,6 +340,7 @@ export interface WorkerSummary {
   deletable?: boolean;
   kind: WorkerKind;
   section?: 'workers' | 'system';
+  settingsOnly?: boolean;
   enabled: boolean;
   missing: boolean;
   sourcePath?: string;

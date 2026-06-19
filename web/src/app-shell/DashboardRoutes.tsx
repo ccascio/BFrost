@@ -14,6 +14,7 @@ import { ConfigTab } from '../tabs/ConfigTab';
 import { JobOperationsPanel } from '../tabs/JobOperationsPanel';
 import { PlatformRoutingPanel, PlatformSecurityPanel } from '../tabs/PlatformConfigPanels';
 import { WorkerConfigPage } from '../tabs/WorkerConfigPage';
+import type { SettingsWorkerEntry } from '../tabs/ConfigTab';
 
 export function DashboardRoutes(props: any) {
   const {
@@ -76,6 +77,7 @@ export function DashboardRoutes(props: any) {
     surfaceDrafts,
     setSurfaceDrafts,
     saveWorkerConfigurationSurface,
+    extraSettingsTabs,
     operations,
     store,
   } = props;
@@ -173,7 +175,28 @@ export function DashboardRoutes(props: any) {
         activeTab={settingsTab as SettingsTab}
         onSetTab={(tab) => setSettingsTab(tab)}
         onClose={() => setSettingsOpen(false)}
+        extraTabs={extraSettingsTabs}
         renderContent={(tab) => {
+          if ((tab as string).startsWith('worker-settings:')) {
+            const workerId = (tab as string).slice('worker-settings:'.length);
+            const group = (configGroupsByWorker as any[]).find((g: any) => g.worker.id === workerId);
+            if (!group) return null;
+            return (
+              <WorkerConfigPage
+                worker={group.worker}
+                surfaces={group.surfaces}
+                dashboard={dashboard}
+                dashboardViews={dashboardViews}
+                surfaceDrafts={surfaceDrafts}
+                setSurfaceDrafts={setSurfaceDrafts}
+                customListItemDrafts={customListItemDrafts}
+                setCustomListItemDrafts={setCustomListItemDrafts}
+                busyKey={busyKey}
+                fetchDashboard={fetchDashboard}
+                saveWorkerConfigurationSurface={saveWorkerConfigurationSurface}
+              />
+            );
+          }
           if (tab === 'channels') return (
             <ChannelsTab
               dashboard={dashboard}
@@ -199,42 +222,65 @@ export function DashboardRoutes(props: any) {
               mutate={mutate}
             />
           );
-          if (tab === 'config') return (
-            <ConfigTab
-              dashboard={dashboard}
-              configCoreCount={configCoreCount}
-              selectedCoreConfigKey={selectedCoreConfigKey}
-              setSelectedCoreConfigKey={setSelectedCoreConfigKey}
-              dashboardViews={dashboardViews}
-              workerViewContext={workerViewContext}
-              platformRoutingPanel={
-                <PlatformRoutingPanel
-                  dashboard={dashboard}
-                  busyKey={busyKey}
-                  activeLocalProviderDraft={activeLocalProviderDraft}
-                  setActiveLocalProviderDraft={setActiveLocalProviderDraft}
-                  primaryChannelDraft={primaryChannelDraft}
-                  setPrimaryChannelDraft={setPrimaryChannelDraft}
-                  savePlatformRouting={savePlatformRouting}
-                />
-              }
-              platformSecurityPanel={
-                <PlatformSecurityPanel
-                  dashboard={dashboard}
-                  busyKey={busyKey}
-                  adminPasswordDraft={adminPasswordDraft}
-                  setAdminPasswordDraft={setAdminPasswordDraft}
-                  sessionTtlDraft={sessionTtlDraft}
-                  setSessionTtlDraft={setSessionTtlDraft}
-                  jobTimeoutDraft={jobTimeoutDraft}
-                  setJobTimeoutDraft={setJobTimeoutDraft}
-                  saveCoreSettings={saveCoreSettings}
-                />
-              }
-              setActiveTab={setActiveTab}
-              setWizardOpen={setWizardOpen}
-            />
-          );
+          if (tab === 'config') {
+            const settingsWorkerEntries: SettingsWorkerEntry[] = (configGroupsByWorker as any[])
+              .filter((g: any) => g.worker.settingsOnly)
+              .map((group: any) => ({
+                worker: group.worker,
+                configPanel: (
+                  <WorkerConfigPage
+                    worker={group.worker}
+                    surfaces={group.surfaces}
+                    dashboard={dashboard}
+                    dashboardViews={dashboardViews}
+                    surfaceDrafts={surfaceDrafts}
+                    setSurfaceDrafts={setSurfaceDrafts}
+                    customListItemDrafts={customListItemDrafts}
+                    setCustomListItemDrafts={setCustomListItemDrafts}
+                    busyKey={busyKey}
+                    fetchDashboard={fetchDashboard}
+                    saveWorkerConfigurationSurface={saveWorkerConfigurationSurface}
+                  />
+                ),
+              }));
+            return (
+              <ConfigTab
+                dashboard={dashboard}
+                configCoreCount={configCoreCount}
+                selectedCoreConfigKey={selectedCoreConfigKey}
+                setSelectedCoreConfigKey={setSelectedCoreConfigKey}
+                dashboardViews={dashboardViews}
+                workerViewContext={workerViewContext}
+                platformRoutingPanel={
+                  <PlatformRoutingPanel
+                    dashboard={dashboard}
+                    busyKey={busyKey}
+                    activeLocalProviderDraft={activeLocalProviderDraft}
+                    setActiveLocalProviderDraft={setActiveLocalProviderDraft}
+                    primaryChannelDraft={primaryChannelDraft}
+                    setPrimaryChannelDraft={setPrimaryChannelDraft}
+                    savePlatformRouting={savePlatformRouting}
+                  />
+                }
+                platformSecurityPanel={
+                  <PlatformSecurityPanel
+                    dashboard={dashboard}
+                    busyKey={busyKey}
+                    adminPasswordDraft={adminPasswordDraft}
+                    setAdminPasswordDraft={setAdminPasswordDraft}
+                    sessionTtlDraft={sessionTtlDraft}
+                    setSessionTtlDraft={setSessionTtlDraft}
+                    jobTimeoutDraft={jobTimeoutDraft}
+                    setJobTimeoutDraft={setJobTimeoutDraft}
+                    saveCoreSettings={saveCoreSettings}
+                  />
+                }
+                setActiveTab={setActiveTab}
+                setWizardOpen={setWizardOpen}
+                settingsWorkerEntries={settingsWorkerEntries}
+              />
+            );
+          }
           if (tab === 'system') return (
             <SystemTab
               dashboard={dashboard}

@@ -592,6 +592,7 @@ export function listWorkerSummaries(
       deletable: worker.deletable ?? false,
       kind: deriveWorkerKind(worker),
       section: worker.section,
+      settingsOnly: worker.settingsOnly,
       enabled,
       missing,
       sourcePath: worker.sourcePath,

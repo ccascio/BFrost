@@ -45,8 +45,15 @@ export async function setStoredGoogleCredentials(values: StoredGoogleCredentials
   await kv.set(CREDS_KV_KEY, next);
 }
 
-export async function searchGoogle(query: string, opts: SearchOptions = {}): Promise<SearchResult[]> {
-  const { apiKey, engineId } = await resolveGoogleCredentials();
+const SEARCH_TIMEOUT_MS = 15_000;
+const RETRY_DELAYS_MS = [2_000, 6_000]; // two retries: ~2 s then ~6 s
+const RETRYABLE_CODES = new Set(['ENOTFOUND', 'ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EAI_AGAIN']);
+
+function isRetryable(err: unknown): boolean {
+  return err instanceof Error && RETRYABLE_CODES.has((err as NodeJS.ErrnoException).code ?? '');
+}
+
+function searchGoogleOnce(apiKey: string, engineId: string, query: string, opts: SearchOptions): Promise<SearchResult[]> {
   return new Promise((resolve, reject) => {
     const params = new URLSearchParams({
       key: apiKey,
@@ -59,7 +66,7 @@ export async function searchGoogle(query: string, opts: SearchOptions = {}): Pro
 
     const url = `https://www.googleapis.com/customsearch/v1?${params}`;
 
-    https.get(url, (res) => {
+    const req = https.get(url, (res) => {
       const chunks: Buffer[] = [];
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () => {
@@ -81,6 +88,29 @@ export async function searchGoogle(query: string, opts: SearchOptions = {}): Pro
         }
       });
       res.on('error', reject);
-    }).on('error', reject);
+    });
+
+    req.setTimeout(SEARCH_TIMEOUT_MS, () => {
+      req.destroy(Object.assign(new Error('Google CSE request timed out'), { code: 'ETIMEDOUT' }));
+    });
+
+    req.on('error', reject);
   });
+}
+
+export async function searchGoogle(query: string, opts: SearchOptions = {}): Promise<SearchResult[]> {
+  const { apiKey, engineId } = await resolveGoogleCredentials();
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await searchGoogleOnce(apiKey, engineId, query, opts);
+    } catch (err) {
+      lastErr = err;
+      const delay = RETRY_DELAYS_MS[attempt];
+      if (delay === undefined || !isRetryable(err)) break;
+      console.warn(`[searchGoogle] Transient error (attempt ${attempt + 1}), retrying in ${delay}ms:`, (err as Error).message);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
 }

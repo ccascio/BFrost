@@ -74,6 +74,12 @@ export interface WorkerManifest {
    * should appear in a distinct "System" group rather than the main "Workers" group.
    */
   section?: 'workers' | 'system';
+  /**
+   * When true, this worker's config surface is surfaced inside the Settings modal
+   * (Config tab) rather than as a standalone sidebar entry. Has no effect on workers
+   * that also declare a dashboard view tab (those keep their sidebar slot).
+   */
+  settingsOnly?: boolean;
   backendEntrypoint?: string;
   requiredCredentials?: WorkerHealthRequirement[];
   optionalCredentials?: WorkerHealthRequirement[];
