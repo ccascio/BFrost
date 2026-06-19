@@ -3,7 +3,13 @@ import type { z } from 'zod';
 import type { DashboardState } from './admin-api';
 
 export class BadRequestError extends Error {
-  statusCode = 400;
+  statusCode: number;
+
+  constructor(message: string, statusCode = 400) {
+    super(message);
+    this.name = 'BadRequestError';
+    this.statusCode = statusCode;
+  }
 }
 
 export interface AdminJsonResponse {
@@ -27,4 +33,3 @@ export interface AdminApiRoute {
   workerIds: string[];
   handle: (context: AdminRouteContext) => Promise<AdminJsonResponse>;
 }
-

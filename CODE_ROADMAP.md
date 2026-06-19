@@ -6,7 +6,7 @@
 
 BFrost has exactly one load-bearing rule (see [`CLAUDE.md`](./CLAUDE.md)): *every capability is a worker; the core only installs, configures, schedules, runs, observes, and uninstalls them.* So the question for every refactor in this document is not "is this cleaner?" but **"does this make `src/` (outside `src/workers/`) more worker-agnostic, or less?"** A change that shrinks a file but leaves core owning worker-shaped logic is a half-fix. Each item below is framed as contract-reinforcing.
 
-This roadmap began with two pressure points. As of **2026-06-19**, **Phase 1 is complete**: the backend HTTP monolith is dissolved, the frontend shell/helper pressure points are below the ~600 LOC threshold, and the design-token layer exit criterion is already met. **Phase 3.1 is also complete**: the worker-first contract is now machine-enforced across production core files, and the main provider/channel/config leaks have been moved behind generic or worker-owned contracts. **Phase 2.1 is complete**: process-level crash/rejection handling and detached-promise logging are in place. The next meaningful work is scheduled-job retry/backoff, followed by the remaining HTTP hardening.
+This roadmap began with two pressure points. As of **2026-06-19**, **Phase 1 is complete**: the backend HTTP monolith is dissolved, the frontend shell/helper pressure points are below the ~600 LOC threshold, and the design-token layer exit criterion is already met. **Phase 2 is complete**: process-level crash/rejection handling, scheduled-job retry/backoff, and raw HTTP body hardening are in place. **Phase 3.1 is also complete**: the worker-first contract is now machine-enforced across production core files, and the main provider/channel/config leaks have been moved behind generic or worker-owned contracts. The next meaningful work is Phase 3.2: wrapping internal API casts in a typed, tested adapter.
 
 | File | Original LOC | Current LOC | Status |
 |---|---:|---:|---|
@@ -128,7 +128,14 @@ Verified: focused scheduler tests pass, including a transient job that fails onc
 
 **Exit criterion.** Oversized/malformed bodies are rejected uniformly before any handler runs; auth is enforced in exactly one place.
 
-**Status — PARTIAL (2026-06-18).** The auth gate is centralized in `handleRequest`, JSON bodies flow through `readJsonBody`, and `readRawBody` enforces a 1 MB default JSON cap. Remaining hardening: content-type validation and any endpoint-specific raw upload/body caps beyond JSON.
+**Status — DONE (2026-06-19).** The auth gate is centralized in `handleRequest`, JSON bodies flow through `readJsonBody`, and raw bodies flow through `readRawBody`.
+- JSON endpoints now accept only JSON media types (`application/json` and `application/*+json`) when a body is present, while empty optional bodies remain possible.
+- Body-limit failures now return HTTP **413** and unsupported media types return HTTP **415** through the shared `BadRequestError` envelope.
+- Worker upload explicitly accepts only zip/octet-stream media types, requires a content type, and keeps the 25 MB route-specific cap before archive extraction.
+- Worker generation, worker update, and store-install routes use tighter endpoint-specific JSON caps instead of the generic 1 MB default.
+- Existing archive traversal and symlink checks remain in place.
+
+Verified: helper-level and HTTP integration tests cover JSON media-type rejection, oversized JSON, worker-upload media-type rejection, and oversized worker uploads. Full `npm test` passes with **218 backend tests** plus `npm run check:web`.
 
 ---
 
@@ -192,8 +199,8 @@ These were the engineering carryovers from the v1.0 technical roadmap (originall
 
 1. **Phase 1 (monolith dissolution)** — done; preserve it with the typecheck, smoke harness, and worker-first contract scan.
 2. **Phase 3.1 (worker-first contract guardrail)** — done; production core is scanned recursively and the main provider/channel/config leaks have been dissolved.
-3. **Phase 2 reliability gaps** — 2.1 is done; next is scheduled-job retry/backoff, then the remaining HTTP hardening.
-4. **Phase 3.2** — wrap the node-cron/internal API casts in one typed, tested adapter.
+3. **Phase 2 reliability gaps** — done: process fault handling, scheduled-job retry/backoff, and raw HTTP hardening are all verified.
+4. **Phase 3.2** — next: wrap the node-cron/internal API casts in one typed, tested adapter.
 5. **Phase 4 testing/observability** — richer schema-form smoke coverage, per-worker metrics, scoped secrets, and longer-tail platform hardening.
 
 ## Global exit criterion

@@ -169,6 +169,11 @@ export async function syncHiddenBuiltIns(state?: WorkerStateStore): Promise<void
   setHiddenBuiltInIds(ids);
 }
 export const MAX_WORKER_UPLOAD_BYTES = 25 * 1024 * 1024;
+export const WORKER_UPLOAD_CONTENT_TYPES = [
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/octet-stream',
+] as const;
 export const execFileAsync = promisify(execFile);
 
 export type CatalogWorker = WorkerManifest & { sourcePath?: string };
@@ -209,7 +214,11 @@ export async function uploadLocalWorkerZip(req: IncomingMessage): Promise<Discov
     throw new BadRequestError('Upload must be a .zip file.');
   }
 
-  const body = await readRawBody(req, MAX_WORKER_UPLOAD_BYTES);
+  const body = await readRawBody(req, {
+    maxBytes: MAX_WORKER_UPLOAD_BYTES,
+    acceptedContentTypes: WORKER_UPLOAD_CONTENT_TYPES,
+    requireContentType: true,
+  });
   if (body.length === 0) {
     throw new BadRequestError('Uploaded worker zip is empty.');
   }

@@ -8,7 +8,7 @@ import {
   startAdminServer,
   stopAdminServer,
 } from './admin-server';
-import { assertSafeArchiveNames, assertNoSymlinkEntries } from './admin-worker-ops';
+import { assertSafeArchiveNames, assertNoSymlinkEntries, MAX_WORKER_UPLOAD_BYTES } from './admin-worker-ops';
 import { config } from './config';
 import { closeDb } from './sqlite';
 import { createThread, getThread, hydrateThreads } from './chat-threads';
@@ -112,6 +112,72 @@ test('router dispatch serves exact routes, static fallback, and 404s over HTTP',
     config.adminPort = previous.adminPort;
     config.adminHost = previous.adminHost;
     config.adminPassword = previous.adminPassword;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('admin HTTP body hardening rejects wrong content types and oversized bodies', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-admin-body-hardening-'));
+  const previous = {
+    appDbPath: config.appDbPath,
+    adminPort: config.adminPort,
+    adminHost: config.adminHost,
+    adminPassword: config.adminPassword,
+    workerPaths: [...config.workerPaths],
+  };
+  config.appDbPath = path.join(dir, 'app.sqlite');
+  config.adminHost = '127.0.0.1';
+  config.adminPort = await freePort();
+  config.adminPassword = '';
+  config.workerPaths = [path.join(dir, 'workers')];
+  const base = `http://127.0.0.1:${config.adminPort}`;
+
+  try {
+    await hydrateProjects();
+    await startAdminServer();
+
+    const wrongJsonType = await fetch(`${base}/api/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ name: 'Research' }),
+    });
+    assert.equal(wrongJsonType.status, 415);
+    assert.match((await wrongJsonType.json() as { error: string }).error, /Unsupported Content-Type/);
+
+    const oversizedJson = await fetch(`${base}/api/workers/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: 'x'.repeat(20 * 1024) }),
+    });
+    assert.equal(oversizedJson.status, 413);
+
+    const wrongUploadType = await fetch(`${base}/api/workers/upload`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain',
+        'X-Worker-Filename': 'demo.zip',
+      },
+      body: 'not really a zip',
+    });
+    assert.equal(wrongUploadType.status, 415);
+
+    const oversizedUpload = await fetch(`${base}/api/workers/upload`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/zip',
+        'X-Worker-Filename': 'demo.zip',
+      },
+      body: Buffer.alloc(MAX_WORKER_UPLOAD_BYTES + 1),
+    });
+    assert.equal(oversizedUpload.status, 413);
+  } finally {
+    await stopAdminServer();
+    config.appDbPath = previous.appDbPath;
+    config.adminPort = previous.adminPort;
+    config.adminHost = previous.adminHost;
+    config.adminPassword = previous.adminPassword;
+    config.workerPaths = previous.workerPaths;
     closeDb();
     await rm(dir, { recursive: true, force: true });
   }

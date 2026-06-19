@@ -27,6 +27,10 @@ import { reloadSchedulerSchedules } from '../../scheduler';
 import { buildDashboardState } from '../../admin-dashboard-state';
 import { GenerateWorkerBodySchema, StoreInstallBodySchema, WorkerUpdateBodySchema } from '../../admin-api';
 
+const WORKER_GENERATE_BODY_LIMIT_BYTES = 16 * 1024;
+const WORKER_UPDATE_BODY_LIMIT_BYTES = 2 * 1024;
+const STORE_INSTALL_BODY_LIMIT_BYTES = 16 * 1024;
+
 export function registerWorkerRoutes(router: HttpRouter): void {
   router.add('GET', '/api/workers/:id/dashboard.js', async (req, res, { params }) => {
     return serveWorkerDashboardBundle(params.id, req, res);
@@ -71,7 +75,9 @@ export function registerWorkerRoutes(router: HttpRouter): void {
   });
 
   router.add('POST', '/api/workers/generate', async (req, res) => {
-    const body = await readJsonBody(req, GenerateWorkerBodySchema);
+    const body = await readJsonBody(req, GenerateWorkerBodySchema, {
+      maxBytes: WORKER_GENERATE_BODY_LIMIT_BYTES,
+    });
     const result = await generateWorkerFromDescription(body.description);
     await recordEventSafe({
       category: 'worker',
@@ -90,7 +96,9 @@ export function registerWorkerRoutes(router: HttpRouter): void {
 
   router.add('POST', '/api/workers/:id', async (req, res, { params }) => {
     const workerId = params.id;
-    const body = await readJsonBody(req, WorkerUpdateBodySchema);
+    const body = await readJsonBody(req, WorkerUpdateBodySchema, {
+      maxBytes: WORKER_UPDATE_BODY_LIMIT_BYTES,
+    });
     const localWorkers = await discoverLocalWorkers();
     const catalog = workerCatalog(localWorkers);
     const worker = catalog.get(workerId);
@@ -183,7 +191,9 @@ export function registerWorkerRoutes(router: HttpRouter): void {
   });
 
   router.add('POST', '/api/store/install', async (req, res) => {
-    const body = await readJsonBody(req, StoreInstallBodySchema);
+    const body = await readJsonBody(req, StoreInstallBodySchema, {
+      maxBytes: STORE_INSTALL_BODY_LIMIT_BYTES,
+    });
     const result = await installWorkerFromStore(body.id, body.bundleUrl, body.bundleSha256);
     await recordEventSafe({
       category: 'admin',
