@@ -127,9 +127,11 @@ export function TopBar({
       </div>
 
       <div className="topbar-meta">
-        <span className="environment-chip" title={`${adminUrl} · PID ${pid}`}>
-          {environment}
-        </span>
+        {environment ? (
+          <span className="environment-chip" title={`${adminUrl} · PID ${pid}`}>
+            {environment}
+          </span>
+        ) : null}
         <span className="notice-line" role="status" aria-live="polite">
           {notice}
         </span>

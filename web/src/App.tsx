@@ -396,7 +396,11 @@ export default function App() {
       <TopBar
         notice={notice}
         error={error}
-        environment={dashboard.localRuntime.running ? 'Local runtime online' : 'Local runtime offline'}
+        environment={
+          dashboard.platform.activeLocalProviderId
+            ? dashboard.localRuntime.running ? 'Local runtime online' : 'Local runtime offline'
+            : ''
+        }
         adminUrl={dashboard.app.adminUrl}
         pid={dashboard.app.pid}
         models={dashboard.models}
