@@ -20,7 +20,7 @@ npx bfrost
 
 ## What is BFrost
 
-BFrost is a local AI operations platform. It gives you a dashboard, scheduler, chat surface, model-provider hub, worker store, approval queue, event log, backups, and a typed Item Bus for building real workflows.
+BFrost is a local AI operations platform. It gives you a dashboard, scheduler, a full chat workspace (projects, artifacts, prompt templates, document chat), model-provider hub, worker store, approval queue, event log, backups, and a typed Item Bus for building real workflows.
 
 The design rule is simple: **every capability is a worker**. News harvesting, Telegram, shell commands, model providers, research notes, publishing destinations, and assistant tools all use the same worker contract. The core only installs, configures, schedules, runs, observes, and uninstalls workers. Add a worker to add a feature. Remove it and the feature is gone.
 
@@ -31,6 +31,7 @@ What you can build with it:
 - a morning news digest that researches your topics and sends the result to Telegram
 - a finance-news monitor that explains market relevance without pretending to be trading advice
 - a local assistant that can inspect jobs, queue items, worker health, and run history
+- a project workspace where you chat with your own documents and collect generated artifacts (code, pages, diagrams) — all local
 - approval-gated publish flows for X, WordPress, or any publisher worker you add
 - custom scheduled workers generated from a plain-English description or authored by hand
 
@@ -79,6 +80,35 @@ From the dashboard you can:
 - approve or reject file/shell actions with a diff preview and audit history
 - browse the Worker Store or side-load a worker zip
 - create and restore guarded SQLite backups
+
+## The chat workspace
+
+The dashboard chat is a full assistant workspace, not just a prompt box — and like everything in BFrost, every message, file, and artifact stays on your machine and runs through the model you configured.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ccascio/BFrost/main/assets/screenshots/chat-dashboard.jpeg" alt="BFrost chat workspace with projects, saved threads, prompt templates, and the artifacts side panel" />
+</p>
+
+### 🗂️ Projects
+
+Group related chats into a **project** and scope the whole conversation to it. Each project has its own **document store**: drop in text and Markdown files, and the assistant answers from **only that project's documents** using local embedding search — so you can chat with your own files without anything leaving your machine. Switch projects from the chat sidebar; "All chats" shows everything.
+
+### 🧩 Artifacts
+
+When the assistant produces something substantial — code, an HTML page, a React component, a Mermaid diagram, or a document — it opens in a dedicated **artifacts panel** instead of cluttering the chat. The panel can **float over the chat or pin into a split view**, and gives you:
+
+- **Live preview** for HTML, React components, and Mermaid diagrams, rendered in a sandboxed iframe
+- a **code view** with one-click **copy** and **download**
+- **version history** — each time the assistant revises an artifact, you can step back and forth through versions
+- multiple artifacts per conversation, persisted with the thread
+
+### 📌 Custom prompt templates
+
+Save your go-to prompts as named, reusable **templates** and drop them into the composer with a click. Create, edit, and delete them inline; they're stored locally in your browser.
+
+### 💬 Saved threads & history
+
+Every conversation is **saved, searchable, renamable, and deletable**. Filter your chat history, reopen any thread to pick up where you left off, and start a fresh chat at any time — optionally inside a project.
 
 ## Install
 
