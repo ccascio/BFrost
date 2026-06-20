@@ -12,6 +12,7 @@ import {
 interface DashboardFieldEditorProps {
   field: JobDashboardField;
   value: JobParamDraftValue;
+  formValues?: Record<string, JobParamDraftValue>;
   onChange: (value: JobParamDraftValue) => void;
   customListItemDrafts: Record<string, string>;
   setCustomListItemDrafts: Dispatch<SetStateAction<Record<string, string>>>;
@@ -22,6 +23,7 @@ interface DashboardFieldEditorProps {
 export function DashboardFieldEditor({
   field,
   value,
+  formValues = {},
   onChange,
   customListItemDrafts,
   setCustomListItemDrafts,
@@ -33,6 +35,7 @@ export function DashboardFieldEditor({
 
   async function runActionField() {
     if (field.type !== 'action') return;
+    if (isActionFieldDisabled(field, formValues)) return;
     let waitingForPopup = false;
     let popup: Window | null = null;
     setActionBusy(true);
@@ -92,18 +95,22 @@ export function DashboardFieldEditor({
   }
 
   if (field.type === 'action') {
+    const actionDisabled = isActionFieldDisabled(field, formValues);
+    const disabledReason = actionDisabled ? field.disabledReason ?? 'This action is not available.' : null;
     return (
       <div className="field">
         <span>{field.label}</span>
         <button
           type="button"
           className="primary"
-          disabled={actionBusy}
+          disabled={actionBusy || actionDisabled}
           onClick={() => void runActionField()}
+          title={disabledReason ?? undefined}
         >
           {actionBusy ? 'Opening...' : field.buttonLabel ?? field.label}
         </button>
         {field.helpText ? <small>{field.helpText}</small> : null}
+        {disabledReason && disabledReason !== field.helpText ? <small>{disabledReason}</small> : null}
         {actionMessage ? <small>{actionMessage}</small> : null}
       </div>
     );
@@ -284,4 +291,13 @@ export function DashboardFieldEditor({
       {field.helpText ? <small>{field.helpText}</small> : null}
     </label>
   );
+}
+
+function isActionFieldDisabled(
+  field: Extract<JobDashboardField, { type: 'action' }>,
+  formValues: Record<string, JobParamDraftValue>,
+): boolean {
+  if (field.disabled) return true;
+  if (!field.enabledWhen) return false;
+  return String(formValues[field.enabledWhen.field] ?? '') !== field.enabledWhen.equals;
 }

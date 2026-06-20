@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -10,9 +10,11 @@ import { createAnthropicProviderAdapter } from './builtin/providers-anthropic/ad
 import {
   setAnthropicAuthMode,
   setAnthropicClaudeCliModel,
-  setAnthropicClaudeCliPath,
+  setAnthropicOAuthCredentials,
 } from './builtin/providers-anthropic/credentials';
 import { anthropicProviderWorker } from './builtin/providers-anthropic/manifest';
+import { anthropicProviderApiRoutes } from './builtin/providers-anthropic/routes';
+import { ANTHROPIC_OAUTH_BETA_HEADER } from './builtin/providers-anthropic/subscription-model';
 import { createOpenAIProviderAdapter } from './builtin/providers-openai/adapter';
 import {
   setOpenAIAuthMode,
@@ -20,6 +22,17 @@ import {
 } from './builtin/providers-openai/credentials';
 import { openaiProviderWorker } from './builtin/providers-openai/manifest';
 import { openaiProviderApiRoutes } from './builtin/providers-openai/routes';
+import { createPiCompatibleProviderAdapter } from './builtin/providers-pi-compatible/adapter';
+import {
+  PI_COMPATIBLE_PROVIDERS,
+  PI_COMPATIBLE_WORKER_ID,
+  getPiCompatibleProviderDefinition,
+} from './builtin/providers-pi-compatible/catalog';
+import {
+  setCloudflareAccountId,
+  setPiProviderApiKey,
+} from './builtin/providers-pi-compatible/credentials';
+import { piCompatibleProviderWorker } from './builtin/providers-pi-compatible/manifest';
 import {
   getActiveLocalProvider,
   getProviderAdapter,
@@ -65,6 +78,85 @@ test('getRegisteredProvider returns undefined for unknown providers', () => {
   assert.equal(getProviderAdapter('definitely-missing'), undefined);
 });
 
+test('Pi-compatible provider worker registers the additional provider catalog in settings only', () => {
+  const providers = listRegisteredProviders();
+  const registeredIds = new Set(providers.map((entry) => entry.manifest.id));
+
+  assert.equal(piCompatibleProviderWorker.id, PI_COMPATIBLE_WORKER_ID);
+  assert.equal(piCompatibleProviderWorker.displayName, 'LLM Providers');
+  assert.equal(piCompatibleProviderWorker.settingsOnly, true);
+  assert.equal(PI_COMPATIBLE_PROVIDERS.length, 14);
+  assert.equal(registeredIds.has('openai'), true, 'OpenAI remains owned by the existing worker');
+  for (const provider of PI_COMPATIBLE_PROVIDERS) {
+    assert.equal(registeredIds.has(provider.id), true, `${provider.id} should be registered`);
+    const registered = getRegisteredProvider(provider.id);
+    assert.equal(registered?.worker.id, PI_COMPATIBLE_WORKER_ID);
+    assert.equal(registered?.manifest.defaultModels?.length, provider.defaultModels.length);
+  }
+
+  const fields = piCompatibleProviderWorker.dashboard?.settings?.find((entry) => entry.id === 'credentials')?.fields ?? [];
+  assert.equal(fields.find((entry) => entry.key === 'openaiAuthMode')?.type, 'select');
+  assert.equal(fields.find((entry) => entry.key === 'openaiAuthMode')?.group, 'openai');
+  assert.equal(fields.find((entry) => entry.key === 'openaiSubscriptionLogin')?.type, 'action');
+  assert.equal(fields.find((entry) => entry.key === 'anthropicAuthMode')?.type, 'select');
+  assert.equal(fields.find((entry) => entry.key === 'anthropicAuthMode')?.group, 'anthropic');
+  assert.equal(fields.find((entry) => entry.key === 'anthropicSubscriptionLogin')?.type, 'action');
+  const groups = piCompatibleProviderWorker.dashboard?.settings?.find((entry) => entry.id === 'credentials')?.fieldGroups ?? [];
+  assert.equal(groups.find((entry) => entry.id === 'openai')?.label, 'OpenAI');
+  assert.equal(groups.find((entry) => entry.id === 'anthropic')?.label, 'Anthropic');
+  for (const provider of PI_COMPATIBLE_PROVIDERS) {
+    const field = fields.find((entry) => entry.key === provider.apiKeySettingKey);
+    assert.equal(field?.type, 'secret-reference');
+    assert.equal(field?.group, provider.id);
+    assert.equal(groups.find((entry) => entry.id === provider.id)?.label, provider.label);
+    const action = fields.find((entry) => entry.key === `${provider.apiKeySettingKey}SubscriptionLogin`);
+    assert.equal(action?.type, 'action');
+    assert.equal(action?.type === 'action' ? action.disabled : false, true);
+  }
+  assert.equal(fields.find((entry) => entry.key === 'cloudflareAccountId')?.type, 'text');
+});
+
+test('Pi-compatible provider adapter gates credentials and returns declared models', async () => {
+  const provider = getPiCompatibleProviderDefinition('deepseek');
+  assert.ok(provider);
+
+  setPiProviderApiKey(provider.id, '');
+  const unconfigured = createPiCompatibleProviderAdapter(provider);
+  assert.equal(unconfigured.isConfigured(), false);
+  assert.throws(() => unconfigured.getChatModel(provider.defaultModels[0]!.id), /DEEPSEEK_API_KEY/);
+
+  setPiProviderApiKey(provider.id, 'fake-deepseek-key');
+  try {
+    const configured = createPiCompatibleProviderAdapter(provider);
+    assert.equal(configured.isConfigured(), true);
+    assert.deepEqual(await configured.listAvailableModels?.(), provider.defaultModels);
+    assert.ok(configured.getChatModel(provider.defaultModels[0]!.id));
+  } finally {
+    setPiProviderApiKey(provider.id, '');
+  }
+});
+
+test('Cloudflare Pi-compatible adapter requires both account id and API key', () => {
+  const provider = getPiCompatibleProviderDefinition('cloudflare-workers-ai');
+  assert.ok(provider);
+
+  setPiProviderApiKey(provider.id, 'fake-cloudflare-key');
+  setCloudflareAccountId('');
+  try {
+    const missingAccount = createPiCompatibleProviderAdapter(provider);
+    assert.equal(missingAccount.isConfigured(), false);
+    assert.throws(() => missingAccount.getChatModel(provider.defaultModels[0]!.id), /CLOUDFLARE_ACCOUNT_ID/);
+
+    setCloudflareAccountId('account-123');
+    const configured = createPiCompatibleProviderAdapter(provider);
+    assert.equal(configured.isConfigured(), true);
+    assert.ok(configured.getChatModel(provider.defaultModels[0]!.id));
+  } finally {
+    setPiProviderApiKey(provider.id, '');
+    setCloudflareAccountId('');
+  }
+});
+
 test('OpenAI provider exposes API/subscription settings and can generate through Codex OAuth mode', async () => {
   const codexHome = await mkdtemp(path.join(os.tmpdir(), 'bfrost-codex-home-'));
   await writeFile(
@@ -101,15 +193,16 @@ test('OpenAI provider exposes API/subscription settings and can generate through
   setOpenAIAuthMode('subscription');
   setOpenAICodexCliModel('gpt-subscription-test');
   try {
-    const surface = openaiProviderWorker.dashboard?.settings?.find((entry) => entry.id === 'credentials');
+    assert.equal(openaiProviderWorker.dashboard?.settings?.length, 0);
+    const surface = piCompatibleProviderWorker.dashboard?.settings?.find((entry) => entry.id === 'credentials');
     assert.ok(surface);
-    const authMode = surface.fields?.find((field) => field.key === 'authMode');
+    const authMode = surface.fields?.find((field) => field.key === 'openaiAuthMode');
     assert.equal(authMode?.type, 'select');
     assert.deepEqual(
       authMode?.type === 'select' ? authMode.options.map((option) => option.value) : [],
       ['api', 'subscription'],
     );
-    const loginAction = surface.fields?.find((field) => field.key === 'chatgptLogin');
+    const loginAction = surface.fields?.find((field) => field.key === 'openaiSubscriptionLogin');
     assert.equal(loginAction?.type, 'action');
     assert.equal(loginAction?.type === 'action' ? loginAction.actionPath : '', '/api/workers/providers-openai/oauth/start');
 
@@ -287,67 +380,128 @@ test('OpenAI Codex OAuth mode exposes AI SDK tools to ChatGPT Responses', async 
   }
 });
 
-test('Anthropic provider exposes API/subscription settings and can generate through Claude CLI mode', async () => {
-  const fakeClaude = await writeExecutable(
-    'fake-claude',
-    `#!/usr/bin/env node
-const args = process.argv.slice(2);
-if (args[0] === 'auth' && args[1] === 'status') {
-  console.log(JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', subscriptionType: 'pro' }));
-  process.exit(0);
-}
-if (args.includes('--print')) {
-  let input = '';
-  process.stdin.on('data', (chunk) => input += chunk);
-  process.stdin.on('end', () => {
-    if (!input.includes('User:')) process.exit(2);
-    process.stdout.write('anthropic subscription reply');
-  });
-  return;
-}
-process.exit(1);
-`,
-  );
+test('Anthropic provider exposes OAuth subscription settings and can generate with a Claude login token', async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(String(input), 'https://api.anthropic.com/v1/messages');
+    const headers = new Headers(init?.headers);
+    assert.equal(headers.get('authorization'), 'Bearer fake-anthropic-access');
+    assert.equal(headers.get('anthropic-beta'), ANTHROPIC_OAUTH_BETA_HEADER);
+    return Response.json({
+      id: 'msg_test',
+      type: 'message',
+      role: 'assistant',
+      model: 'claude-sonnet-test',
+      content: [{ type: 'text', text: 'anthropic oauth reply' }],
+      stop_reason: 'end_turn',
+      stop_sequence: null,
+      usage: { input_tokens: 1, output_tokens: 2 },
+    });
+  }) as typeof fetch;
 
   setAnthropicAuthMode('subscription');
-  setAnthropicClaudeCliPath(fakeClaude);
-  setAnthropicClaudeCliModel('sonnet-test');
+  setAnthropicClaudeCliModel('claude-sonnet-test');
+  setAnthropicOAuthCredentials({
+    access: 'fake-anthropic-access',
+    refresh: 'fake-anthropic-refresh',
+    expires: Date.now() + 60 * 60_000,
+  });
   try {
-    const surface = anthropicProviderWorker.dashboard?.settings?.find((entry) => entry.id === 'credentials');
+    assert.equal(anthropicProviderWorker.dashboard?.settings?.length, 0);
+    const surface = piCompatibleProviderWorker.dashboard?.settings?.find((entry) => entry.id === 'credentials');
     assert.ok(surface);
-    const authMode = surface.fields?.find((field) => field.key === 'authMode');
+    const authMode = surface.fields?.find((field) => field.key === 'anthropicAuthMode');
     assert.equal(authMode?.type, 'select');
     assert.deepEqual(
       authMode?.type === 'select' ? authMode.options.map((option) => option.value) : [],
       ['api', 'subscription'],
+    );
+    const loginAction = surface.fields?.find((field) => field.key === 'anthropicSubscriptionLogin');
+    assert.equal(loginAction?.type, 'action');
+    assert.equal(
+      loginAction?.type === 'action' ? loginAction.actionPath : '',
+      '/api/workers/providers-anthropic/oauth/start',
     );
 
     const adapter = createAnthropicProviderAdapter();
     assert.equal(adapter.isConfigured(), true);
     assert.deepEqual(await adapter.listAvailableModels?.(), [
       {
-        id: 'sonnet-test',
-        alias: 'anthropic-subscription-sonnet-test',
-        label: 'Claude subscription via Claude CLI (sonnet-test)',
+        id: 'claude-sonnet-test',
+        alias: 'anthropic-subscription-claude-sonnet-test',
+        label: 'Claude subscription (claude-sonnet-test)',
       },
     ]);
-    const model = adapter.getChatModel('sonnet-test') as LanguageModelV3;
+    const model = adapter.getChatModel('claude-sonnet-test') as LanguageModelV3;
     const result = await model.doGenerate(callOptions('hello from bfrost'));
-    assert.equal(result.content.find((part) => part.type === 'text')?.text, 'anthropic subscription reply');
+    assert.equal(result.content.find((part) => part.type === 'text')?.text, 'anthropic oauth reply');
   } finally {
     setAnthropicAuthMode('api');
-    setAnthropicClaudeCliPath('claude');
-    setAnthropicClaudeCliModel('sonnet');
+    setAnthropicClaudeCliModel('claude-sonnet-4-6');
+    setAnthropicOAuthCredentials({ access: '', refresh: '', expires: 0 });
+    globalThis.fetch = previousFetch;
   }
 });
 
-async function writeExecutable(name: string, content: string): Promise<string> {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-provider-test-'));
-  const filePath = path.join(dir, name);
-  await writeFile(filePath, content);
-  await chmod(filePath, 0o755);
-  return filePath;
-}
+test('Anthropic OAuth login route exchanges callback code and saves Claude credentials', async () => {
+  const routeCwd = await mkdtemp(path.join(os.tmpdir(), 'bfrost-anthropic-oauth-route-'));
+  const previousCwd = process.cwd();
+  const previousFetch = globalThis.fetch;
+  process.chdir(routeCwd);
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith('/models')) {
+      return Response.json({ data: [] });
+    }
+    assert.equal(String(input), 'https://platform.claude.com/v1/oauth/token');
+    const body = JSON.parse(String(init?.body ?? '{}')) as {
+      grant_type?: string;
+      code?: string;
+      state?: string;
+      code_verifier?: string;
+      redirect_uri?: string;
+    };
+    assert.equal(body.grant_type, 'authorization_code');
+    assert.equal(body.code, 'fake-code');
+    assert.equal(body.state, body.code_verifier);
+    assert.equal(body.redirect_uri, 'http://localhost:53692/callback');
+    return Response.json({
+      access_token: 'saved-anthropic-access',
+      refresh_token: 'saved-anthropic-refresh',
+      expires_in: 3600,
+    });
+  }) as typeof fetch;
+
+  setAnthropicAuthMode('api');
+  setAnthropicOAuthCredentials({ access: '', refresh: '', expires: 0 });
+  try {
+    const route = anthropicProviderApiRoutes.find((entry) => entry.path === '/api/workers/providers-anthropic/oauth/start');
+    assert.ok(route);
+    const result = await route.handle({
+      req: {} as never,
+      url: new URL('http://localhost/api/workers/providers-anthropic/oauth/start'),
+      readJsonBody: async () => ({}),
+      getDashboardState: async () => ({} as never),
+    });
+    assert.equal(result.status, 200);
+    const body = result.body as { openUrl?: string };
+    assert.ok(body.openUrl);
+    const state = new URL(body.openUrl).searchParams.get('state');
+    assert.ok(state);
+
+    const callback = await httpGet(`http://localhost:53692/callback?code=fake-code&state=${state}`);
+    assert.equal(callback.status, 200);
+    assert.match(callback.body, /Anthropic login complete/);
+    const envFile = await readFile(path.join(routeCwd, '.env'), 'utf8');
+    assert.match(envFile, /ANTHROPIC_OAUTH_TOKEN=saved-anthropic-access/);
+    assert.match(envFile, /BFROST_ANTHROPIC_OAUTH_REFRESH_TOKEN=saved-anthropic-refresh/);
+    assert.match(envFile, /BFROST_ANTHROPIC_AUTH_MODE=subscription/);
+  } finally {
+    process.chdir(previousCwd);
+    setAnthropicAuthMode('api');
+    setAnthropicOAuthCredentials({ access: '', refresh: '', expires: 0 });
+    globalThis.fetch = previousFetch;
+  }
+});
 
 function httpGet(url: string): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {

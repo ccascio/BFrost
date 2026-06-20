@@ -8,7 +8,9 @@ import {
   resolveAnthropicAuthMode,
   resolveAnthropicClaudeCliModel,
   resolveAnthropicClaudeCliPath,
+  readAnthropicOAuthReady,
 } from './credentials';
+import { createAnthropicOAuthLanguageModel } from './subscription-model';
 
 const PROVIDER_ID = 'anthropic';
 const ANTHROPIC_API_VERSION = '2023-06-01';
@@ -95,7 +97,7 @@ function subscriptionModel(): ProviderModelOption {
   return {
     id,
     alias: `anthropic-subscription-${id}`.toLowerCase().replace(/[^a-z0-9._-]+/g, '-'),
-    label: `Claude subscription via Claude CLI (${id})`,
+    label: `Claude subscription (${id})`,
   };
 }
 
@@ -114,11 +116,19 @@ export function createAnthropicProviderAdapter(): ProviderAdapter {
   return {
     providerId: PROVIDER_ID,
     isConfigured() {
-      if (resolveAnthropicAuthMode() === 'subscription') return isClaudeSubscriptionReady();
+      if (resolveAnthropicAuthMode() === 'subscription') {
+        return readAnthropicOAuthReady() || isClaudeSubscriptionReady();
+      }
       return Boolean(resolveAnthropicApiKey());
     },
     getChatModel(modelId: string) {
       if (resolveAnthropicAuthMode() === 'subscription') {
+        if (readAnthropicOAuthReady()) {
+          return createAnthropicOAuthLanguageModel(modelId || resolveAnthropicClaudeCliModel());
+        }
+        if (!isClaudeSubscriptionReady()) {
+          throw new Error('Anthropic Claude login not found. Use Settings to log in with Claude, then retry.');
+        }
         return createCliLanguageModel({
           providerId: PROVIDER_ID,
           modelId: modelId || resolveAnthropicClaudeCliModel(),
@@ -152,7 +162,7 @@ export function createAnthropicProviderAdapter(): ProviderAdapter {
     },
     async listAvailableModels() {
       if (resolveAnthropicAuthMode() === 'subscription') {
-        return isClaudeSubscriptionReady() ? [subscriptionModel()] : [];
+        return readAnthropicOAuthReady() || isClaudeSubscriptionReady() ? [subscriptionModel()] : [];
       }
       const key = resolveAnthropicApiKey();
       if (!key) return [];

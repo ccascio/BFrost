@@ -191,6 +191,7 @@ export type JobDashboardField =
 export interface JobBaseField {
   key: string;
   label: string;
+  group?: string;
   helpText?: string;
   /**
    * Dotted path into workerData that seeds the form draft with the current runtime
@@ -251,6 +252,14 @@ export interface JobActionField extends JobBaseField {
   method?: 'POST' | 'GET';
   buttonLabel?: string;
   openInPopup?: boolean;
+  enabledWhen?: JobFieldCondition;
+  disabled?: boolean;
+  disabledReason?: string;
+}
+
+export interface JobFieldCondition {
+  field: string;
+  equals: string;
 }
 
 export interface SchedulerRunRecord {
@@ -392,7 +401,14 @@ export interface WorkerDashboardSurface {
   description: string;
   path?: string;
   tab?: string;
+  fieldGroups?: WorkerDashboardFieldGroup[];
   fields?: JobDashboardField[];
+}
+
+export interface WorkerDashboardFieldGroup {
+  id: string;
+  label: string;
+  description?: string;
 }
 
 export interface WorkerLoadIssue {

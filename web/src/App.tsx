@@ -34,7 +34,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(() => readDashboardRoute().settingsOpen);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>(() => readDashboardRoute().settingsTab);
 
-  const SETTINGS_TABS = new Set<string>(['channels', 'workers', 'config', 'system', 'actions']);
+  const SETTINGS_TABS = new Set<string>(['channels', 'config', 'system', 'actions']);
   function setActiveTab(tab: DashboardTab) {
     if (SETTINGS_TABS.has(tab) || (tab as string).startsWith('worker-settings:')) {
       openSettingsTab(tab as SettingsTab);
@@ -337,7 +337,7 @@ export default function App() {
     .filter((group) => group.surfaces.length > 0);
   const configJobCount = 0;
   const configSurfaceCount = configGroupsByWorker.filter(
-    ({ worker }) => worker.settingsOnly || worker.kind === 'provider',
+    ({ worker }) => worker.settingsOnly && worker.kind !== 'provider',
   ).length;
   const configCoreCount = 3; // platform routing + embedding + security
   const workerTabDefinitions = buildWorkerTabDefinitions(dashboard.workers, dashboardViews);
@@ -456,8 +456,11 @@ export default function App() {
         authEnabled={session.authEnabled}
         logoutBusy={busyKey === 'logout'}
         onOpenNavigation={() => setSidebarMobileOpen(true)}
-        onModelChange={(event) => setSelectedModelAlias(event.target.value)}
-        onSaveModel={() => saveDefaultModel(selectedModelAlias)}
+        onModelChange={(event) => {
+          const alias = event.target.value;
+          setSelectedModelAlias(alias);
+          saveDefaultModel(alias);
+        }}
         onTogglePin={() => {
           const isPinned =
             !!dashboard.localRuntime.pinnedModelId &&
@@ -577,6 +580,7 @@ export default function App() {
             id: `worker-settings:${worker.id}` as import('./app-types').SettingsTab,
             label: worker.displayName ?? worker.name,
             icon: worker.section === 'system' ? 'system' : 'config',
+            order: worker.kind === 'provider' ? 20 : worker.section === 'system' ? 60 : 70,
           }))}
         operations={operations}
         store={store}

@@ -24,7 +24,6 @@ interface TopBarProps {
   logoutBusy: boolean;
   onOpenNavigation: () => void;
   onModelChange: ChangeEventHandler<HTMLSelectElement>;
-  onSaveModel: () => void;
   onTogglePin: () => void;
   onDismissError: () => void;
   onLogout: () => void;
@@ -46,7 +45,6 @@ export function TopBar({
   logoutBusy,
   onOpenNavigation,
   onModelChange,
-  onSaveModel,
   onTogglePin,
   onDismissError,
   onLogout,
@@ -139,7 +137,7 @@ export function TopBar({
 
       <div className="topbar-actions">
         <label className="model-select">
-          <span>Active model</span>
+          <span>Default model</span>
           <select value={selectedModelAlias} onChange={onModelChange}>
             {models.map((model) => (
               <option key={model.alias} value={model.alias}>
@@ -148,14 +146,6 @@ export function TopBar({
             ))}
           </select>
         </label>
-        <button
-            className="compact-button primary"
-            type="button"
-            disabled={modelBusy}
-            onClick={onSaveModel}
-          >
-          Save
-        </button>
         {selectedModelIsLocal ? (
           <button
             className={`compact-button${selectedModelIsPinned ? ' pin-active' : ''}`}

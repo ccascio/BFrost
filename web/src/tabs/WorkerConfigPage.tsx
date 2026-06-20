@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from 'react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import type {
   DashboardState,
   JobParamDraftValue,
@@ -108,6 +108,7 @@ function WorkerConfigurationSurface({
   fetchDashboard,
   saveWorkerConfigurationSurface,
 }: WorkerConfigurationSurfaceProps) {
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const connectView = dashboardViews.find(
     (view) => view.workerId === worker.id && view.kind === 'channel-connect' && view.surfaceIds.includes(surface.id),
   );
@@ -120,6 +121,15 @@ function WorkerConfigurationSurface({
   const draft = surfaceDrafts[key] ?? buildSurfaceDraft(surface, dashboard.workerData);
   const canPersist = Boolean(surface.path && !surface.path.includes('#'));
   const canSubmit = canPersist && surfaceDraftHasValue(fields, draft);
+  const fieldGroups = surface.fieldGroups ?? [];
+  const groupedFields = fieldGroups.length > 0
+    ? fields.filter((field) => field.group && fieldGroups.some((group) => group.id === field.group))
+    : [];
+  const hasGroupedLayout = fieldGroups.length > 0 && groupedFields.length > 0;
+  const selectedGroup = fieldGroups.find((group) => group.id === selectedGroupId) ?? fieldGroups[0] ?? null;
+  const selectedGroupFields = selectedGroup
+    ? fields.filter((field) => field.group === selectedGroup.id)
+    : [];
 
   function updateSurfaceDraftParam(fieldKey: string, value: JobParamDraftValue) {
     setSurfaceDrafts((current) => ({
@@ -141,14 +151,15 @@ function WorkerConfigurationSurface({
     );
   }
 
-  return (
-    <div className="detail-body">
-      <div className="job-grid config-field-grid">
-        {fields.map((field) =>
+  function renderFieldEditors(visibleFields: typeof fields, className = 'job-grid config-field-grid') {
+    return (
+      <div className={className}>
+        {visibleFields.map((field) =>
           <DashboardFieldEditor
             key={field.key}
             field={field}
             value={draft[field.key] ?? fieldDefaultDraftValue(field, dashboard.workerData)}
+            formValues={draft}
             onChange={(nextValue) => updateSurfaceDraftParam(field.key, nextValue)}
             customListItemDrafts={customListItemDrafts}
             setCustomListItemDrafts={setCustomListItemDrafts}
@@ -157,6 +168,50 @@ function WorkerConfigurationSurface({
           />,
         )}
       </div>
+    );
+  }
+
+  return (
+    <div className="detail-body">
+      {hasGroupedLayout ? (
+        <div className="config-provider-layout">
+          <div className="config-provider-list" role="listbox" aria-label={`${surface.label} providers`}>
+            {fieldGroups.map((group) => {
+              const selected = group.id === selectedGroup?.id;
+              const providerFieldCount = fields.filter((field) => field.group === group.id).length;
+              return (
+                <button
+                  key={group.id}
+                  type="button"
+                  className={`run-item run-button job-row-button${selected ? ' selected' : ''}`}
+                  aria-selected={selected}
+                  role="option"
+                  onClick={() => setSelectedGroupId(group.id)}
+                >
+                  <div>
+                    <strong>{group.label}</strong>
+                    {group.description ? <span>{group.description}</span> : null}
+                  </div>
+                  <StatusPill tone="muted">{`${providerFieldCount} settings`}</StatusPill>
+                </button>
+              );
+            })}
+          </div>
+
+          <section className="config-provider-detail" aria-live="polite">
+            <div className="panel-head section-break">
+              <div>
+                <p className="panel-kicker">Provider</p>
+                <h2>{selectedGroup?.label ?? surface.label}</h2>
+                {selectedGroup?.description ? <p className="footnote">{selectedGroup.description}</p> : null}
+              </div>
+            </div>
+            {selectedGroupFields.length > 0
+              ? renderFieldEditors(selectedGroupFields, 'config-provider-field-stack')
+              : <p className="empty-state">No settings declared for this provider.</p>}
+          </section>
+        </div>
+      ) : renderFieldEditors(fields)}
 
       <div className="panel-actions wrap">
         <button

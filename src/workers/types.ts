@@ -331,7 +331,14 @@ export interface WorkerDashboardSurface {
   description: string;
   path?: string;
   tab?: string;
+  fieldGroups?: WorkerDashboardFieldGroup[];
   fields?: WorkerJobDashboardField[];
+}
+
+export interface WorkerDashboardFieldGroup {
+  id: string;
+  label: string;
+  description?: string;
 }
 
 export interface WorkerJobManifest {
@@ -409,6 +416,7 @@ export type WorkerJobDashboardField =
 interface WorkerJobBaseField {
   key: string;
   label: string;
+  group?: string;
   helpText?: string;
   /**
    * Optional dotted path into the dashboard's `workerData` bag. When present, the
@@ -474,6 +482,14 @@ export interface WorkerJobActionField extends WorkerJobBaseField {
   method?: 'POST' | 'GET';
   buttonLabel?: string;
   openInPopup?: boolean;
+  enabledWhen?: WorkerDashboardFieldCondition;
+  disabled?: boolean;
+  disabledReason?: string;
+}
+
+export interface WorkerDashboardFieldCondition {
+  field: string;
+  equals: string;
 }
 
 export interface WorkerJobRunResult {

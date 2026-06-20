@@ -2290,6 +2290,40 @@ h3 {
   min-height: 8rem;
 }
 
+.config-provider-layout {
+  display: grid;
+  grid-template-columns: minmax(20rem, 0.58fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.config-provider-list {
+  display: grid;
+  gap: 0.6rem;
+  max-height: min(58vh, 42rem);
+  overflow: auto;
+  padding-right: 0.25rem;
+}
+
+.config-provider-list .run-item {
+  width: 100%;
+  text-align: left;
+}
+
+.config-provider-list .status-pill {
+  white-space: nowrap;
+}
+
+.config-provider-detail {
+  min-width: 0;
+}
+
+.config-provider-field-stack {
+  display: grid;
+  gap: 1rem;
+  max-width: 46rem;
+}
+
 .run-item-actions {
   display: flex;
   gap: 0.5rem;
@@ -3145,8 +3179,15 @@ code {
   .job-grid,
   .jobs-workspace,
   .queue-workspace,
-  .runs-workspace {
+  .runs-workspace,
+  .config-provider-layout {
     grid-template-columns: 1fr;
+  }
+
+  .config-provider-list {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
   }
 
   .hero,

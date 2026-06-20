@@ -24,55 +24,7 @@ export const openaiProviderWorker: WorkerManifest = {
     { key: 'openaiConfigured', label: 'OpenAI provider access', settingsTarget: 'system' },
   ],
   dashboard: {
-    settings: [
-      {
-        id: 'credentials',
-        label: 'Provider access',
-        description:
-          'Choose OpenAI API key billing or ChatGPT subscription access through your local Codex ChatGPT login. API keys are stored in your local .env file.',
-        path: '/api/workers/providers-openai/credentials',
-        fields: [
-          {
-            type: 'select' as const,
-            key: 'authMode',
-            label: 'Access mode',
-            defaultValue: 'api',
-            seedPath: 'core.providers.openai.authMode',
-            options: [
-              { label: 'OpenAI API key', value: 'api' },
-              { label: 'ChatGPT subscription', value: 'subscription' },
-            ],
-            helpText:
-              'Subscription mode uses OAuth credentials from `codex login` and the ChatGPT Codex Responses transport.',
-          },
-          {
-            type: 'secret-reference' as const,
-            key: 'apiKey',
-            label: 'OpenAI API key',
-            defaultValue: '',
-            helpText: 'Required for API-key mode. Starts with sk-. Leave blank to keep the current key.',
-          },
-          {
-            type: 'text' as const,
-            key: 'codexCliModel',
-            label: 'ChatGPT subscription model',
-            defaultValue: 'gpt-5.4-mini',
-            seedPath: 'core.providers.openai.codexCliModel',
-            helpText: 'Used only in subscription mode. Pick a model your ChatGPT/Codex subscription can access.',
-          },
-          {
-            type: 'action' as const,
-            key: 'chatgptLogin',
-            label: 'ChatGPT subscription login',
-            buttonLabel: 'Log in with ChatGPT',
-            actionPath: '/api/workers/providers-openai/oauth/start',
-            method: 'POST' as const,
-            openInPopup: true,
-            helpText: 'Opens OpenAI login in a browser popup and saves the returned OAuth session locally for subscription mode.',
-          },
-        ],
-      },
-    ],
+    settings: [],
   },
   jobs: [],
   providers: [

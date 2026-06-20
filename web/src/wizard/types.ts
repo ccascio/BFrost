@@ -55,6 +55,7 @@ export type WorkerDashboardField =
       key: string;
       label: string;
       defaultValue: string;
+      group?: string;
       placeholder?: string;
       helpText?: string;
     }
@@ -63,6 +64,7 @@ export type WorkerDashboardField =
       key: string;
       label: string;
       defaultValue: number;
+      group?: string;
       helpText?: string;
     }
   | {
@@ -70,6 +72,7 @@ export type WorkerDashboardField =
       key: string;
       label: string;
       defaultValue: boolean;
+      group?: string;
       helpText?: string;
     }
   | {
@@ -78,6 +81,7 @@ export type WorkerDashboardField =
       label: string;
       defaultValue: string;
       options: Array<{ label: string; value: string }>;
+      group?: string;
       helpText?: string;
     }
   | {
@@ -85,6 +89,7 @@ export type WorkerDashboardField =
       key: string;
       label: string;
       defaultValue: string[];
+      group?: string;
       helpText?: string;
     }
   | {
@@ -92,9 +97,13 @@ export type WorkerDashboardField =
       key: string;
       label: string;
       actionPath: string;
+      group?: string;
       method?: 'POST' | 'GET';
       buttonLabel?: string;
       openInPopup?: boolean;
+      enabledWhen?: { field: string; equals: string };
+      disabled?: boolean;
+      disabledReason?: string;
       helpText?: string;
     };
 
@@ -104,6 +113,7 @@ export interface WorkerDashboardSurface {
   description: string;
   path?: string;
   tab?: string;
+  fieldGroups?: Array<{ id: string; label: string; description?: string }>;
   fields?: WorkerDashboardField[];
 }
 

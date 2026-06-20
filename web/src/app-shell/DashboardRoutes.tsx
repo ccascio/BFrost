@@ -170,6 +170,23 @@ export function DashboardRoutes(props: any) {
         />
       ) : null}
 
+      {activeTab === 'workers' ? (
+        <WorkersTab
+          dashboard={dashboard}
+          busyKey={busyKey}
+          workerDescription={operations.workers.workerDescription}
+          setWorkerDescription={operations.workers.setWorkerDescription}
+          generatedWorker={operations.workers.generatedWorker}
+          workerUploadFile={operations.workers.workerUploadFile}
+          setWorkerUploadFile={operations.workers.setWorkerUploadFile}
+          storeUpdates={store.storeUpdates}
+          generateWorkerFromDescription={operations.workers.generateWorkerFromDescription}
+          uploadWorkerZip={operations.workers.uploadWorkerZip}
+          deleteWorker={operations.workers.deleteWorker}
+          mutate={mutate}
+        />
+      ) : null}
+
       <SettingsModal
         isOpen={settingsOpen}
         activeTab={settingsTab as SettingsTab}
@@ -224,7 +241,7 @@ export function DashboardRoutes(props: any) {
           );
           if (tab === 'config') {
             const settingsWorkerEntries: SettingsWorkerEntry[] = (configGroupsByWorker as any[])
-              .filter((g: any) => g.worker.settingsOnly || g.worker.kind === 'provider')
+              .filter((g: any) => g.worker.settingsOnly && g.worker.kind !== 'provider')
               .map((group: any) => ({
                 worker: group.worker,
                 configPanel: (

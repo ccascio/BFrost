@@ -2,18 +2,18 @@ import type { ReactNode } from 'react';
 import { Icon } from '../icons';
 import type { SettingsTab } from '../app-types';
 
-const CORE_TABS: Array<{ id: SettingsTab; label: string; icon: string }> = [
-  { id: 'channels', label: 'Channels', icon: 'channels' },
-  { id: 'workers', label: 'Workers', icon: 'workers' },
-  { id: 'config', label: 'Config', icon: 'config' },
-  { id: 'system', label: 'System', icon: 'system' },
-  { id: 'actions', label: 'Actions', icon: 'actions' },
+const CORE_TABS: Array<{ id: SettingsTab; label: string; icon: string; order: number }> = [
+  { id: 'config', label: 'Config', icon: 'config', order: 10 },
+  { id: 'channels', label: 'Channels', icon: 'channels', order: 30 },
+  { id: 'system', label: 'System', icon: 'system', order: 40 },
+  { id: 'actions', label: 'Actions', icon: 'actions', order: 50 },
 ];
 
 export interface ExtraSettingsTab {
   id: SettingsTab;
   label: string;
   icon: string;
+  order?: number;
 }
 
 interface SettingsModalProps {
@@ -27,7 +27,7 @@ interface SettingsModalProps {
 
 export function SettingsModal({ isOpen, activeTab, onSetTab, onClose, renderContent, extraTabs = [] }: SettingsModalProps) {
   if (!isOpen) return null;
-  const allTabs = [...CORE_TABS, ...extraTabs];
+  const allTabs = [...CORE_TABS, ...extraTabs].slice().sort((a, b) => (a.order ?? 100) - (b.order ?? 100));
   return (
     <div
       className="settings-modal-overlay"
