@@ -15,6 +15,12 @@ import { useDashboardData } from './app-shell/useDashboardData';
 import { useDashboardOperations } from './app-shell/useDashboardOperations';
 import { useOverviewController } from './app-shell/useOverviewController';
 import { useStoreController } from './app-shell/useStoreController';
+import {
+  pathForDashboardTab,
+  pathForSettingsTab,
+  pushDashboardPath,
+  readDashboardRoute,
+} from './app-shell/routing';
 import { workerDashboardUi } from './workers/ui-contract';
 import {
   ActionClass, ActionRequest, ActionState, AppBackupRecord, AppError, AuthSession, AutoBackupSettings, CORE_CHAT_PROMPTS, CORE_MENU_ENTRIES, ChatProject, ChatPromptButton, ChatPromptExample, ChatThread, ChatTurn, CoreConfigKey, CoreDashboardTab, DASHBOARD_REFRESH_INTERVAL_MS, DashboardSectionName, DashboardState, DashboardTab, EventLogRecord, HealthStatus, JOBS_REFRESH_INTERVAL_MS, JobBaseField, JobBooleanField, JobDashboardField, JobDraft, JobMetricsResponse, JobNumberField, JobParamDraftValue, JobPreset, JobRunMetrics, JobSecretReferenceField, JobSelectField, JobStringListField, JobTextField, JobTextareaField, ModelOption, PERMISSION_INFO, PlatformSettings, QueueFilter, QueueItem, RecipeInputStorage, RegisteredPlatformEntry, RunStatus, SchedulerJobState, SchedulerRunRecord, SettingsTab, SourceQualityRules, StoreWorkerDetail, StoreWorkerListing, StoreWorkerVersion, WhatsNewEntry, WorkerDashboardManifest, WorkerDashboardSurface, WorkerHealthRequirementStatus, WorkerHealthState, WorkerJobSummary, WorkerKind, WorkerLoadIssue, WorkerOnboardingAction, WorkerOwnedSetting, WorkerRecipe, WorkerRecipeInput, WorkerRecipeStep, WorkerRunMetrics, WorkerSummary, WorkerTabDefinition, toAppError,
@@ -24,20 +30,32 @@ import {
 } from './app-helpers';
 
 export default function App() {
-  const [activeTabState, setActiveTabRaw] = useState<DashboardTab>('overview');
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>('config');
+  const [activeTabState, setActiveTabRaw] = useState<DashboardTab>(() => readDashboardRoute().activeTab);
+  const [settingsOpen, setSettingsOpen] = useState(() => readDashboardRoute().settingsOpen);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>(() => readDashboardRoute().settingsTab);
 
   const SETTINGS_TABS = new Set<string>(['channels', 'workers', 'config', 'system', 'actions']);
   function setActiveTab(tab: DashboardTab) {
     if (SETTINGS_TABS.has(tab) || (tab as string).startsWith('worker-settings:')) {
-      setSettingsTab(tab as SettingsTab);
-      setSettingsOpen(true);
+      openSettingsTab(tab as SettingsTab);
       return;
     }
     setSettingsOpen(false);
     // pipeline is now embedded in Overview
-    setActiveTabRaw(tab === 'pipeline' ? 'overview' : tab);
+    const nextTab = tab === 'pipeline' ? 'overview' : tab;
+    setActiveTabRaw(nextTab);
+    pushDashboardPath(pathForDashboardTab(nextTab));
+  }
+
+  function openSettingsTab(tab: SettingsTab) {
+    setSettingsTab(tab);
+    setSettingsOpen(true);
+    pushDashboardPath(pathForSettingsTab(tab));
+  }
+
+  function closeSettings() {
+    setSettingsOpen(false);
+    pushDashboardPath(pathForDashboardTab(activeTabState));
   }
   const activeTab = activeTabState;
   const [selectedJobName, setSelectedJobName] = useState<string | null>(null);
@@ -143,6 +161,18 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem('bfrost.sidebarCollapsed', String(sidebarCollapsed));
   }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    function handlePopState() {
+      const route = readDashboardRoute();
+      setActiveTabRaw(route.activeTab === 'pipeline' ? 'overview' : route.activeTab);
+      setSettingsOpen(route.settingsOpen);
+      setSettingsTab(route.settingsTab);
+    }
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   useEffect(() => {
     if (!dashboard || introFiredRef.current) return;
@@ -299,14 +329,16 @@ export default function App() {
     }))
     .filter((group) => group.jobs.length > 0);
   const configGroupsByWorker = dashboard.workers
-    .filter((worker) => worker.enabled && worker.kind !== 'channel')
+    .filter((worker) => worker.kind !== 'channel' && (worker.enabled || worker.kind === 'provider'))
     .map((worker) => ({
       worker,
-      surfaces: worker.dashboard.settings.filter((surface) => surface.tab === 'config'),
+      surfaces: worker.dashboard.settings.filter((surface) => (surface.tab ?? 'config') === 'config'),
     }))
     .filter((group) => group.surfaces.length > 0);
   const configJobCount = 0;
-  const configSurfaceCount = 0; // worker surfaces now live in per-worker Config tabs
+  const configSurfaceCount = configGroupsByWorker.filter(
+    ({ worker }) => worker.settingsOnly || worker.kind === 'provider',
+  ).length;
   const configCoreCount = 3; // platform routing + embedding + security
   const workerTabDefinitions = buildWorkerTabDefinitions(dashboard.workers, dashboardViews);
   const activeWorkerTab = workerTabDefinitions.find((tab) => tab.id === activeTab) ?? null;
@@ -368,9 +400,10 @@ export default function App() {
     })),
     // Per-worker Config entries.
     // Workers WITH a dashboard tab → "Config" child under the parent.
-    // Workers WITHOUT a dashboard tab AND settingsOnly → hidden from sidebar (appear in Settings modal Config tab instead).
+    // Providers and settingsOnly workers live in the Settings modal Config tab instead.
     // Workers WITHOUT a dashboard tab (and not settingsOnly) → standalone entry with the worker's name.
     ...configGroupsByWorker.flatMap(({ worker }) => {
+      if (worker.settingsOnly || worker.kind === 'provider') return [];
       const workerTab = workerTabDefinitions.find((t) => t.worker.id === worker.id);
       const baseOrder = workerTab ? (workerTab.definition.menu?.order ?? 1000) : 900;
       const workerSection = worker.section === 'system' ? 'System' : 'Workers';
@@ -385,8 +418,6 @@ export default function App() {
           parentId: workerTab.id as DashboardTab,
         }];
       }
-      // settingsOnly workers with no dashboard tab live in the Settings modal, not the sidebar.
-      if (worker.settingsOnly) return [];
       return [{
         id: `worker-config:${worker.id}` as DashboardTab,
         label: worker.displayName ?? worker.name,
@@ -456,7 +487,7 @@ export default function App() {
           setSidebarMobileOpen(false);
         }}
         onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => openSettingsTab(settingsTab)}
       />
       <button
         className="sidebar-mobile-backdrop"
@@ -477,9 +508,12 @@ export default function App() {
 
       <DashboardRoutes
         settingsOpen={settingsOpen}
-        setSettingsOpen={setSettingsOpen}
+        setSettingsOpen={(open: boolean) => {
+          if (open) openSettingsTab(settingsTab);
+          else closeSettings();
+        }}
         settingsTab={settingsTab}
-        setSettingsTab={setSettingsTab}
+        setSettingsTab={openSettingsTab}
         activeTab={activeTab}
         activeWorkerTab={activeWorkerTab}
         dashboard={dashboard}
@@ -518,7 +552,7 @@ export default function App() {
         setCustomListItemDrafts={setCustomListItemDrafts}
         mutate={mutate}
         triggerRun={triggerRun}
-        configCoreCount={configCoreCount}
+        configCoreCount={configCoreCount + configSurfaceCount}
         selectedCoreConfigKey={selectedCoreConfigKey}
         setSelectedCoreConfigKey={setSelectedCoreConfigKey}
         activeLocalProviderDraft={activeLocalProviderDraft}

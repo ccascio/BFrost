@@ -50,6 +50,18 @@ export function ConfigTab(props: ConfigTabProps) {
     { done: hasEnabledWorker, label: 'Enable a worker', detail: 'Turn on a worker from the Workers tab.', action: () => setActiveTab('workers') },
     { done: hasRun, label: 'Let a job run', detail: 'Trigger a job manually from the Jobs tab, or wait for the scheduler.', action: () => setActiveTab('jobs') },
   ];
+  const selectedWorkerEntry = selectedCoreConfigKey?.startsWith('worker:')
+    ? settingsWorkerEntries.find((entry) => `worker:${entry.worker.id}` === selectedCoreConfigKey)
+    : null;
+  const selectedDetailTitle = selectedWorkerEntry
+    ? `${selectedWorkerEntry.worker.displayName ?? selectedWorkerEntry.worker.name} config`
+    : selectedCoreConfigKey === 'platform-routing'
+      ? 'Platform routing'
+      : selectedCoreConfigKey === 'embedding-model'
+        ? 'Embedding model'
+        : selectedCoreConfigKey === 'platform-security'
+          ? 'Platform & security'
+          : 'Platform settings';
 
   return (
     <>
@@ -160,7 +172,9 @@ export function ConfigTab(props: ConfigTabProps) {
                 <section key={worker.id} className="job-worker-group">
                   <div className="job-worker-head">
                     <div>
-                      <p className="panel-kicker">System</p>
+                      <p className="panel-kicker">
+                        {worker.kind === 'provider' ? 'Model provider' : worker.section === 'system' ? 'System' : 'Worker'}
+                      </p>
                       <h3>{worker.displayName ?? worker.name}</h3>
                       <span>{worker.description}</span>
                     </div>
@@ -192,9 +206,9 @@ export function ConfigTab(props: ConfigTabProps) {
               <div className="panel-head">
                 <div>
                   <p className="panel-kicker">Configuration</p>
-                  <h2>{selectedCoreConfigKey === 'platform-routing' ? 'Platform routing' : selectedCoreConfigKey === 'embedding-model' ? 'Embedding model' : selectedCoreConfigKey === 'platform-security' ? 'Platform & security' : 'Platform settings'}</h2>
+                  <h2>{selectedDetailTitle}</h2>
                 </div>
-                {selectedCoreConfigKey ? <StatusPill tone="muted">Platform</StatusPill> : null}
+                {selectedCoreConfigKey ? <StatusPill tone="muted">{selectedWorkerEntry ? 'Worker' : 'Platform'}</StatusPill> : null}
               </div>
 
               {selectedCoreConfigKey === 'platform-routing' ? platformRoutingPanel : null}
@@ -203,7 +217,7 @@ export function ConfigTab(props: ConfigTabProps) {
                 : null}
               {selectedCoreConfigKey === 'platform-security' ? platformSecurityPanel : null}
               {selectedCoreConfigKey?.startsWith('worker:')
-                ? (settingsWorkerEntries.find((e) => `worker:${e.worker.id}` === selectedCoreConfigKey)?.configPanel ?? null)
+                ? (selectedWorkerEntry?.configPanel ?? null)
                 : null}
               {!selectedCoreConfigKey ? (
                 <p className="empty-state">Select a platform setting on the left to configure it. Worker settings are in each worker's Config subtab.</p>

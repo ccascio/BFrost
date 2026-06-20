@@ -224,7 +224,7 @@ export function DashboardRoutes(props: any) {
           );
           if (tab === 'config') {
             const settingsWorkerEntries: SettingsWorkerEntry[] = (configGroupsByWorker as any[])
-              .filter((g: any) => g.worker.settingsOnly)
+              .filter((g: any) => g.worker.settingsOnly || g.worker.kind === 'provider')
               .map((group: any) => ({
                 worker: group.worker,
                 configPanel: (
