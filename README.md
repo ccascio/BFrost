@@ -4,7 +4,7 @@
 
 # BFrost
 
-**It researches your topics, writes the notes, and delivers them to your Telegram every morning — entirely on your machine.**
+**Run AI operations on your own machine: scheduled research, local assistants, tool-using chats, approval-gated actions, and worker pipelines you can extend without touching the core.**
 
 ```bash
 npx bfrost
@@ -20,9 +20,19 @@ npx bfrost
 
 ## What is BFrost
 
-BFrost is a local scheduler and orchestration runtime for AI-driven automations. Every capability — scheduled jobs, AI assistants, communication channels, model providers, publishing destinations — is a **worker**. The core only knows how to install, configure, schedule, run, observe, and uninstall workers; it knows nothing about any specific workflow. Add a worker to add a feature; remove it to remove the feature.
+BFrost is a local AI operations platform. It gives you a dashboard, scheduler, chat surface, model-provider hub, worker store, approval queue, event log, backups, and a typed Item Bus for building real workflows.
 
-Everything runs on your own machine — model inference, scheduler state, queue state, and the dashboard. There is no hosted service, no remote loading, no usage tracking; workers load from directories you control and your data stays in a SQLite file you own. The bundled reference workers give you a news-harvesting → research-notes → multi-channel-publishing pipeline out of the box (Telegram two-way chat, Discord and email notifications, X / WordPress publishing, LM Studio / Ollama / OpenAI / Anthropic providers). They use the same contract you do, so you can swap, disable, or replace any of them without touching the core.
+The design rule is simple: **every capability is a worker**. News harvesting, Telegram, shell commands, model providers, research notes, publishing destinations, and assistant tools all use the same worker contract. The core only installs, configures, schedules, runs, observes, and uninstalls workers. Add a worker to add a feature. Remove it and the feature is gone.
+
+Everything runs locally. There is no hosted service, no telemetry, and no remote worker loading. Your state lives in SQLite. Your workers live in directories you control. Your models can be local through LM Studio or Ollama, cloud through OpenAI/Anthropic subscription login or API keys, or API-key based providers such as DeepSeek, Groq, xAI, OpenRouter, Cerebras, Together, Hugging Face, and more.
+
+What you can build with it:
+
+- a morning news digest that researches your topics and sends the result to Telegram
+- a finance-news monitor that explains market relevance without pretending to be trading advice
+- a local assistant that can inspect jobs, queue items, worker health, and run history
+- approval-gated publish flows for X, WordPress, or any publisher worker you add
+- custom scheduled workers generated from a plain-English description or authored by hand
 
 ## Dashboard preview
 
@@ -61,16 +71,18 @@ BFrost ships with a local dashboard for the whole worker lifecycle: pick models,
 
 From the dashboard you can:
 
-- run the guided first-run wizard (model → embeddings → channels → workers → first run → security)
+- connect OpenAI, Anthropic, LM Studio, Ollama, and other LLM providers from one **LLM Providers** tab
+- choose the default model from the header and route jobs to local or cloud models
+- run the guided first-run wizard, then apply recipes such as a morning digest
 - enable/disable workers and inspect their health, credentials, and dependencies
-- configure, schedule, and manually trigger jobs, with one-click recipe presets and preview-before-save edits
-- approve or reject queued worker actions with a diff preview and audit history
-- track per-worker job metrics — success rate, p50/p95 run duration, last failure
-- browse and install workers from the Worker Store, or side-load a worker zip
-- create and restore guarded SQLite backups (integrity-checked, with a pre-restore safety copy)
-- manage model providers, embeddings, LM Studio runtime actions, and Platform & Security settings
+- configure, schedule, and manually trigger jobs with preview-before-save edits
+- approve or reject file/shell actions with a diff preview and audit history
+- browse the Worker Store or side-load a worker zip
+- create and restore guarded SQLite backups
 
-## Quickstart
+## Install
+
+### One-command install
 
 Requires **Node.js 20+** — enough to run the zero-config demo.
 
@@ -78,22 +90,30 @@ Requires **Node.js 20+** — enough to run the zero-config demo.
 npx bfrost
 ```
 
-Or with Docker:
+Open <http://127.0.0.1:3030>. Click **Try the live demo — no setup** to watch a sample news → research pipeline run on the Item Bus with no API key and no model.
+
+Then open **Settings → LLM Providers** and connect the model you want:
+
+- **ChatGPT subscription:** log in with OpenAI from the popup.
+- **Claude subscription:** log in with Anthropic from the popup.
+- **API key:** paste an OpenAI, Anthropic, DeepSeek, Groq, xAI, OpenRouter, or other provider key.
+- **Local model:** run LM Studio or Ollama, then adopt it from the dashboard.
+
+State lives in `~/.bfrost` when you use `npx bfrost`. Override it with `--home <dir>`. Run `npx bfrost --help` for flags.
+
+### Docker
 
 ```bash
 docker run -d --name bfrost -p 127.0.0.1:3030:3030 -v bfrost-data:/app/data ghcr.io/ccascio/bfrost
 ```
 
-Open <http://127.0.0.1:3030> and click **“Try the live demo — no setup”** to watch a sample news → research pipeline run on the Item Bus with no API key or model. Then wire up your own workers — the setup wizard opens on first boot, or follow the [5-minute quickstart](./docs/quickstart.md).
+The repo also ships a [`docker-compose.yml`](./docker-compose.yml) with host-gateway mapping for LM Studio/Ollama on the host and a commented `ADMIN_PASSWORD` slot for network exposure.
 
-With npx, state lives in `~/.bfrost` (override with `--home <dir>`; `bfrost --help` lists the flags). The repo also ships a [`docker-compose.yml`](./docker-compose.yml) with the host-gateway mapping needed to reach an LM Studio / Ollama instance on the host and a commented `ADMIN_PASSWORD` slot for network exposure.
-
-### From source (contributors)
+### From source
 
 ```bash
 git clone https://github.com/ccascio/BFrost.git && cd BFrost
 npm install
-cp .env.example .env
 npm run build      # compile backend + dashboard (required before npm start)
 npm start          # starts in the background; safe to re-run (stops any existing instance first)
 ```
@@ -105,8 +125,9 @@ npm start          # starts in the background; safe to re-run (stops any existin
 
 ## Requirements
 
-- **Core:** Node.js 20+ (or just Docker). Enough for the zero-config demo.
-- **Real work:** at least one model provider — a local OpenAI-compatible endpoint (LM Studio or Ollama) or a cloud API key (OpenAI / Anthropic).
+- **Core:** Node.js 20+ or Docker.
+- **Demo:** no API key, no model.
+- **Real work:** one model provider. Use LM Studio/Ollama locally, OpenAI/Anthropic subscription login, or provider API keys.
 - **Per-worker, as you enable them:**
   - Telegram bot token — `core.channels.telegram`
   - Google Custom Search credentials — `core.search.google`, `core.news`, `core.research`
@@ -114,9 +135,11 @@ npm start          # starts in the background; safe to re-run (stops any existin
   - A WordPress site with Application Passwords — the [`wordpress-publisher`](./workers/examples/wordpress-publisher/README.md) example
   - `ffmpeg`, `whisper-cli`, and a Whisper model file — voice features
 
-## Commands & running it
+## Running it
 
-Always `npm run build` before the first start and after pulling new code. `npm start` runs the server as a **background process** (the terminal is free to close) and stops any existing instance first, so it is safe to re-run.
+For regular use, `npx bfrost` is the simplest path.
+
+For source installs, run `npm run build` before the first start and after pulling new code. `npm start` runs BFrost as a background process and stops any existing instance first, so it is safe to re-run.
 
 | Command | Description |
 |---|---|
@@ -125,7 +148,7 @@ Always `npm run build` before the first start and after pulling new code. `npm s
 | `npm start` | Start in background (stops any existing instance first) |
 | `npm stop` | Stop the running instance |
 | `npm run logs` | Tail `data/bfrost.log` (macOS / Linux; on Windows use `Get-Content -Path data\bfrost.log -Wait`) |
-| `npm run install-service` / `npm run uninstall-service` | Register / remove an OS service that auto-starts on login and restarts on crash |
+| `npm run install-service` / `npm run uninstall-service` | Register / remove an OS service that starts on login and restarts on crash |
 | `npm run dev` | Run tests, then start backend + Vite dashboard in the foreground |
 | `npm run dev:watch` / `npm run dev:web` | Backend TypeScript watch / Vite dev server only |
 | `npm run task -- --job <id>` | Run a named job once and exit (e.g. `news-digest`, `tweet-post`) |
@@ -153,7 +176,9 @@ These workers ship with BFrost and double as worked examples. They use the same 
 - **`core.channels.telegram`** — Telegram channel worker, two-way, with a guided BotFather setup flow.
 - **`core.channels.discord`** — Discord channel worker for operator notifications (send-only in this version), with a guided Developer Portal walkthrough.
 - **`core.channels.email`** — emails you when a job runs, fails, or needs attention, over SMTP with any provider (send-only in this version).
-- **`core.providers.lmstudio`**, **`core.providers.openai`**, **`core.providers.anthropic`** — model provider workers. Local via LM Studio, or cloud via OpenAI / Anthropic API key.
+- **`core.providers.lmstudio`** — local model runtime through LM Studio or an OpenAI-compatible local endpoint.
+- **`core.providers.openai`**, **`core.providers.anthropic`** — OpenAI and Anthropic model providers, with API-key mode and subscription-login mode.
+- **`core.providers.pi-compatible`** — additional tool-capable cloud providers from the Pi-compatible catalog, including DeepSeek, Groq, xAI, OpenRouter, Cerebras, NVIDIA NIM, Vercel AI Gateway, Z.AI, Moonshot AI, Hugging Face, Together AI, OpenCode Zen, Cloudflare Workers AI, and Xiaomi MiMo.
 
 ## How it works
 
@@ -185,6 +210,7 @@ BFrost lives in the same neighborhood as projects like [OpenClaw](https://github
 - **Worker bus as the contract.** Workers communicate through a typed pub/sub Item Bus and namespaced storage — not through direct calls or shared globals. Adding a new publisher (X, WordPress, Mastodon, BlueSky) requires zero changes to existing workers; it just consumes the items it cares about and writes its outcome into its own metadata slice.
 - **Tighter scope, smaller surface.** Single-user, SQLite-backed, no companion apps, no multi-agent routing, no Canvas. If you want a hackable scheduler + worker substrate you can read end-to-end in a weekend, this is built for that. If you want a multi-platform assistant with native apps, look at OpenClaw instead.
 - **Editorial workflow built-in.** News ingestion → research notes → publishing ships in the box as reference workers. The same shape works for any "fetch → think → publish" pipeline you want to build.
+- **Provider choice without a provider-shaped core.** Model providers are workers too. The dashboard can expose OpenAI, Anthropic, local runtimes, and API-key providers in one LLM Providers surface without hard-coding them into the platform core.
 
 Not a fit if: you need multi-user, you want a polished consumer UI, or you're not willing to run Node 20+ and a model endpoint on your own box.
 
@@ -216,13 +242,20 @@ The skill text is plain Markdown with no Claude-specific syntax; it works as a p
 
 ## Status — public preview (`v0.2.0`)
 
-BFrost is published as a **public preview**. The worker-first contract is in place end-to-end: the core is decoupled from built-in worker names; tools, channels, and providers are all worker types; the shared Item Bus and per-worker storage are in place; local workers compile-on-load with a typed `bfrost` SDK; and the permissioned action runtime scope-checks, queues, approves, executes, and audits file and shell actions.
+BFrost is published as a **public preview**. The worker-first contract is in place end-to-end: tools, channels, model providers, dashboards, scheduled jobs, and local worker code all sit behind worker manifests. The shared Item Bus and per-worker storage are in place; local workers compile on load with a typed `bfrost` SDK; and the permissioned action runtime scope-checks, queues, approves, executes, and audits file and shell actions.
+
+Recent highlights:
+
+- unified **LLM Providers** settings for OpenAI, Anthropic, local runtimes, and additional cloud providers
+- ChatGPT and Claude subscription-login flows, plus API-key mode
+- provider-aware model discovery and default-model selection from the dashboard header
+- typed AI SDK tool support through subscription transports where available
 
 Still open before a `v1.0.0` tag:
 
 - **Sandbox scopes for worker code** — network-domain and credential-scope allowlists are deferred, and enabled local worker code currently runs with full Node privileges, unsandboxed. Enable only code you trust, and keep destructive workers narrow.
-- **Frontend smoke test** for the schema-rendered job form.
-- **Hosted docs site, scripted demo, and an in-dashboard Worker Gallery.** Browsable documentation already lives at <https://bfrost.net/>, covering getting started, architecture, example workers, and authoring with Claude Code.
+- **Full browser smoke coverage** beyond the current component smoke checks.
+- **Hosted docs polish and Worker Gallery improvements.** Browsable documentation already lives at <https://bfrost.net/>, covering getting started, architecture, example workers, and authoring with Claude Code.
 
 The full punch list lives in [`ROADMAP.md`](./ROADMAP.md). Issues, worker proposals, and PRs are welcome.
 
