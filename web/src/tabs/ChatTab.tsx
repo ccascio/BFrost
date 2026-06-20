@@ -1,10 +1,11 @@
 // Chat tab — dashboard assistant: threads, projects, message history. Extracted
 // from App.tsx (CODE_ROADMAP Phase 1.2). Prop-driven.
 import type { Dispatch, RefObject, SetStateAction } from 'react';
-import { Button, Dialog } from '../ui';
+import { Button, Dialog, ArtifactPanel } from '../ui';
 import { Markdown } from '../Markdown';
 import { ChatWelcome, ChatSuggestions, HelpTip, StatusPill, buildChatPromptButtons, formatTime, formatRelativeTime } from '../app-helpers';
-import type { DashboardState, ChatThread, ChatProject, ChatTurn } from '../app-types';
+import { parseArtifacts, stripArtifacts } from '../app-helpers/artifacts';
+import type { ChatArtifact, DashboardState, ChatThread, ChatProject, ChatTurn } from '../app-types';
 import type { WorkerDashboardViewDefinition } from '../workers/types';
 
 export interface ChatTabProps {
@@ -37,6 +38,15 @@ export interface ChatTabProps {
   deleteChatThread: (thread: ChatThread) => void | Promise<void>;
   sendDashboardChat: () => void | Promise<void>;
   fillChatDraft: (prompt: string) => void;
+  artifacts: ChatArtifact[];
+  artifactPanelOpen: boolean;
+  setArtifactPanelOpen: Dispatch<SetStateAction<boolean>>;
+  artifactPanelPinned: boolean;
+  setArtifactPanelPinned: Dispatch<SetStateAction<boolean>>;
+  activeArtifactId: string | null;
+  setActiveArtifactId: Dispatch<SetStateAction<string | null>>;
+  openArtifact: (id: string) => void;
+  deleteArtifactFromConversation: (id: string) => void | Promise<void>;
 }
 
 export function ChatTab(props: ChatTabProps) {
@@ -47,6 +57,8 @@ export function ChatTab(props: ChatTabProps) {
     setProjectComboQuery, projectComboRef, chatLogRef, chatInputRef, createChatProject,
     renameChatProject, startNewChat, openChatThread, renameChatThread, deleteChatThread,
     sendDashboardChat, fillChatDraft,
+    artifacts, artifactPanelOpen, setArtifactPanelOpen, artifactPanelPinned, setArtifactPanelPinned,
+    activeArtifactId, setActiveArtifactId, openArtifact, deleteArtifactFromConversation,
   } = props;
   return (
         <section className={`panel tab-page chat-page${chatArrivingFromOverview ? ' chat-page-arriving' : ''}`}>
@@ -55,14 +67,40 @@ export function ChatTab(props: ChatTabProps) {
               <p className="panel-kicker">Assistant</p>
               <h2>Dashboard chat <HelpTip>Type naturally to ask about your queue, schedules, or workers — or give plain-language commands. The assistant uses the same AI model you have configured in Settings. All messages stay on your machine.</HelpTip></h2>
             </div>
-            <StatusPill tone={
-              dashboard.workers.find(
-                (w) => w.kind === 'provider' && w.id.endsWith(`.${dashboard.defaultModel.provider}`)
-              )?.healthState === 'healthy' ? 'good' : 'warning'
-            }>
-              {dashboard.defaultModel.alias}
-            </StatusPill>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {artifacts.length > 0 && (
+                <button
+                  type="button"
+                  className="chat-artifacts-toggle"
+                  onClick={() => setArtifactPanelOpen((o) => !o)}
+                  title="View artifacts"
+                >
+                  ⬜ Artifacts {artifacts.length > 1 ? `(${artifacts.length})` : ''}
+                </button>
+              )}
+              <StatusPill tone={
+                dashboard.workers.find(
+                  (w) => w.kind === 'provider' && w.id.endsWith(`.${dashboard.defaultModel.provider}`)
+                )?.healthState === 'healthy' ? 'good' : 'warning'
+              }>
+                {dashboard.defaultModel.alias}
+              </StatusPill>
+            </div>
           </div>
+
+          {/* Floating (sheet) artifact panel — only when not pinned */}
+          {!artifactPanelPinned && (
+            <ArtifactPanel
+              open={artifactPanelOpen}
+              onOpenChange={setArtifactPanelOpen}
+              pinned={false}
+              onPinChange={(v) => { setArtifactPanelPinned(v); if (v) setArtifactPanelOpen(false); }}
+              artifacts={artifacts}
+              activeId={activeArtifactId}
+              onSelectId={setActiveArtifactId}
+              onDelete={(id) => void deleteArtifactFromConversation(id)}
+            />
+          )}
 
           <div className="chat-workspace">
             <aside className="chat-history">
@@ -216,24 +254,52 @@ export function ChatTab(props: ChatTabProps) {
               </div>
             </aside>
 
-            <div className="chat-main">
+            <div className={`chat-main${artifactPanelPinned && artifacts.length > 0 ? ' chat-main-split' : ''}`}>
+          <div className="chat-content">
           <div className="chat-log" ref={chatLogRef}>
             {chatTurns.length === 0 ? (
               <ChatWelcome prompts={buildChatPromptButtons(dashboard)} onSelect={fillChatDraft} />
             ) : null}
-            {chatTurns.map((turn, index) => (
-              <div className={`chat-turn ${turn.role}`} key={`${turn.createdAt}-${index}`}>
-                <div className="chat-turn-meta">
-                  <span className="chat-turn-role">{turn.role === 'user' ? 'You' : 'Assistant'}</span>
-                  <span className="chat-turn-time">{formatTime(turn.createdAt)}</span>
+            {chatTurns.map((turn, index) => {
+              const turnArtifacts = turn.role === 'assistant' ? parseArtifacts(turn.text) : [];
+              const prose = turnArtifacts.length > 0 ? stripArtifacts(turn.text) : turn.text;
+              return (
+                <div className={`chat-turn ${turn.role}`} key={`${turn.createdAt}-${index}`}>
+                  <div className="chat-turn-meta">
+                    <span className="chat-turn-role">{turn.role === 'user' ? 'You' : 'Assistant'}</span>
+                    <span className="chat-turn-time">{formatTime(turn.createdAt)}</span>
+                  </div>
+                  {turn.role === 'assistant' ? (
+                    <>
+                      {prose ? <Markdown source={prose} className="chat-turn-body" /> : null}
+                      {turnArtifacts.length > 0 && (
+                        <div className="chat-turn-artifacts">
+                          {turnArtifacts.map((a) => {
+                            const savedId = activeConversationId
+                              ? `${activeConversationId}:${a.identifier}`
+                              : null;
+                            return (
+                              <button
+                                key={a.identifier}
+                                type="button"
+                                className="chat-artifact-chip"
+                                onClick={() => savedId && openArtifact(savedId)}
+                              >
+                                <span className="chat-artifact-chip-icon">⬜</span>
+                                <span className="chat-artifact-chip-title">{a.title}</span>
+                                <span className="chat-artifact-chip-type">{a.type}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="chat-turn-body chat-turn-body-user">{turn.text}</div>
+                  )}
                 </div>
-                {turn.role === 'assistant' ? (
-                  <Markdown source={turn.text} className="chat-turn-body" />
-                ) : (
-                  <div className="chat-turn-body chat-turn-body-user">{turn.text}</div>
-                )}
-              </div>
-            ))}
+              );
+            })}
             {busyKey === 'dashboard-chat' ? (
               <div className="chat-turn assistant chat-turn-pending">
                 <div className="chat-turn-meta">
@@ -247,12 +313,10 @@ export function ChatTab(props: ChatTabProps) {
             ) : null}
           </div>
 
-          {chatTurns.length > 0 ? (
-            <ChatSuggestions
-              prompts={buildChatPromptButtons(dashboard)}
-              onSelect={fillChatDraft}
-            />
-          ) : null}
+          <ChatSuggestions
+            prompts={buildChatPromptButtons(dashboard)}
+            onSelect={fillChatDraft}
+          />
 
           <form
             className={`chat-composer${chatArrivingFromOverview ? ' chat-composer-arriving' : ''}`}
@@ -285,7 +349,22 @@ export function ChatTab(props: ChatTabProps) {
               {busyKey === 'dashboard-chat' ? 'Thinking…' : 'Send'}
             </button>
           </form>
-            </div>
+          </div>{/* end chat-content */}
+
+          {/* Pinned artifact panel — inline split */}
+          {artifactPanelPinned && artifacts.length > 0 && (
+            <ArtifactPanel
+              open={true}
+              onOpenChange={(v) => { if (!v) { setArtifactPanelPinned(false); setArtifactPanelOpen(false); } }}
+              pinned={true}
+              onPinChange={(v) => { setArtifactPanelPinned(v); if (!v) setArtifactPanelOpen(false); }}
+              artifacts={artifacts}
+              activeId={activeArtifactId}
+              onSelectId={setActiveArtifactId}
+              onDelete={(id) => void deleteArtifactFromConversation(id)}
+            />
+          )}
+            </div>{/* end chat-main */}
           </div>
         </section>
   );

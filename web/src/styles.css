@@ -409,6 +409,13 @@ textarea {
   border-bottom: 1px solid var(--line);
 }
 
+.ui-sheet-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 0 0 auto;
+}
+
 .ui-dialog-header h2,
 .ui-sheet-header h2 {
   margin: 0;
@@ -889,10 +896,21 @@ textarea {
   gap: 0.5rem;
 }
 
+.model-select-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.model-search,
 .model-select select {
-  width: min(19rem, 28vw);
+  width: min(13rem, 18vw);
   min-height: 2.3rem;
   padding-block: 0.45rem;
+}
+
+.model-search {
+  border-radius: 0.75rem;
 }
 
 .compact-button {
@@ -3010,6 +3028,490 @@ h3 {
   color: var(--brand-deep);
 }
 
+.chat-suggestion-templates-btn {
+  border-style: dashed;
+  opacity: 0.75;
+}
+.chat-suggestion-templates-btn:hover {
+  opacity: 1;
+}
+
+/* Prompt templates modal */
+.pt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.pt-item {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.pt-item-body {
+  flex: 1 1 auto;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.pt-item-body:hover {
+  background: var(--accent-muted);
+}
+
+.pt-item-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pt-item-prompt {
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pt-item-actions {
+  flex: 0 0 auto;
+  display: flex;
+  border-left: 1px solid var(--line);
+}
+
+.pt-item-action {
+  background: none;
+  border: none;
+  padding: 0 0.5rem;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.85rem;
+  transition: color var(--motion-fast), background var(--motion-fast);
+}
+
+.pt-item-action:hover {
+  color: var(--fg);
+  background: var(--accent-muted);
+}
+
+.pt-item-action-delete:hover {
+  color: var(--danger, #c0392b);
+  background: var(--danger-muted, #fdecea);
+}
+
+.pt-empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 1.5rem 0;
+}
+
+.pt-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.pt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.pt-field-label {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pt-field-input {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  color: var(--fg);
+  background: var(--surface);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.pt-field-input:focus {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.pt-field-textarea {
+  resize: vertical;
+  font-family: inherit;
+}
+
+.pt-form-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+/* ── Artifact split layout ──────────────────────────────────────────────── */
+
+/* chat-content wraps log + suggestions + composer; fills the left column */
+.chat-content {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* When pinned, chat-main becomes a horizontal split */
+.chat-main.chat-main-split {
+  flex-direction: row;
+  gap: 0;
+}
+
+.chat-main.chat-main-split .chat-content {
+  flex: 1 1 0;
+  min-width: 20rem;
+  border-right: 1px solid var(--line);
+}
+
+/* Inline pinned artifact panel */
+.artifact-panel-inline {
+  flex: 0 0 38%;
+  min-width: 22rem;
+  max-width: 48rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface);
+}
+
+.artifact-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+
+.artifact-panel-header-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.artifact-panel-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artifact-panel-header-actions {
+  display: flex;
+  gap: 0.2rem;
+  flex: 0 0 auto;
+}
+
+.artifact-pin-btn,
+.artifact-close-btn {
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  padding: 0.25rem 0.4rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--muted);
+  transition: background var(--motion-fast), color var(--motion-fast);
+  line-height: 1;
+}
+.artifact-pin-btn:hover,
+.artifact-close-btn:hover {
+  background: var(--accent-muted);
+  color: var(--fg);
+}
+.artifact-pin-btn.active {
+  color: var(--brand);
+}
+.artifact-pin-btn.active:hover {
+  color: var(--brand-deep);
+}
+
+.artifact-panel-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.artifact-panel-footer {
+  flex: 0 0 auto;
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.artifact-sheet-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ── Artifact panel & chips ─────────────────────────────────────────────── */
+
+.chat-artifacts-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast);
+}
+.chat-artifacts-toggle:hover {
+  background: var(--accent-muted);
+  border-color: var(--brand);
+  color: var(--brand-deep);
+}
+
+.chat-turn-artifacts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+}
+
+.chat-artifact-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--motion-fast), border-color var(--motion-fast);
+  max-width: 26rem;
+}
+.chat-artifact-chip:hover {
+  background: var(--accent-muted);
+  border-color: var(--brand);
+}
+.chat-artifact-chip-icon {
+  font-size: 1rem;
+  flex: 0 0 auto;
+  opacity: 0.5;
+}
+.chat-artifact-chip-title {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--fg);
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-artifact-chip-type {
+  font-size: 0.7rem;
+  color: var(--muted);
+  flex: 0 0 auto;
+  font-family: var(--mono);
+}
+
+/* Artifact side panel (Sheet-based) */
+.artifact-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.artifact-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 0 0.75rem;
+  flex: 0 0 auto;
+}
+
+.artifact-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  cursor: pointer;
+  margin-bottom: -1px;
+  transition: color var(--motion-fast), border-color var(--motion-fast);
+}
+.artifact-tab.active {
+  color: var(--fg);
+  border-bottom-color: var(--brand);
+}
+.artifact-tab:hover:not(.active) {
+  color: var(--fg);
+}
+.artifact-tab-spacer {
+  flex: 1;
+}
+
+.artifact-version-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  margin-right: 0.35rem;
+}
+
+.artifact-version-btn {
+  background: none;
+  border: none;
+  padding: 0.15rem 0.35rem;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  border-radius: var(--radius);
+  transition: background var(--motion-fast), color var(--motion-fast);
+}
+.artifact-version-btn:hover:not(:disabled) {
+  background: var(--accent-muted);
+  color: var(--fg);
+}
+.artifact-version-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.artifact-version-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  min-width: 2.5rem;
+  text-align: center;
+  user-select: none;
+}
+
+.artifact-iframe {
+  flex: 1 1 auto;
+  width: 100%;
+  border: none;
+  min-height: 0;
+  background: #fff;
+}
+
+.artifact-code-wrap {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.artifact-code-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.artifact-code {
+  flex: 1 1 auto;
+  overflow: auto;
+  margin: 0;
+  padding: 0.75rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.55;
+  white-space: pre;
+  background: var(--surface-sunken, var(--surface));
+}
+
+.artifact-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.25rem;
+}
+.artifact-nav-item {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast);
+}
+.artifact-nav-item.active {
+  background: var(--accent-muted);
+  border-color: var(--brand);
+  color: var(--brand-deep);
+}
+.artifact-nav-item:hover:not(.active) {
+  background: var(--accent-muted);
+}
+
+.artifact-delete-btn {
+  background: none;
+  border: 1px solid var(--danger, #c0392b);
+  border-radius: var(--radius);
+  padding: 0.3rem 0.75rem;
+  color: var(--danger, #c0392b);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background var(--motion-fast);
+}
+.artifact-delete-btn:hover {
+  background: var(--danger-muted, #fdecea);
+}
+
+.artifact-empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 2rem 0;
+}
+
+/* Make Sheet body and inline panel body flex so artifact-view fills height */
+.ui-sheet-body:has(.artifact-view),
+.artifact-panel-body:has(.artifact-view) {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Markdown rendering inside chat turns. */
 .markdown > :first-child { margin-top: 0; }
 .markdown > :last-child { margin-bottom: 0; }
@@ -3240,8 +3742,13 @@ code {
     justify-content: flex-start;
   }
 
+  .model-select-controls {
+    width: min(100%, calc(100vw - var(--sidebar-width) - 8rem));
+  }
+
+  .model-search,
   .model-select select {
-    width: min(18rem, calc(100vw - var(--sidebar-width) - 12rem));
+    width: min(12rem, 44vw);
   }
 
   .topbar-progress {

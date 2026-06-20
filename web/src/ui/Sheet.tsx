@@ -19,6 +19,7 @@ interface SheetProps {
   children: ReactNode;
   side?: 'right' | 'left' | 'bottom';
   footer?: ReactNode;
+  headerActions?: ReactNode;
 }
 
 export function Sheet({
@@ -29,6 +30,7 @@ export function Sheet({
   children,
   side = 'right',
   footer,
+  headerActions,
 }: SheetProps) {
   const titleId = useId();
   const descId = useId();
@@ -83,9 +85,12 @@ export function Sheet({
             <h2 id={titleId}>{title}</h2>
             {description ? <p id={descId}>{description}</p> : null}
           </div>
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
-            Close
-          </Button>
+          <div className="ui-sheet-header-actions">
+            {headerActions}
+            <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+          </div>
         </div>
         <div className="ui-sheet-body">{children}</div>
         {footer ? <div className="ui-sheet-footer">{footer}</div> : null}

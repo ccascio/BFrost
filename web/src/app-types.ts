@@ -612,6 +612,25 @@ export interface JobDraft {
   params: Record<string, JobParamDraftValue>;
 }
 
+export interface ArtifactVersion {
+  content: string;
+  messageId: string;
+  createdAt: string;
+}
+
+export interface ChatArtifact {
+  id: string;
+  conversationId: string;
+  messageId: string;
+  identifier: string;
+  type: string;
+  title: string;
+  content: string;
+  versions: ArtifactVersion[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ChatTurn {
   role: 'user' | 'assistant';
   text: string;

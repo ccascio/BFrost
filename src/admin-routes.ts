@@ -6,6 +6,7 @@ import { registerConfigRoutes } from './http/routes/config';
 import { registerBackupRoutes } from './http/routes/backups';
 import { registerAdminRoutes } from './http/routes/admin';
 import { registerActionRoutes } from './http/routes/actions';
+import { registerArtifactRoutes } from './http/routes/artifacts';
 
 export function registerCoreRoutes(router: HttpRouter): void {
   registerDashboardRoutes(router);
@@ -15,4 +16,5 @@ export function registerCoreRoutes(router: HttpRouter): void {
   registerBackupRoutes(router);
   registerAdminRoutes(router);
   registerActionRoutes(router);
+  registerArtifactRoutes(router);
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ChatProject, ChatThread, ChatTurn, DashboardState, DashboardTab } from '../app-types';
+import type { ChatArtifact, ChatProject, ChatThread, ChatTurn, DashboardState, DashboardTab } from '../app-types';
 import { toAppError } from '../app-types';
+import { parseArtifacts, fetchArtifacts, saveArtifact, removeArtifact } from '../app-helpers/artifacts';
 
 export function useChatController({
   activeTab,
@@ -29,6 +30,10 @@ export function useChatController({
   const [chatQuery, setChatQuery] = useState('');
   const [projectComboOpen, setProjectComboOpen] = useState(false);
   const [projectComboQuery, setProjectComboQuery] = useState('');
+  const [artifacts, setArtifacts] = useState<ChatArtifact[]>([]);
+  const [artifactPanelOpen, setArtifactPanelOpen] = useState(false);
+  const [artifactPanelPinned, setArtifactPanelPinned] = useState(false);
+  const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null);
   const projectComboRef = useRef<HTMLDivElement | null>(null);
   const chatLogRef = useRef<HTMLDivElement | null>(null);
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -118,6 +123,10 @@ export function useChatController({
   function startNewChat() {
     setActiveConversationId(mintConversationId());
     setChatTurns([]);
+    setArtifacts([]);
+    setArtifactPanelOpen(false);
+    setActiveArtifactId(null);
+    // keep pinned state — user intent persists across conversations
     setError(null);
     window.requestAnimationFrame(() => chatInputRef.current?.focus());
   }
@@ -138,6 +147,10 @@ export function useChatController({
       setActiveConversationId(thread.conversationId);
       setActiveProjectId(thread.projectId ?? null);
       setChatTurns(payload.turns.map((turn) => ({ ...turn, createdAt: thread.lastMessageAt })));
+      const savedArtifacts = await fetchArtifacts(thread.conversationId);
+      setArtifacts(savedArtifacts);
+      setArtifactPanelOpen(false);
+      setActiveArtifactId(savedArtifacts[0]?.id ?? null);
     } catch (err) {
       setError(toAppError(err));
     } finally {
@@ -222,10 +235,39 @@ export function useChatController({
         throw new Error('error' in payload ? payload.error : 'Chat request failed');
       }
 
+      const assistantCreatedAt = new Date().toISOString();
       setChatTurns((current) => [
         ...current,
-        { role: 'assistant', text: payload.response, createdAt: new Date().toISOString() },
+        { role: 'assistant', text: payload.response, createdAt: assistantCreatedAt },
       ]);
+
+      // Parse and persist any artifacts in the response
+      const parsed = parseArtifacts(payload.response);
+      if (parsed.length > 0) {
+        const messageId = `${conversationId}:${assistantCreatedAt}`;
+        const saved: ChatArtifact[] = [];
+        for (const p of parsed) {
+          const id = `${conversationId}:${p.identifier}`;
+          const artifact = await saveArtifact(conversationId, {
+            id,
+            messageId,
+            identifier: p.identifier,
+            type: p.type,
+            title: p.title,
+            content: p.content,
+          });
+          if (artifact) saved.push(artifact);
+        }
+        if (saved.length > 0) {
+          setArtifacts((prev) => {
+            const ids = new Set(saved.map((a) => a.id));
+            return [...prev.filter((a) => !ids.has(a.id)), ...saved];
+          });
+          setActiveArtifactId(saved[saved.length - 1].id);
+          setArtifactPanelOpen(true);
+        }
+      }
+
       await fetchDashboard(true);
       await loadChatThreads();
       setNotice('Dashboard chat answered.');
@@ -234,6 +276,25 @@ export function useChatController({
     } finally {
       setBusyKey(null);
     }
+  }
+
+  async function deleteArtifactFromConversation(artifactId: string) {
+    const conversationId = activeConversationId;
+    if (!conversationId) return;
+    await removeArtifact(conversationId, artifactId);
+    setArtifacts((prev) => {
+      const next = prev.filter((a) => a.id !== artifactId);
+      if (activeArtifactId === artifactId) {
+        setActiveArtifactId(next[next.length - 1]?.id ?? null);
+      }
+      if (next.length === 0) setArtifactPanelOpen(false);
+      return next;
+    });
+  }
+
+  function openArtifact(id: string) {
+    setActiveArtifactId(id);
+    setArtifactPanelOpen(true);
   }
 
   function fillChatDraft(prompt: string) {
@@ -274,5 +335,14 @@ export function useChatController({
     sendDashboardChat,
     fillChatDraft,
     openChatFromOverview,
+    artifacts,
+    artifactPanelOpen,
+    setArtifactPanelOpen,
+    artifactPanelPinned,
+    setArtifactPanelPinned,
+    activeArtifactId,
+    setActiveArtifactId,
+    openArtifact,
+    deleteArtifactFromConversation,
   };
 }

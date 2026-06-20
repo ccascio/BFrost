@@ -167,6 +167,15 @@ export function DashboardRoutes(props: any) {
           deleteChatThread={chat.deleteChatThread}
           sendDashboardChat={chat.sendDashboardChat}
           fillChatDraft={chat.fillChatDraft}
+          artifacts={chat.artifacts}
+          artifactPanelOpen={chat.artifactPanelOpen}
+          setArtifactPanelOpen={chat.setArtifactPanelOpen}
+          artifactPanelPinned={chat.artifactPanelPinned}
+          setArtifactPanelPinned={chat.setArtifactPanelPinned}
+          activeArtifactId={chat.activeArtifactId}
+          setActiveArtifactId={chat.setActiveArtifactId}
+          openArtifact={chat.openArtifact}
+          deleteArtifactFromConversation={chat.deleteArtifactFromConversation}
         />
       ) : null}
 
