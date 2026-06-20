@@ -19,7 +19,7 @@ import {
   setAdminSessionTtlHours,
   setJobLlmTimeoutMs,
 } from './config';
-import { refreshActiveLocalProviderModels, refreshCloudProviderModels } from './model-discovery';
+import { refreshAllProviderModels } from './model-discovery';
 import { upsertEnvValue } from './env-file';
 import {
   collectRecipes,
@@ -161,7 +161,7 @@ export async function buildDashboardState(): Promise<DashboardState> {
     discoverLocalWorkerResult(),
     getPinnedModelId(),
   ]);
-  await refreshActiveLocalProviderModels();
+  await refreshAllProviderModels();
 
   const defaultModel = getDefaultModel();
   const localWorkers = localResult.workers;

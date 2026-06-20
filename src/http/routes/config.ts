@@ -11,7 +11,7 @@ import {
   setAdminSessionTtlHours,
   setJobLlmTimeoutMs,
 } from '../../config';
-import { refreshActiveLocalProviderModels } from '../../model-discovery';
+import { refreshActiveLocalProviderModels, refreshAllProviderModels } from '../../model-discovery';
 import { upsertEnvValue } from '../../env-file';
 import { getActiveLocalProvider, getRegisteredProvider, listRegisteredChannels } from '../../workers/registry';
 import { updatePlatformSettings } from '../../admin-config';
@@ -32,7 +32,7 @@ import {
 export function registerConfigRoutes(router: HttpRouter): void {
   router.add('POST', '/api/default-model', async (req, res) => {
     const body = await readJsonBody(req, DefaultModelBodySchema);
-    await refreshActiveLocalProviderModels();
+    await refreshAllProviderModels();
     const model = setDefaultModel(body.alias);
     await upsertEnvValue(path.join(process.cwd(), '.env'), 'OLLAMA_MODEL', model.id);
     await recordEventSafe({
@@ -248,7 +248,7 @@ export function registerConfigRoutes(router: HttpRouter): void {
 
     const body = await readJsonBody(req, CronJobUpdateBodySchema);
     if (body.modelAlias) {
-      await refreshActiveLocalProviderModels();
+      await refreshAllProviderModels();
     }
     await updateSchedulerJob(jobName, {
       enabled: body.enabled,

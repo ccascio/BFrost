@@ -15,7 +15,6 @@ export function seedDeclaredProviderModels(): void {
 }
 
 export async function refreshActiveLocalProviderModels(): Promise<void> {
-  seedDeclaredProviderModels();
   const activeProvider = getActiveLocalProvider();
   const activeProviderId = activeProvider?.providerId ?? null;
 
@@ -26,7 +25,13 @@ export async function refreshActiveLocalProviderModels(): Promise<void> {
     }
   }
 
-  if (!activeProvider?.listAvailableModels) {
+  if (!activeProvider) {
+    return;
+  }
+
+  const registered = listRegisteredProviders().find((entry) => entry.manifest.id === activeProvider.providerId);
+  if (!activeProvider.listAvailableModels) {
+    replaceDiscoveredProviderModels(activeProvider.providerId, registered?.manifest.defaultModels ?? []);
     return;
   }
 
@@ -47,20 +52,28 @@ export async function refreshActiveLocalProviderModels(): Promise<void> {
  * dashboard model picker reflects what the user can actually use.
  */
 export async function refreshCloudProviderModels(): Promise<void> {
-  seedDeclaredProviderModels();
   for (const registered of listRegisteredProviders()) {
     if (registered.manifest.capabilities.localRuntime) continue;
     const providerId = registered.manifest.id;
     const adapter = getProviderAdapter(providerId);
-    if (!adapter?.listAvailableModels) continue;
+    if (!adapter) {
+      clearDiscoveredProviderModels(providerId);
+      continue;
+    }
     if (!adapter.isConfigured()) {
       clearDiscoveredProviderModels(adapter.providerId);
       continue;
     }
     try {
-      const models = await adapter.listAvailableModels();
+      const models = adapter.listAvailableModels
+        ? await adapter.listAvailableModels()
+        : registered.manifest.defaultModels ?? [];
       replaceDiscoveredProviderModels(adapter.providerId, models);
     } catch (err) {
+      const fallbackModels = registered.manifest.defaultModels ?? [];
+      if (fallbackModels.length > 0) {
+        replaceDiscoveredProviderModels(adapter.providerId, fallbackModels);
+      }
       console.warn(
         `[ModelDiscovery] Could not refresh ${adapter.providerId} models:`,
         err instanceof Error ? err.message : err,
@@ -70,5 +83,6 @@ export async function refreshCloudProviderModels(): Promise<void> {
 }
 
 export async function refreshAllProviderModels(): Promise<void> {
-  await Promise.all([refreshActiveLocalProviderModels(), refreshCloudProviderModels()]);
+  await refreshActiveLocalProviderModels();
+  await refreshCloudProviderModels();
 }

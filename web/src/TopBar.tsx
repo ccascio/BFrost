@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { ChangeEventHandler } from 'react';
 import { Icon } from './icons';
 import { CopyButton, NotificationStack, Progress } from './ui';
@@ -51,6 +51,19 @@ export function TopBar({
 }: TopBarProps) {
   const [showDetail, setShowDetail] = useState(false);
   const [dismissedNotice, setDismissedNotice] = useState<string | null>(null);
+  const [modelQuery, setModelQuery] = useState('');
+  const normalizedModelQuery = modelQuery.trim().toLowerCase();
+  const matchingModels = useMemo(() => {
+    if (!normalizedModelQuery) return models;
+    return models.filter((model) =>
+      [model.label, model.alias, model.provider]
+        .some((value) => value.toLowerCase().includes(normalizedModelQuery)),
+    );
+  }, [models, normalizedModelQuery]);
+  const selectedModel = models.find((model) => model.alias === selectedModelAlias);
+  const visibleModels = selectedModel && !matchingModels.some((model) => model.alias === selectedModel.alias)
+    ? [selectedModel, ...matchingModels]
+    : matchingModels;
 
   // Reset detail panel when error changes
   const errorKey = error?.friendly ?? '';
@@ -136,16 +149,35 @@ export function TopBar({
       </div>
 
       <div className="topbar-actions">
-        <label className="model-select">
-          <span>Default model</span>
-          <select value={selectedModelAlias} onChange={onModelChange}>
-            {models.map((model) => (
-              <option key={model.alias} value={model.alias}>
-                {model.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="model-select">
+          <span id="default-model-label">Default model</span>
+          <div className="model-select-controls">
+            <input
+              className="model-search"
+              type="search"
+              value={modelQuery}
+              placeholder={`Search ${models.length} models`}
+              aria-label="Search default models"
+              onChange={(event) => setModelQuery(event.target.value)}
+            />
+            <select
+              value={selectedModelAlias}
+              onChange={(event) => {
+                onModelChange(event);
+                setModelQuery('');
+              }}
+              aria-labelledby="default-model-label"
+            >
+              {visibleModels.length > 0 ? visibleModels.map((model) => (
+                <option key={model.alias} value={model.alias}>
+                  {model.label}
+                </option>
+              )) : (
+                <option value="" disabled>No matching models</option>
+              )}
+            </select>
+          </div>
+        </div>
         {selectedModelIsLocal ? (
           <button
             className={`compact-button${selectedModelIsPinned ? ' pin-active' : ''}`}
