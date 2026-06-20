@@ -99,6 +99,17 @@ const DashboardFieldSchema = z.discriminatedUnion('type', [
     helpText: z.string().optional(),
     seedPath: z.string().optional(),
   }).strict(),
+  z.object({
+    key: z.string().min(1),
+    label: z.string().min(1),
+    type: z.literal('action'),
+    actionPath: z.string().min(1),
+    method: z.enum(['POST', 'GET']).optional(),
+    buttonLabel: z.string().optional(),
+    openInPopup: z.boolean().optional(),
+    helpText: z.string().optional(),
+    seedPath: z.string().optional(),
+  }).strict(),
 ]);
 
 const DashboardSurfaceSchema = z.object({

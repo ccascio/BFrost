@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from 'react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import type { JobDashboardField, JobParamDraftValue } from '../app-types';
 import {
   addStringListDraftValue,
@@ -16,6 +16,7 @@ interface DashboardFieldEditorProps {
   customListItemDrafts: Record<string, string>;
   setCustomListItemDrafts: Dispatch<SetStateAction<Record<string, string>>>;
   draftKey?: string;
+  onActionComplete?: () => void | Promise<void>;
 }
 
 export function DashboardFieldEditor({
@@ -25,7 +26,89 @@ export function DashboardFieldEditor({
   customListItemDrafts,
   setCustomListItemDrafts,
   draftKey = field.key,
+  onActionComplete,
 }: DashboardFieldEditorProps) {
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+
+  async function runActionField() {
+    if (field.type !== 'action') return;
+    let waitingForPopup = false;
+    let popup: Window | null = null;
+    setActionBusy(true);
+    setActionMessage(null);
+    try {
+      if (field.openInPopup) {
+        popup = window.open('about:blank', 'bfrost-oauth-login', 'popup,width=560,height=760');
+      }
+      const response = await fetch(field.actionPath, { method: field.method ?? 'POST' });
+      const body = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        openUrl?: string;
+        message?: string;
+        error?: string;
+      };
+      if (!response.ok || body.ok === false) {
+        throw new Error(body.error || body.message || `Action failed (${response.status}).`);
+      }
+      if (body.openUrl) {
+        popup ||= window.open('', 'bfrost-oauth-login', 'popup,width=560,height=760');
+        if (!popup) {
+          throw new Error('The browser blocked the login popup. Allow popups for BFrost and try again.');
+        }
+        popup.location.href = body.openUrl;
+        waitingForPopup = true;
+        setActionMessage(body.message ?? 'Login opened in a browser window.');
+        const cleanup = () => {
+          window.removeEventListener('message', onMessage);
+          clearInterval(closePoll);
+        };
+        const complete = () => {
+          cleanup();
+          setActionBusy(false);
+          void onActionComplete?.();
+        };
+        const onMessage = (event: MessageEvent) => {
+          const data = event.data as { type?: string; status?: string; message?: string };
+          if (data?.type !== 'bfrost:oauth-complete') return;
+          setActionMessage(data.message ?? (data.status === 'success' ? 'Login complete.' : 'Login failed.'));
+          complete();
+        };
+        const closePoll = window.setInterval(() => {
+          if (popup?.closed) complete();
+        }, 1000);
+        window.addEventListener('message', onMessage);
+        return;
+      }
+      setActionMessage(body.message ?? 'Action complete.');
+      await onActionComplete?.();
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (!waitingForPopup) {
+        setActionBusy(false);
+      }
+    }
+  }
+
+  if (field.type === 'action') {
+    return (
+      <div className="field">
+        <span>{field.label}</span>
+        <button
+          type="button"
+          className="primary"
+          disabled={actionBusy}
+          onClick={() => void runActionField()}
+        >
+          {actionBusy ? 'Opening...' : field.buttonLabel ?? field.label}
+        </button>
+        {field.helpText ? <small>{field.helpText}</small> : null}
+        {actionMessage ? <small>{actionMessage}</small> : null}
+      </div>
+    );
+  }
+
   if (field.type === 'boolean') {
     return (
       <label className="field checkbox">

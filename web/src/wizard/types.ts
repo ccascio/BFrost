@@ -86,6 +86,16 @@ export type WorkerDashboardField =
       label: string;
       defaultValue: string[];
       helpText?: string;
+    }
+  | {
+      type: 'action';
+      key: string;
+      label: string;
+      actionPath: string;
+      method?: 'POST' | 'GET';
+      buttonLabel?: string;
+      openInPopup?: boolean;
+      helpText?: string;
     };
 
 export interface WorkerDashboardSurface {

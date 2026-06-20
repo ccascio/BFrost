@@ -1,7 +1,15 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import type { ProviderModelOption } from '../../../config';
 import type { ProviderAdapter } from '../../module';
-import { resolveOpenAIApiKey } from './credentials';
+import {
+  resolveOpenAIApiKey,
+  resolveOpenAIAuthMode,
+  resolveOpenAICodexCliModel,
+} from './credentials';
+import {
+  createOpenAICodexSubscriptionLanguageModel,
+  readOpenAICodexSubscriptionReady,
+} from './subscription-model';
 
 const PROVIDER_ID = 'openai';
 
@@ -47,6 +55,15 @@ async function fetchModelList(apiKey: string): Promise<ProviderModelOption[]> {
     .map((entry) => ({ id: entry.id, label: entry.id }));
 }
 
+function subscriptionModel(): ProviderModelOption {
+  const id = resolveOpenAICodexCliModel();
+  return {
+    id,
+    alias: `openai-subscription-${id}`.toLowerCase().replace(/[^a-z0-9._-]+/g, '-'),
+    label: `ChatGPT subscription (${id})`,
+  };
+}
+
 export function createOpenAIProviderAdapter(): ProviderAdapter {
   let client = createOpenAI({ apiKey: resolveOpenAIApiKey() });
   let lastKey = resolveOpenAIApiKey();
@@ -62,9 +79,13 @@ export function createOpenAIProviderAdapter(): ProviderAdapter {
   return {
     providerId: PROVIDER_ID,
     isConfigured() {
+      if (resolveOpenAIAuthMode() === 'subscription') return readOpenAICodexSubscriptionReady();
       return Boolean(resolveOpenAIApiKey());
     },
     getChatModel(modelId: string) {
+      if (resolveOpenAIAuthMode() === 'subscription') {
+        return createOpenAICodexSubscriptionLanguageModel(modelId || resolveOpenAICodexCliModel());
+      }
       if (!resolveOpenAIApiKey()) {
         throw new Error('OPENAI_API_KEY is required to use OpenAI models.');
       }
@@ -72,6 +93,9 @@ export function createOpenAIProviderAdapter(): ProviderAdapter {
       return client.chat(modelId);
     },
     async listAvailableModels() {
+      if (resolveOpenAIAuthMode() === 'subscription') {
+        return readOpenAICodexSubscriptionReady() ? [subscriptionModel()] : [];
+      }
       const key = resolveOpenAIApiKey();
       if (!key) return [];
       return fetchModelList(key);

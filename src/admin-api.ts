@@ -199,6 +199,17 @@ export const JobDashboardFieldSchema = z.discriminatedUnion('type', [
     helpText: z.string().optional(),
     seedPath: z.string().optional(),
   }).strict(),
+  z.object({
+    key: z.string(),
+    label: z.string(),
+    type: z.literal('action'),
+    actionPath: z.string(),
+    method: z.enum(['POST', 'GET']).optional(),
+    buttonLabel: z.string().optional(),
+    openInPopup: z.boolean().optional(),
+    helpText: z.string().optional(),
+    seedPath: z.string().optional(),
+  }).strict(),
 ]);
 
 export const SchedulerJobStateSchema = z.object({

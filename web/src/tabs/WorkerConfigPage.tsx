@@ -153,6 +153,7 @@ function WorkerConfigurationSurface({
             customListItemDrafts={customListItemDrafts}
             setCustomListItemDrafts={setCustomListItemDrafts}
             draftKey={`${key}.${field.key}`}
+            onActionComplete={() => fetchDashboard(true)}
           />,
         )}
       </div>

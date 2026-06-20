@@ -185,7 +185,8 @@ export type JobDashboardField =
   | JobBooleanField
   | JobSelectField
   | JobStringListField
-  | JobSecretReferenceField;
+  | JobSecretReferenceField
+  | JobActionField;
 
 export interface JobBaseField {
   key: string;
@@ -242,6 +243,14 @@ export interface JobSecretReferenceField extends JobBaseField {
   type: 'secret-reference';
   defaultValue: string;
   placeholder?: string;
+}
+
+export interface JobActionField extends JobBaseField {
+  type: 'action';
+  actionPath: string;
+  method?: 'POST' | 'GET';
+  buttonLabel?: string;
+  openInPopup?: boolean;
 }
 
 export interface SchedulerRunRecord {

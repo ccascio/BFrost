@@ -403,7 +403,8 @@ export type WorkerJobDashboardField =
   | WorkerJobBooleanField
   | WorkerJobSelectField
   | WorkerJobStringListField
-  | WorkerJobSecretReferenceField;
+  | WorkerJobSecretReferenceField
+  | WorkerJobActionField;
 
 interface WorkerJobBaseField {
   key: string;
@@ -465,6 +466,14 @@ export interface WorkerJobSecretReferenceField extends WorkerJobBaseField {
   type: 'secret-reference';
   defaultValue: string;
   placeholder?: string;
+}
+
+export interface WorkerJobActionField extends WorkerJobBaseField {
+  type: 'action';
+  actionPath: string;
+  method?: 'POST' | 'GET';
+  buttonLabel?: string;
+  openInPopup?: boolean;
 }
 
 export interface WorkerJobRunResult {

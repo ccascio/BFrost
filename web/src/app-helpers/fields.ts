@@ -112,6 +112,9 @@ export function buildJobParamsDraft(job: SchedulerJobState): Record<string, JobP
       if (field.type === 'select' || field.type === 'secret-reference') {
         return [field.key, typeof value === 'string' ? value : field.defaultValue];
       }
+      if (field.type === 'action') {
+        return [field.key, ''];
+      }
       return [field.key, typeof value === 'string' ? value : field.defaultValue];
     }),
   );
@@ -143,6 +146,7 @@ export function fieldDefaultDraftValue(
       }
     }
   }
+  if (field.type === 'action') return '';
   if (field.type === 'string-list') return field.defaultValue.join('\n');
   return field.defaultValue;
 }
@@ -173,7 +177,7 @@ export function serializeDashboardFields(
   draft: Record<string, JobParamDraftValue>,
 ): Record<string, unknown> {
   return Object.fromEntries(
-    fields.map((field) => {
+    fields.filter((field) => field.type !== 'action').map((field) => {
       const value = draft[field.key] ?? fieldDefaultDraftValue(field);
       if (field.type === 'string-list') {
         return [field.key, String(value).split('\n').map((item) => item.trim()).filter(Boolean)];
@@ -195,6 +199,7 @@ export function serializeJobParams(job: SchedulerJobState, draft: JobDraft): Rec
 
 export function surfaceDraftHasValue(fields: JobDashboardField[], draft: Record<string, JobParamDraftValue>): boolean {
   return fields.some((field) => {
+    if (field.type === 'action') return false;
     const value = draft[field.key] ?? fieldDefaultDraftValue(field);
     if (field.type === 'boolean') return true;
     if (field.type === 'number') return typeof value === 'number' && Number.isFinite(value);
