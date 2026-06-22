@@ -56,7 +56,7 @@ export async function fetchArtifacts(conversationId: string): Promise<ChatArtifa
 
 export async function saveArtifact(
   conversationId: string,
-  artifact: Omit<ChatArtifact, 'conversationId' | 'createdAt' | 'updatedAt'>,
+  artifact: Omit<ChatArtifact, 'conversationId' | 'createdAt' | 'updatedAt' | 'versions'>,
 ): Promise<ChatArtifact | null> {
   const res = await fetch(`/api/artifacts/${encodeURIComponent(conversationId)}`, {
     method: 'POST',
