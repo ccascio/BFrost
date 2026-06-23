@@ -24,6 +24,7 @@ export const searchGoogleWorker: WorkerManifest = {
     },
   ],
   builtIn: true,
+  settingsOnly: true,
   requiredCredentials: [
     { key: 'googleSearchConfigured', label: 'Google Search credentials', settingsTarget: 'health-google' },
   ],

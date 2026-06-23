@@ -1,6 +1,7 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import type {
   DashboardState,
+  JobDashboardField,
   JobParamDraftValue,
   WorkerDashboardSurface,
   WorkerSummary,
@@ -154,19 +155,22 @@ function WorkerConfigurationSurface({
   function renderFieldEditors(visibleFields: typeof fields, className = 'job-grid config-field-grid') {
     return (
       <div className={className}>
-        {visibleFields.map((field) =>
-          <DashboardFieldEditor
-            key={field.key}
-            field={field}
-            value={draft[field.key] ?? fieldDefaultDraftValue(field, dashboard.workerData)}
-            formValues={draft}
-            onChange={(nextValue) => updateSurfaceDraftParam(field.key, nextValue)}
-            customListItemDrafts={customListItemDrafts}
-            setCustomListItemDrafts={setCustomListItemDrafts}
-            draftKey={`${key}.${field.key}`}
-            onActionComplete={() => fetchDashboard(true)}
-          />,
-        )}
+        {visibleFields.map((field) => {
+          const fieldWithSuggestions = applyDynamicFieldSuggestions(worker, surface, field, dashboard.workerData);
+          return (
+            <DashboardFieldEditor
+              key={field.key}
+              field={fieldWithSuggestions}
+              value={draft[field.key] ?? fieldDefaultDraftValue(field, dashboard.workerData)}
+              formValues={draft}
+              onChange={(nextValue) => updateSurfaceDraftParam(field.key, nextValue)}
+              customListItemDrafts={customListItemDrafts}
+              setCustomListItemDrafts={setCustomListItemDrafts}
+              draftKey={`${key}.${field.key}`}
+              onActionComplete={() => fetchDashboard(true)}
+            />
+          );
+        })}
       </div>
     );
   }
@@ -239,4 +243,54 @@ function WorkerConfigurationSurface({
       </div>
     </div>
   );
+}
+
+function applyDynamicFieldSuggestions(
+  worker: WorkerSummary,
+  surface: WorkerDashboardSurface,
+  field: JobDashboardField,
+  workerData: DashboardState['workerData'],
+): JobDashboardField {
+  if (field.type !== 'string-list') return field;
+
+  const dynamicSuggestions = resolveDynamicFieldSuggestions(worker, surface, field, workerData);
+  if (dynamicSuggestions.length === 0) return field;
+
+  const merged = Array.from(new Set([...(field.suggestions ?? []), ...dynamicSuggestions]));
+  return { ...field, suggestions: merged };
+}
+
+function resolveDynamicFieldSuggestions(
+  worker: WorkerSummary,
+  surface: WorkerDashboardSurface,
+  field: JobDashboardField,
+  workerData: DashboardState['workerData'],
+): string[] {
+  const slice = workerData[worker.id];
+  if (!slice || typeof slice !== 'object') return [];
+
+  const source = (slice as Record<string, unknown>).fieldSuggestions;
+  if (!source || typeof source !== 'object') return [];
+
+  const record = source as Record<string, unknown>;
+  return normalizeSuggestionValues(record[field.key] ?? nestedSuggestionValue(record[surface.id], field.key));
+}
+
+function nestedSuggestionValue(value: unknown, fieldKey: string): unknown {
+  if (!value || typeof value !== 'object') return undefined;
+  return (value as Record<string, unknown>)[fieldKey];
+}
+
+function normalizeSuggestionValues(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (typeof entry === 'string') return entry;
+      if (entry && typeof entry === 'object' && typeof (entry as { value?: unknown }).value === 'string') {
+        return (entry as { value: string }).value;
+      }
+      return '';
+    })
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }

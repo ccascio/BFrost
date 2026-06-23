@@ -1,9 +1,21 @@
 import { SourceQualityRulesSchema } from '../../../admin-api';
 import type { AdminApiRoute } from '../../../admin-route';
 import { recordEventSafe } from '../../../event-log';
+import { updateSchedulerJob } from '../../../scheduler';
+import { NewsDigestParamsSchema } from './job';
 import { saveSourceQualityRules } from './source-quality';
 
 export const newsApiRoutes: AdminApiRoute[] = [
+  {
+    method: 'POST',
+    path: '/api/workers/news/digest-params',
+    workerIds: ['core.news'],
+    async handle({ req, readJsonBody }) {
+      const body = await readJsonBody(req, NewsDigestParamsSchema);
+      await updateSchedulerJob('news-digest', { params: body });
+      return { status: 200, body: { ok: true } };
+    },
+  },
   {
     method: 'POST',
     path: '/api/source-rules',

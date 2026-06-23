@@ -110,6 +110,7 @@ export const CORE_MENU_ENTRIES: Array<Omit<SidebarEntry<DashboardTab>, 'count'>>
   { id: 'overview', label: 'Overview', icon: 'overview', group: 'Workspace', order: 10 },
   { id: 'chat', label: 'Chat', icon: 'chat', group: 'Workspace', order: 15 },
   { id: 'jobs', label: 'Jobs', icon: 'jobs', group: 'Workspace', order: 20 },
+  { id: 'workers', label: 'Workers', icon: 'workers', group: 'Workspace', order: 25 },
   { id: 'store', label: 'Store', icon: 'store', group: 'Workspace', order: 35 },
   { id: 'health', label: 'Health', icon: 'health', group: 'System', order: 3 },
   // pipeline merged into Overview; channels/workers/config/actions/system → Settings modal
