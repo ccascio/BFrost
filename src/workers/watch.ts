@@ -26,6 +26,7 @@ import { recordEventSafe } from '../event-log';
 import { detach } from '../process-lifecycle';
 
 const DEBOUNCE_MS = 300;
+const IGNORED_EVENT_SEGMENTS = new Set(['.git', 'dist', 'node_modules']);
 
 export interface LocalWorkerWatcher {
   stop: () => void;
@@ -43,30 +44,44 @@ export function startLocalWorkerWatcher(): LocalWorkerWatcher {
   const watchers: fsSync.FSWatcher[] = [];
   const pending = new Map<string, NodeJS.Timeout>();
 
-  const onChange = (filename: string | null) => {
+  const onChange = (root: string, filename: string | null) => {
     if (!filename) return;
-    // Ignore the compiled output we write ourselves and editor scratch files.
-    if (filename.includes(`${path.sep}dist${path.sep}`) || filename.startsWith('dist/')) return;
-    if (filename.endsWith('~') || filename.includes('.tmp')) return;
+    if (shouldIgnoreWorkerWatchPath(filename)) return;
 
-    // Debounce per-root: editors emit a burst of events on save. We rediscover on fire,
-    // so a single coalesced tick is enough regardless of which file changed.
-    const existing = pending.get('*');
+    const changedPath = path.resolve(root, filename);
+    if (shouldIgnoreWorkerWatchPath(changedPath)) return;
+
+    const workerDir = findWorkerDirForChangedPath(changedPath, root);
+    if (!workerDir) return;
+
+    // Debounce per worker: editors emit a burst of events on save, but workers should reload
+    // independently when two local workers are being edited at once.
+    const existing = pending.get(workerDir);
     if (existing) clearTimeout(existing);
-    pending.set('*', setTimeout(() => {
-      pending.delete('*');
-      detach(reloadChangedWorkers(), 'workers:hot-reload');
+    pending.set(workerDir, setTimeout(() => {
+      pending.delete(workerDir);
+      detach(reloadChangedWorker(workerDir), 'workers:hot-reload');
     }, DEBOUNCE_MS));
   };
 
-  for (const root of config.workerPaths) {
+  const watchRoots = compactOverlappingWatchRoots(config.workerPaths.flatMap((root) => {
     const resolved = path.resolve(root);
-    if (!fsSync.existsSync(resolved)) continue;
+    try {
+      const stat = fsSync.statSync(resolved);
+      if (stat.isDirectory()) return [resolved];
+      if (stat.isFile()) return [path.dirname(resolved)];
+    } catch {
+      // missing roots are ignored below
+    }
+    return [];
+  }));
+
+  for (const resolved of watchRoots) {
     try {
       // recursive is supported on macOS and Windows. On Linux it is ignored by Node, so only
       // direct children of the root fire events; the worker dir layout (root/<id>/...) still
       // surfaces saves to files one level down via the directory's own change events.
-      const watcher = fsSync.watch(resolved, { recursive: true }, (_event, filename) => onChange(filename));
+      const watcher = fsSync.watch(resolved, { recursive: true }, (_event, filename) => onChange(resolved, filename));
       watcher.on('error', (err) => {
         console.warn(`[Workers] Hot-reload watcher error on ${resolved}:`, err);
       });
@@ -97,11 +112,11 @@ export function startLocalWorkerWatcher(): LocalWorkerWatcher {
 }
 
 /**
- * Rediscover local workers and reload every currently-registered worker whose source changed.
+ * Rediscover local workers and reload the currently-registered worker rooted at `workerDir`.
  * Cheap to call on every debounced tick — discovery is a directory scan and reload only fires
- * for workers that are both enabled and actually re-compilable.
+ * for the enabled worker whose directory produced the event.
  */
-async function reloadChangedWorkers(): Promise<void> {
+async function reloadChangedWorker(workerDir: string): Promise<void> {
   let discovery;
   try {
     discovery = await discoverLocalWorkerResult();
@@ -111,15 +126,20 @@ async function reloadChangedWorkers(): Promise<void> {
   }
 
   const registeredIds = new Set(listLocalWorkerModules().map((module) => module.manifest.id));
+  const resolvedWorkerDir = path.resolve(workerDir);
   for (const worker of discovery.workers) {
     if (!registeredIds.has(worker.manifest.id)) continue; // only reload enabled workers
+    if (path.dirname(path.resolve(worker.sourcePath)) !== resolvedWorkerDir) continue;
     await reloadWorker(worker);
+    return;
   }
 }
 
 async function reloadWorker(worker: DiscoveredLocalWorker): Promise<void> {
   const id = worker.manifest.id;
   const workerDir = path.dirname(path.resolve(worker.sourcePath));
+  const previousVersion = listLocalWorkerModules().find((module) => module.manifest.id === id)?.manifest.version
+    ?? worker.manifest.version;
 
   try {
     await deactivateLocalWorker(id);
@@ -130,11 +150,13 @@ async function reloadWorker(worker: DiscoveredLocalWorker): Promise<void> {
     // entrypoint key is sufficient).
     if (worker.backendEntrypoint) {
       const entrypoint = path.resolve(workerDir, worker.backendEntrypoint);
-      await fs.rm(entrypoint, { force: true });
+      if (worker.language === 'typescript') {
+        await fs.rm(entrypoint, { force: true });
+      }
       delete require.cache[entrypoint];
     }
 
-    await activateLocalWorker(worker, { previousVersion: worker.manifest.version });
+    await activateLocalWorker(worker, { previousVersion });
     console.log(`[Workers] Hot-reloaded ${id}.`);
     await recordEventSafe({
       category: 'worker',
@@ -154,4 +176,57 @@ async function reloadWorker(worker: DiscoveredLocalWorker): Promise<void> {
       console.warn(`[Workers] Failed to record hot reload failure for ${id}:`, eventErr);
     });
   }
+}
+
+export function compactOverlappingWatchRoots(roots: string[]): string[] {
+  const sorted = Array.from(new Set(roots.map((root) => path.resolve(root))))
+    .sort((a, b) => pathSegments(a).length - pathSegments(b).length || a.localeCompare(b));
+  const compacted: string[] = [];
+  for (const root of sorted) {
+    if (compacted.some((parent) => isPathInside(parent, root))) continue;
+    compacted.push(root);
+  }
+  return compacted;
+}
+
+export function shouldIgnoreWorkerWatchPath(value: string): boolean {
+  const segments = pathSegments(value);
+  if (segments.some((segment) => IGNORED_EVENT_SEGMENTS.has(segment))) return true;
+
+  const basename = segments[segments.length - 1] ?? '';
+  return basename.endsWith('~') || basename.includes('.tmp');
+}
+
+export function findWorkerDirForChangedPath(changedPath: string, root: string): string | null {
+  const resolvedRoot = path.resolve(root);
+  let cursor = path.resolve(changedPath);
+
+  try {
+    const stat = fsSync.statSync(cursor);
+    if (!stat.isDirectory()) {
+      cursor = path.dirname(cursor);
+    }
+  } catch {
+    cursor = path.dirname(cursor);
+  }
+
+  while (cursor === resolvedRoot || isPathInside(resolvedRoot, cursor)) {
+    if (fsSync.existsSync(path.join(cursor, 'worker.json'))) {
+      return cursor;
+    }
+    const next = path.dirname(cursor);
+    if (next === cursor) break;
+    cursor = next;
+  }
+
+  return null;
+}
+
+function isPathInside(parent: string, child: string): boolean {
+  const relative = path.relative(path.resolve(parent), path.resolve(child));
+  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function pathSegments(value: string): string[] {
+  return value.split(/[\\/]+/).filter(Boolean);
 }
