@@ -14,14 +14,13 @@ import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_MAX_LOG_BYTES, DEFAULT_LOG_ROTATIONS, defaultLogFile } from './logging.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ENTRY = path.join(ROOT, 'dist', 'index.js');
-// macOS TCC prevents launchd from opening files in ~/Documents for stdio
-// redirection.  Use ~/Library/Logs which is always accessible to LaunchAgents.
-const LOG_FILE = process.platform === 'darwin'
-  ? path.join(homedir(), 'Library', 'Logs', 'BFrost', 'bfrost.log')
-  : path.join(ROOT, 'data', 'bfrost.log');
+const RUNNER = path.join(ROOT, 'scripts', 'run-server.mjs');
+const LOG_FILE = defaultLogFile(ROOT);
+const LAUNCHER_LOG_FILE = `${LOG_FILE}.launcher`;
 const NODE = process.execPath;
 const LABEL = 'net.bfrost.server';
 
@@ -61,13 +60,13 @@ if (process.platform === 'darwin') {
   <key>ProgramArguments</key>
   <array>
     <string>${NODE}</string>
-    <string>${ENTRY}</string>
+    <string>${RUNNER}</string>
   </array>
   <key>WorkingDirectory</key>  <string>${ROOT}</string>
   <key>RunAtLoad</key>         <true/>
   <key>KeepAlive</key>         <true/>
-  <key>StandardOutPath</key>   <string>${LOG_FILE}</string>
-  <key>StandardErrorPath</key> <string>${LOG_FILE}</string>
+  <key>StandardOutPath</key>   <string>${LAUNCHER_LOG_FILE}</string>
+  <key>StandardErrorPath</key> <string>${LAUNCHER_LOG_FILE}</string>
 </dict>
 </plist>`,
   );
@@ -88,6 +87,7 @@ if (process.platform === 'darwin') {
     `  Plist:     ${plistPath}`,
     `  Dashboard: http://127.0.0.1:3030`,
     `  Logs:      ${LOG_FILE}  →  npm run logs`,
+    `  Rotation:  ${DEFAULT_MAX_LOG_BYTES} bytes, ${DEFAULT_LOG_ROTATIONS} retained file(s)`,
     '',
     '  The service starts automatically at login and restarts on crash.',
     '  To remove:  npm run uninstall-service',
@@ -110,12 +110,12 @@ Description=BFrost local AI server
 After=network.target
 
 [Service]
-ExecStart=${NODE} ${ENTRY}
+ExecStart=${NODE} ${RUNNER}
 WorkingDirectory=${ROOT}
 Restart=on-failure
 RestartSec=5
-StandardOutput=append:${LOG_FILE}
-StandardError=append:${LOG_FILE}
+StandardOutput=append:${LAUNCHER_LOG_FILE}
+StandardError=append:${LAUNCHER_LOG_FILE}
 
 [Install]
 WantedBy=default.target
@@ -137,6 +137,7 @@ WantedBy=default.target
     `  Unit:      ${servicePath}`,
     `  Dashboard: http://127.0.0.1:3030`,
     `  Logs:      ${LOG_FILE}  →  npm run logs`,
+    `  Rotation:  ${DEFAULT_MAX_LOG_BYTES} bytes, ${DEFAULT_LOG_ROTATIONS} retained file(s)`,
     `  Status:    systemctl --user status bfrost`,
     '',
     '  The service starts automatically at login and restarts on crash.',
@@ -156,8 +157,8 @@ else if (process.platform === 'win32') {
 
     const start = spawnSync(
       'pm2',
-      ['start', ENTRY, '--name', 'bfrost', '--cwd', ROOT,
-        '--output', LOG_FILE, '--error', LOG_FILE],
+      ['start', RUNNER, '--name', 'bfrost', '--cwd', ROOT,
+        '--output', LAUNCHER_LOG_FILE, '--error', LAUNCHER_LOG_FILE],
       { shell: true, stdio: 'inherit' },
     );
     if (start.status !== 0) fail('pm2 start failed.');
@@ -168,6 +169,7 @@ else if (process.platform === 'win32') {
       '✓ BFrost running under PM2.',
       `  Dashboard: http://127.0.0.1:3030`,
       `  Logs:      ${LOG_FILE}`,
+      `  Rotation:  ${DEFAULT_MAX_LOG_BYTES} bytes, ${DEFAULT_LOG_ROTATIONS} retained file(s)`,
       '',
       '  To enable auto-start on boot, run:',
       '    pm2 startup',
@@ -179,7 +181,7 @@ else if (process.platform === 'win32') {
     const wrapperPath = path.join(ROOT, 'scripts', '_bfrost-service.cmd');
     writeFileSync(
       wrapperPath,
-      `@echo off\n:loop\n"${NODE}" "${ENTRY}"\ntimeout /t 5 /nobreak >nul\ngoto loop\n`,
+      `@echo off\n:loop\n"${NODE}" "${RUNNER}"\ntimeout /t 5 /nobreak >nul\ngoto loop\n`,
     );
 
     const result = spawnSync(

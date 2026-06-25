@@ -177,11 +177,13 @@ For source installs, run `npm run build` before the first start and after pullin
 | `npm run build:server` / `npm run build:web` | Compile one side only |
 | `npm start` | Start in background (stops any existing instance first) |
 | `npm stop` | Stop the running instance |
-| `npm run logs` | Tail `data/bfrost.log` (macOS / Linux; on Windows use `Get-Content -Path data\bfrost.log -Wait`) |
+| `npm run logs` | Tail the rotating BFrost log (`~/Library/Logs/BFrost/bfrost.log` on macOS, `data/bfrost.log` elsewhere) |
 | `npm run install-service` / `npm run uninstall-service` | Register / remove an OS service that starts on login and restarts on crash |
 | `npm run dev` | Run tests, then start backend + Vite dashboard in the foreground |
 | `npm run dev:watch` / `npm run dev:web` | Backend TypeScript watch / Vite dev server only |
 | `npm run task -- --job <id>` | Run a named job once and exit (e.g. `news-digest`, `tweet-post`) |
+
+Background logs rotate automatically: by default BFrost keeps a 10 MB active log and one 10 MB rotated copy (`bfrost.log.1`). Tune this with `BFROST_MAX_LOG_BYTES` and `BFROST_LOG_ROTATIONS`.
 
 **Auto-start on login (recommended for regular use).** `npm run install-service` registers BFrost as an OS service — launchd `LaunchAgent` on macOS, systemd user service on Linux, PM2 or Windows Task Scheduler on Windows. Once installed, `npm start` / `npm stop` route through the service manager automatically.
 

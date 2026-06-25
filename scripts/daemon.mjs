@@ -2,22 +2,22 @@
  * Start BFrost in the background.
  *
  * - Stops any existing instance listening on the admin port first.
- * - Spawns `node dist/index.js` detached so the terminal can close.
- * - Appends stdout/stderr to data/bfrost.log.
+ * - Spawns a detached server runner so the terminal can close.
+ * - Writes stdout/stderr through a bounded rotating bfrost.log.
  *
  * Usage: npm start   (or: node scripts/daemon.mjs)
  */
 import { spawn, execFileSync } from 'node:child_process';
-import { existsSync, openSync, closeSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_MAX_LOG_BYTES, DEFAULT_LOG_ROTATIONS, defaultLogFile } from './logging.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ENTRY = path.join(ROOT, 'dist', 'index.js');
-const LOG_FILE = process.platform === 'darwin'
-  ? path.join(homedir(), 'Library', 'Logs', 'BFrost', 'bfrost.log')
-  : path.join(ROOT, 'data', 'bfrost.log');
+const RUNNER = path.join(ROOT, 'scripts', 'run-server.mjs');
+const LOG_FILE = defaultLogFile(ROOT);
 const PORT = Number(process.env.BFROST_PORT ?? 3030);
 const LABEL = 'net.bfrost.server';
 
@@ -121,20 +121,18 @@ function stopExisting() {
 stopExisting();
 
 mkdirSync(path.dirname(LOG_FILE), { recursive: true });
-const logFd = openSync(LOG_FILE, 'a');
 
-const child = spawn(process.execPath, [ENTRY], {
+const child = spawn(process.execPath, [RUNNER], {
   detached: true,
-  stdio: ['ignore', logFd, logFd],
+  stdio: 'ignore',
   cwd: ROOT,
   env: process.env,
   windowsHide: true,
 });
 
 child.unref();
-closeSync(logFd);
 
 console.log(`BFrost started in background (PID ${child.pid})`);
 console.log(`  Dashboard: http://127.0.0.1:${PORT}`);
-console.log(`  Logs:      ${LOG_FILE}`);
+console.log(`  Logs:      ${LOG_FILE} (rotates at ${DEFAULT_MAX_LOG_BYTES} bytes, keeps ${DEFAULT_LOG_ROTATIONS})`);
 console.log(`  Stop:      npm stop`);

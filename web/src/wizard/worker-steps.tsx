@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import type { DashboardSnapshot, WorkerSummary } from './types';
+import type { JobDashboardField, JobParamDraftValue, WorkerDashboardSurface } from '../app-types';
+import { buildSurfaceDraft, serializeDashboardFields } from '../app-helpers';
+import { DashboardFieldEditor } from '../tabs/DashboardFieldEditor';
 
 async function updateWorkerEnabled(worker: WorkerSummary, onRefresh: () => Promise<void>) {
   const res = await fetch(`/api/workers/${encodeURIComponent(worker.id)}`, {
@@ -127,6 +130,146 @@ export function StepWorkers({ dashboard, onRefresh }: { dashboard: DashboardSnap
         ))}
       </div>
       {error ? <p className="wizard-error">{error}</p> : null}
+    </div>
+  );
+}
+
+function isWebSearchWorker(worker: WorkerSummary): boolean {
+  if (!worker.enabled || worker.missing) return false;
+  const text = [
+    worker.displayName,
+    worker.name,
+    worker.tagline,
+    worker.description,
+    ...(worker.health ?? []).map((row) => `${row.key} ${row.label}`),
+  ].filter(Boolean).join(' ').toLowerCase();
+  return text.includes('web search') || text.includes('search credentials');
+}
+
+function webSearchSurface(worker: WorkerSummary): WorkerDashboardSurface | null {
+  const surfaces = worker.dashboard?.settings ?? [];
+  return (surfaces.find((surface) => surface.path && !surface.path.includes('#') && (surface.fields ?? []).length > 0) as WorkerDashboardSurface | undefined) ?? null;
+}
+
+export function StepWebSearch({
+  dashboard,
+  onRefresh,
+  onNavigate,
+}: {
+  dashboard: DashboardSnapshot;
+  onRefresh: () => Promise<void>;
+  onNavigate: (tab: string) => void;
+}) {
+  const webSearchWorkers = dashboard.workers.filter(isWebSearchWorker);
+  const [drafts, setDrafts] = useState<Record<string, Record<string, JobParamDraftValue>>>({});
+  const [customListItemDrafts, setCustomListItemDrafts] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ status: 'success' | 'error'; text: string } | null>(null);
+
+  async function saveSurface(worker: WorkerSummary, surface: WorkerDashboardSurface) {
+    if (!surface.path) return;
+    const key = `${worker.id}:${surface.id}`;
+    const fields = (surface.fields ?? []) as JobDashboardField[];
+    const draft = drafts[key] ?? buildSurfaceDraft(surface, dashboard.workerData);
+    setBusy(key);
+    setMessage(null);
+    try {
+      const response = await fetch(surface.path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(serializeDashboardFields(fields, draft)),
+      });
+      if (!response.ok) throw new Error((await response.text()) || 'Failed to save web search credentials.');
+      await onRefresh();
+      setMessage({ status: 'success', text: `${worker.displayName ?? worker.name} saved.` });
+    } catch (err) {
+      setMessage({ status: 'error', text: err instanceof Error ? err.message : 'Failed to save web search credentials.' });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (webSearchWorkers.length === 0) {
+    return (
+      <div className="wizard-step-body">
+        <h2>Web search</h2>
+        <p className="wizard-lead">
+          No enabled web-search worker was found. You can continue, but live web lookup features will not work until a search worker is installed and configured.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="wizard-step-body">
+      <h2>Web search</h2>
+      <p className="wizard-lead">
+        Configure web search now. Without it, the assistant cannot look up current information, and workers that discover sources from the web will fail until credentials are added.
+      </p>
+      <div className="wizard-worker-list">
+        {webSearchWorkers.map((worker) => {
+          const surface = webSearchSurface(worker);
+          const key = surface ? `${worker.id}:${surface.id}` : worker.id;
+          const fields = ((surface?.fields ?? []) as JobDashboardField[]);
+          const draft = surface ? drafts[key] ?? buildSurfaceDraft(surface, dashboard.workerData) : {};
+          const healthy = worker.healthState === 'healthy';
+          return (
+            <div key={worker.id} className={`wizard-worker-item${healthy ? ' enabled' : ''}`}>
+              <div className="wizard-worker-meta">
+                <strong>{worker.displayName ?? worker.name}</strong>
+                <span className="wizard-worker-desc">{healthy ? 'Configured - web search is ready.' : worker.healthDetail || 'Web search credentials are required.'}</span>
+                {healthy ? <span className="wizard-worker-badge">Configured</span> : null}
+                {!surface ? (
+                  <button type="button" onClick={() => onNavigate('config')}>
+                    Go to Config →
+                  </button>
+                ) : (
+                  <div className="wizard-worker-list" style={{ marginTop: '0.75rem' }}>
+                    {fields.map((field) => (
+                      <DashboardFieldEditor
+                        key={field.key}
+                        field={field}
+                        value={draft[field.key]}
+                        formValues={draft}
+                        onChange={(value) => {
+                          setDrafts((current) => ({
+                            ...current,
+                            [key]: { ...(current[key] ?? draft), [field.key]: value },
+                          }));
+                        }}
+                        customListItemDrafts={customListItemDrafts}
+                        setCustomListItemDrafts={setCustomListItemDrafts}
+                        draftKey={`${key}:${field.key}`}
+                        onActionComplete={onRefresh}
+                      />
+                    ))}
+                    <div className="panel-actions">
+                      <button
+                        type="button"
+                        className="primary"
+                        disabled={busy === key}
+                        onClick={() => void saveSurface(worker, surface)}
+                      >
+                        {busy === key ? 'Saving...' : 'Save web search'}
+                      </button>
+                      <button type="button" onClick={() => onNavigate(surface.tab ?? 'config')}>
+                        Open full settings →
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {message ? (
+        <p className={message.status === 'success' ? 'wizard-status-ok' : 'wizard-error'}>
+          {message.status === 'success' ? '✓ ' : '✗ '}
+          {message.text}
+        </p>
+      ) : null}
+      <p className="wizard-footnote">This is optional to finish setup, but web lookup features stay unavailable until it is configured.</p>
     </div>
   );
 }

@@ -33,6 +33,7 @@ export interface WorkerSummary {
   jobCount: number;
   enabledJobCount: number;
   onboarding?: WorkerOnboardingAction;
+  health?: Array<{ key: string; label: string; ok: boolean }>;
   dashboard?: WorkerDashboardManifest;
   providers?: WorkerProviderSummary[];
 }
@@ -155,6 +156,7 @@ export interface DashboardSnapshot {
   integrations: Record<string, IntegrationStatus>;
   localRuntime: { running: boolean; loadedModels: string[]; loadedCount: number };
   platform: PlatformSettings;
+  workerData?: Record<string, unknown>;
   dependencies?: { embeddingModelReachable?: { ok: boolean } };
 }
 

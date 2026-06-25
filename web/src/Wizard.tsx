@@ -10,15 +10,16 @@ import { StepEmbedding, StepModel } from './wizard/model-steps';
 import { StepWelcome } from './wizard/onboarding';
 import { StepSecurity } from './wizard/security-step';
 import type { WizardProps } from './wizard/types';
-import { StepChannels, StepCredentials, StepFirstRun, StepWorkers } from './wizard/worker-steps';
+import { StepChannels, StepCredentials, StepFirstRun, StepWebSearch, StepWorkers } from './wizard/worker-steps';
 
 export type { WizardProps } from './wizard/types';
 
-const TOTAL_STEPS = 8;
+const TOTAL_STEPS = 9;
 const STEP_LABELS = [
   'Welcome',
   'Model',
   'Embedding',
+  'Web search',
   'Channels',
   'Workers',
   'Credentials',
@@ -129,11 +130,12 @@ export function Wizard({ dashboard, onDismiss, onComplete, onRefreshDashboard, o
           {step === 0 && <StepWelcome dashboard={dashboard} onRefresh={onRefreshDashboard} onRunDemoAction={onRunDemoAction} />}
           {step === 1 && <StepModel dashboard={dashboard} onRefresh={onRefreshDashboard} />}
           {step === 2 && <StepEmbedding dashboard={dashboard} onRefresh={onRefreshDashboard} />}
-          {step === 3 && <StepChannels dashboard={dashboard} onRefresh={onRefreshDashboard} />}
-          {step === 4 && <StepWorkers dashboard={dashboard} onRefresh={onRefreshDashboard} />}
-          {step === 5 && <StepCredentials dashboard={dashboard} onNavigate={handleNavigate} />}
-          {step === 6 && <StepFirstRun dashboard={dashboard} onRefresh={onRefreshDashboard} />}
-          {step === 7 && <StepSecurity dashboard={dashboard} onRefresh={onRefreshDashboard} />}
+          {step === 3 && <StepWebSearch dashboard={dashboard} onRefresh={onRefreshDashboard} onNavigate={handleNavigate} />}
+          {step === 4 && <StepChannels dashboard={dashboard} onRefresh={onRefreshDashboard} />}
+          {step === 5 && <StepWorkers dashboard={dashboard} onRefresh={onRefreshDashboard} />}
+          {step === 6 && <StepCredentials dashboard={dashboard} onNavigate={handleNavigate} />}
+          {step === 7 && <StepFirstRun dashboard={dashboard} onRefresh={onRefreshDashboard} />}
+          {step === 8 && <StepSecurity dashboard={dashboard} onRefresh={onRefreshDashboard} />}
         </div>
 
         <div className="wizard-footer">

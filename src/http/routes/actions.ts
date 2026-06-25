@@ -41,7 +41,7 @@ export function registerActionRoutes(router: HttpRouter): void {
 
   router.add('POST', '/api/wizard/state', async (req, res) => {
     const body = await readJsonBody(req, z.object({
-      step: z.number().int().min(0).max(5).optional(),
+      step: z.number().int().min(0).max(8).optional(),
       completed: z.boolean().optional(),
     }).strict());
     const prev = await loadKvJson<{ step?: number; completed?: boolean }>('wizard.state') ?? {};
