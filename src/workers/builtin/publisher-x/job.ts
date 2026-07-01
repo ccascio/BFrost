@@ -175,6 +175,13 @@ function isEligible(item: QueueItem, nowMs: number, approvalRequired: boolean, p
   return nowMs - added < params.eligibilityWindowHours * 60 * 60 * 1000;
 }
 
+export async function hasTweetPostWork(params: TweetPostParams = DEFAULT_TWEET_POST_PARAMS): Promise<boolean> {
+  const nowMs = Date.now();
+  const settings = await loadTweetPostSettings();
+  const queue = pruneQueue(await loadQueue(), nowMs);
+  return queue.some((item) => isEligible(item, nowMs, settings.approvalRequired, params));
+}
+
 function codePointLength(text: string): number {
   return [...text].length;
 }

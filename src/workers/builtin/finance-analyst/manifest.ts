@@ -3,6 +3,7 @@ import {
   DEFAULT_ANALYSIS_PROMPT,
   FinanceAnalysisParamsSchema,
   INVESTOR_LENSES,
+  hasFinanceAnalysisWork,
   runFinanceAnalysis,
 } from './job';
 import type { WorkerManifest } from '../../types';
@@ -109,6 +110,7 @@ Ground every claim in the provided article text only. Be explicit about second-o
           helpText: 'Delivers a compact digest of the reads to your primary channel (Telegram / Discord / email).',
         },
       ],
+      hasWork: () => hasFinanceAnalysisWork(),
       run: (modelId, params) => runFinanceAnalysis(modelId, FinanceAnalysisParamsSchema.parse(params ?? {})),
     },
   ],

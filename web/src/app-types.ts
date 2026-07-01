@@ -167,7 +167,7 @@ export interface SchedulerJobState {
   lastStatus: RunStatus;
   lastSummary: string | null;
   lastError: string | null;
-  lastTrigger: 'schedule' | 'manual' | null;
+  lastTrigger: 'schedule' | 'manual' | 'pipeline' | null;
   consecutiveErrors?: number;
 }
 
@@ -267,7 +267,7 @@ export interface SchedulerRunRecord {
   id: string;
   job: string;
   label: string;
-  trigger: 'schedule' | 'manual';
+  trigger: 'schedule' | 'manual' | 'pipeline';
   modelAlias: string;
   startedAt: string;
   finishedAt: string | null;

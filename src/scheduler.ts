@@ -13,6 +13,7 @@ import {
   listSchedulerRuns,
   recordSchedulerRunAttempt,
   startSchedulerRun,
+  type SchedulerRunTrigger,
 } from './scheduler-runs';
 import { acquireSchedulerExecutionLock } from './scheduler-locks';
 import { isWorkerEnabled, loadWorkerState, type WorkerStateStore } from './workers/state';
@@ -25,6 +26,7 @@ const SCHEDULER_STATE_STORE_KEY = 'scheduler.state';
 // job (e.g. an 8am digest) after an overnight or full-workday outage/sleep, while
 // still treating older slots as too stale to be worth replaying.
 export const CATCHUP_WINDOW_MS = 26 * 60 * 60 * 1000; // 26 hours
+export const PIPELINE_TICK_INTERVAL_MS = 15 * 60 * 1000;
 const DEFAULT_JOB_RETRY_POLICY: Required<WorkerJobRetryPolicy> = {
   maxRetries: 2,
   initialBackoffMs: 1_000,
@@ -71,7 +73,7 @@ export interface SchedulerJobState {
   lastStatus: 'idle' | 'success' | 'error' | 'skipped';
   lastSummary: string | null;
   lastError: string | null;
-  lastTrigger: 'schedule' | 'manual' | null;
+  lastTrigger: SchedulerRunTrigger | null;
   /**
    * Number of the most recent completed (non-running) runs that consecutively
    * ended with status `'error'`. 0 means the last finished run was not an error.
@@ -114,6 +116,8 @@ let settingsCache: AdminSettings | null = null;
 let runtimeCache: Partial<Record<JobName, SchedulerJobState>> = {};
 let started = false;
 const tasks = new Map<JobName, ScheduledTask>();
+let pipelineTickTimer: NodeJS.Timeout | null = null;
+let pipelineTickInFlight: Promise<PipelineTickResult> | null = null;
 
 // Coalesce concurrent reloadSchedules() calls: at most one in-flight + one queued.
 // All callers read the same fresh settings, so there is no value in running more
@@ -145,6 +149,7 @@ export async function startScheduler(): Promise<void> {
   await hydrateRuntime();
   await reconcileAbandonedRuns();
   await reloadSchedules();
+  startPipelineTick();
 }
 
 export async function stopScheduler(): Promise<void> {
@@ -158,7 +163,30 @@ export async function stopScheduler(): Promise<void> {
     tasks.delete(name);
   }
 
+  if (pipelineTickTimer) {
+    clearInterval(pipelineTickTimer);
+    pipelineTickTimer = null;
+  }
+
   started = false;
+}
+
+export interface PipelineTickResult {
+  checked: number;
+  triggered: number;
+  skipped: number;
+  errors: number;
+}
+
+export async function runPipelineTick(): Promise<PipelineTickResult> {
+  if (pipelineTickInFlight) {
+    return pipelineTickInFlight;
+  }
+
+  pipelineTickInFlight = doRunPipelineTick().finally(() => {
+    pipelineTickInFlight = null;
+  });
+  return pipelineTickInFlight;
 }
 
 export async function getSchedulerSnapshot(): Promise<{ timezone: string; jobs: SchedulerJobState[] }> {
@@ -273,6 +301,89 @@ export async function reloadSchedulerSchedules(): Promise<void> {
     return;
   }
   await reloadSchedules();
+}
+
+function startPipelineTick(): void {
+  if (pipelineTickTimer) {
+    return;
+  }
+
+  pipelineTickTimer = setInterval(() => {
+    detach(runPipelineTick(), 'scheduler:pipeline-tick');
+  }, PIPELINE_TICK_INTERVAL_MS);
+  pipelineTickTimer.unref?.();
+}
+
+async function doRunPipelineTick(): Promise<PipelineTickResult> {
+  const settings = await ensureSettings();
+  const workerState = await loadWorkerState();
+  const result: PipelineTickResult = { checked: 0, triggered: 0, skipped: 0, errors: 0 };
+
+  for (const name of knownJobs()) {
+    const jobSettings = settings.jobs[name];
+    if (!jobSettings?.enabled) {
+      result.skipped += 1;
+      continue;
+    }
+
+    const registered = getRegisteredWorkerJob(name);
+    if (!isWorkerEnabled(registered.worker.id, workerState)) {
+      result.skipped += 1;
+      continue;
+    }
+    if (!registered.job.hasWork) {
+      result.skipped += 1;
+      continue;
+    }
+
+    const current = buildJobState(name, jobSettings, workerState);
+    if (current.running) {
+      result.skipped += 1;
+      continue;
+    }
+
+    result.checked += 1;
+    let ready = false;
+    try {
+      ready = await registered.job.hasWork(jobSettings.params ?? {});
+    } catch (err) {
+      result.errors += 1;
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[Scheduler] Pipeline hasWork check failed for ${name}:`, err);
+      await recordEventSafe({
+        category: 'scheduler',
+        action: 'pipeline_has_work_failed',
+        severity: 'warning',
+        summary: `${jobLabels()[name]} pipeline eligibility check failed.`,
+        metadata: {
+          job: name,
+          workerId: registered.worker.id,
+          workerName: registered.worker.name,
+          error: message,
+        },
+      });
+      continue;
+    }
+
+    if (!ready) {
+      result.skipped += 1;
+      continue;
+    }
+
+    try {
+      const ran = await runJob(name, jobSettings, 'pipeline');
+      if (ran) {
+        result.triggered += 1;
+      } else {
+        result.skipped += 1;
+      }
+    } catch (err) {
+      result.errors += 1;
+      console.warn(`[Scheduler] Pipeline run failed for ${name}:`, err);
+    }
+  }
+
+  return result;
 }
 
 async function reloadSchedules(): Promise<void> {
@@ -567,9 +678,9 @@ function getMissedSlotTime(name: JobName, ctxDate: Date): Date | null {
 async function runJob(
   name: JobName,
   jobSettings: CronJobSettings,
-  trigger: 'schedule' | 'manual',
+  trigger: SchedulerRunTrigger,
   options: { scheduledAt?: string; lockAlreadyAcquired?: boolean } = {},
-): Promise<void> {
+): Promise<boolean> {
   if (trigger === 'schedule' && !options.lockAlreadyAcquired) {
     const scheduledAt = options.scheduledAt ?? schedulerSlotIso(new Date());
     const acquired = await acquireSchedulerExecutionLock({
@@ -578,7 +689,7 @@ async function runJob(
     });
     if (!acquired) {
       console.warn(`[Scheduler] Duplicate scheduled execution ignored for ${name} at ${scheduledAt}.`);
-      return;
+      return false;
     }
   }
 
@@ -590,6 +701,12 @@ async function runJob(
   }
   if (!current.workerEnabled) {
     throw new Error(`${current.workerName} worker is disabled.`);
+  }
+  if (trigger !== 'manual') {
+    const ready = await shouldRunJob(name, jobSettings, trigger);
+    if (!ready) {
+      return false;
+    }
   }
 
   const startedAt = new Date().toISOString();
@@ -623,6 +740,95 @@ async function runJob(
   await enqueueJobExecution(() =>
     runJobWork(name, jobSettings, trigger, startedAt, runRecord, current.effectiveModelAlias),
   );
+  return true;
+}
+
+async function shouldRunJob(
+  name: JobName,
+  jobSettings: CronJobSettings,
+  trigger: SchedulerRunTrigger,
+): Promise<boolean> {
+  const registered = getRegisteredWorkerJob(name);
+  if (!registered.job.hasWork) {
+    return true;
+  }
+
+  let ready = false;
+  try {
+    ready = await registered.job.hasWork(jobSettings.params ?? {});
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await recordEventSafe({
+      category: 'scheduler',
+      action: 'has_work_failed',
+      severity: 'warning',
+      summary: `${jobLabels()[name]} eligibility check failed; running anyway.`,
+      metadata: {
+        job: name,
+        workerId: registered.worker.id,
+        workerName: registered.worker.name,
+        trigger,
+        error: message,
+      },
+    });
+    return true;
+  }
+
+  if (ready) {
+    return true;
+  }
+
+  if (trigger === 'schedule') {
+    await recordNoWorkSkippedRun(name, jobSettings);
+  }
+  return false;
+}
+
+async function recordNoWorkSkippedRun(name: JobName, jobSettings: CronJobSettings): Promise<void> {
+  const registered = getRegisteredWorkerJob(name);
+  const now = new Date().toISOString();
+  const message = `${jobLabels()[name]} skipped because no worker-declared work is ready.`;
+
+  runtimeCache[name] = {
+    ...buildJobState(name, jobSettings),
+    running: false,
+    lastStartedAt: now,
+    lastFinishedAt: now,
+    lastStatus: 'skipped',
+    lastSummary: null,
+    lastError: message,
+    lastTrigger: 'schedule',
+  };
+
+  const runRecord = await startSchedulerRunSafe({
+    job: name,
+    label: jobLabels()[name],
+    trigger: 'schedule',
+    modelAlias: jobSettings.modelAlias || getDefaultModelAlias(),
+    startedAt: now,
+  });
+  if (runRecord) {
+    await finishSchedulerRunSafe(runRecord.id, {
+      finishedAt: now,
+      status: 'skipped',
+      summary: null,
+      error: message,
+      itemCount: 0,
+    });
+  }
+  await persistRuntime();
+  await recordEventSafe({
+    category: 'job',
+    action: 'skipped',
+    summary: message,
+    metadata: {
+      job: name,
+      workerId: registered.worker.id,
+      workerName: registered.worker.name,
+      trigger: 'schedule',
+      reason: 'no_work',
+    },
+  });
 }
 
 function schedulerCommandKey(name: JobName): string {
@@ -681,7 +887,7 @@ function sleep(ms: number): Promise<void> {
 async function runJobWork(
   name: JobName,
   jobSettings: CronJobSettings,
-  trigger: 'schedule' | 'manual',
+  trigger: SchedulerRunTrigger,
   startedAt: string,
   runRecord: Awaited<ReturnType<typeof startSchedulerRunSafe>>,
   effectiveModelAlias: string,

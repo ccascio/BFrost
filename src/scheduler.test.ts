@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { config } from './config';
 import { closeDb } from './sqlite';
 import { listSchedulerRuns } from './scheduler-runs';
-import { CATCHUP_WINDOW_MS, getSchedulerSnapshot, isRecoverableSlotAge, triggerJobNow } from './scheduler';
+import { CATCHUP_WINDOW_MS, PIPELINE_TICK_INTERVAL_MS, getSchedulerSnapshot, isRecoverableSlotAge, runPipelineTick, triggerJobNow } from './scheduler';
 import { seedDeclaredProviderModels } from './model-discovery';
 import { registerLoadedLocalModule, unregisterLocalWorkerModule } from './workers/registry';
 import type { BackendWorkerModule } from './workers/module';
@@ -37,6 +37,9 @@ const FAIL_JOB_ID = 'test.fake-scheduler-fail';
 const TRANSIENT_JOB_ID = 'test.fake-scheduler-transient';
 const LATE_WORKER_ID = 'test.fake-scheduler-late-worker';
 const LATE_JOB_ID = 'test.fake-scheduler-late-job';
+const PIPELINE_WORKER_ID = 'test.fake-pipeline-worker';
+const PIPELINE_READY_JOB_ID = 'test.fake-pipeline-ready';
+const PIPELINE_IDLE_JOB_ID = 'test.fake-pipeline-idle';
 
 function buildFakeWorkerModule(): BackendWorkerModule {
   let transientAttempts = 0;
@@ -145,6 +148,56 @@ function buildLateWorkerModule(): BackendWorkerModule {
   return { manifest };
 }
 
+function buildPipelineWorkerModule(): BackendWorkerModule {
+  const manifest: WorkerManifest = {
+    id: PIPELINE_WORKER_ID,
+    name: 'Pipeline Tick Test Worker',
+    version: '0.1.0',
+    description: 'Fake worker used to test pipeline tick eligibility.',
+    builtIn: false,
+    jobs: [
+      {
+        id: PIPELINE_READY_JOB_ID,
+        workerId: PIPELINE_WORKER_ID,
+        label: 'Pipeline Ready Job',
+        description: 'A job with work ready.',
+        defaultEnabled: true,
+        defaultCron: '0 0 * * *',
+        defaultModelAlias: 'gpt-5.4-mini',
+        approvalRequiredDefault: false,
+        approvalRequiredEditable: false,
+        defaultPrompt: '',
+        prompt: { editable: false },
+        paramsSchema: z.object({}),
+        defaultParams: {},
+        dashboardFields: [],
+        hasWork: async () => true,
+        run: async () => ({ summary: 'Pipeline job completed.', itemCount: 1 }),
+      },
+      {
+        id: PIPELINE_IDLE_JOB_ID,
+        workerId: PIPELINE_WORKER_ID,
+        label: 'Pipeline Idle Job',
+        description: 'A job with no work ready.',
+        defaultEnabled: true,
+        defaultCron: '0 0 * * *',
+        defaultModelAlias: 'gpt-5.4-mini',
+        approvalRequiredDefault: false,
+        approvalRequiredEditable: false,
+        defaultPrompt: '',
+        prompt: { editable: false },
+        paramsSchema: z.object({}),
+        defaultParams: {},
+        dashboardFields: [],
+        hasWork: async () => false,
+        run: async () => ({ summary: 'Idle job should not run.', itemCount: 1 }),
+      },
+    ],
+  };
+
+  return { manifest };
+}
+
 test('catch-up window — only recovers past slots within the window', () => {
   const MINUTE = 60 * 1000;
   const HOUR = 60 * MINUTE;
@@ -163,6 +216,43 @@ test('catch-up window — only recovers past slots within the window', () => {
   assert.equal(isRecoverableSlotAge(24 * HOUR), true);
   assert.equal(isRecoverableSlotAge(CATCHUP_WINDOW_MS), true);
   assert.equal(isRecoverableSlotAge(CATCHUP_WINDOW_MS + MINUTE), false);
+});
+
+test('pipeline tick runs enabled jobs with work and skips idle jobs', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-pipeline-tick-'));
+  const prevDbPath = config.appDbPath;
+  const prevOpenaiKey = resolveOpenAIApiKey();
+  const prevFallbacks = config.modelFallbackAliases;
+
+  config.appDbPath = path.join(dir, 'app.sqlite');
+  setOpenAIApiKey('test-key');
+  config.modelFallbackAliases = [];
+
+  registerLoadedLocalModule(buildPipelineWorkerModule());
+
+  try {
+    assert.equal(PIPELINE_TICK_INTERVAL_MS, 15 * 60 * 1000);
+
+    const result = await runPipelineTick();
+    assert.equal(result.triggered, 1);
+
+    const runs = await listSchedulerRuns();
+    const readyRun = runs.find((r) => r.job === PIPELINE_READY_JOB_ID);
+    const idleRun = runs.find((r) => r.job === PIPELINE_IDLE_JOB_ID);
+
+    assert.ok(readyRun, 'ready job produced a scheduler run');
+    assert.equal(readyRun.status, 'success');
+    assert.equal(readyRun.trigger, 'pipeline');
+    assert.equal(readyRun.summary, 'Pipeline job completed.');
+    assert.equal(idleRun, undefined, 'idle job did not produce a scheduler run');
+  } finally {
+    unregisterLocalWorkerModule(PIPELINE_WORKER_ID);
+    config.appDbPath = prevDbPath;
+    setOpenAIApiKey(prevOpenaiKey);
+    config.modelFallbackAliases = prevFallbacks;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('scheduler integration — successful job produces a success run record and correct snapshot state', async () => {

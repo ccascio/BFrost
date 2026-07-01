@@ -122,6 +122,14 @@ function articleTextOf(item: QueueItem): string {
   return (text || snippet).slice(0, LLM_EXCERPT_CHARS);
 }
 
+export async function hasFinanceAnalysisWork(): Promise<boolean> {
+  const queue = pruneQueue(await loadQueue(), Date.now());
+  return filterItemsForConsumer(queue, CONSUMER_ID, {
+    itemType: SUBSCRIBES_TO,
+    excludeAlreadyHandled: true,
+  }).length > 0;
+}
+
 async function analyze(
   modelOption: ModelOption,
   items: QueueItem[],

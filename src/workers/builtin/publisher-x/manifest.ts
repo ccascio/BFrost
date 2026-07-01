@@ -2,6 +2,7 @@ import {
   DEFAULT_TWEET_POST_PARAMS,
   DEFAULT_TWEET_POST_PROMPT,
   TweetPostParamsSchema,
+  hasTweetPostWork,
   runTweetPost,
 } from './job';
 import type { WorkerManifest } from '../../types';
@@ -205,6 +206,7 @@ export const xPublisherWorker: WorkerManifest = {
       paramsSchema: TweetPostParamsSchema,
       defaultParams: DEFAULT_TWEET_POST_PARAMS,
       dashboardFields: [],
+      hasWork: (params) => hasTweetPostWork(TweetPostParamsSchema.parse(params ?? {})),
       run: (modelId, params) => runTweetPost(modelId, TweetPostParamsSchema.parse(params ?? {})),
     },
   ],

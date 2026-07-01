@@ -368,6 +368,12 @@ export interface WorkerJobManifest {
    * before the user clicks Save — nothing persists until they confirm.
    */
   presets?: WorkerJobPreset[];
+  /**
+   * Optional lightweight eligibility check used by the scheduler before it prepares
+   * a model runtime. Producers can omit this and keep cron as their external beat;
+   * consumers can return true when their input queue has work ready.
+   */
+  hasWork?: (params?: Record<string, unknown>) => boolean | Promise<boolean>;
   run: (modelId: string, params?: Record<string, unknown>) => Promise<WorkerJobRunResult>;
 }
 

@@ -7,7 +7,7 @@ const SCHEDULER_RUNS_STORE_KEY = 'scheduler.runs';
 const RUN_RETENTION = 200;
 
 export const SchedulerRunStatusSchema = z.enum(['running', 'success', 'error', 'skipped']);
-export const SchedulerRunTriggerSchema = z.enum(['schedule', 'manual']);
+export const SchedulerRunTriggerSchema = z.enum(['schedule', 'manual', 'pipeline']);
 export const SchedulerRunAttemptStatusSchema = z.enum(['success', 'error', 'skipped']);
 
 const SchedulerRunAttemptSchema = z.object({
@@ -38,13 +38,14 @@ const SchedulerRunRecordSchema = z.object({
 
 export const SchedulerRunRecordsSchema = z.array(SchedulerRunRecordSchema);
 export type SchedulerRunStatus = z.infer<typeof SchedulerRunStatusSchema>;
+export type SchedulerRunTrigger = z.infer<typeof SchedulerRunTriggerSchema>;
 export type SchedulerRunAttempt = z.infer<typeof SchedulerRunAttemptSchema>;
 export type SchedulerRunRecord = z.infer<typeof SchedulerRunRecordSchema>;
 
 export interface SchedulerRunStartInput {
   job: JobName;
   label: string;
-  trigger: 'schedule' | 'manual';
+  trigger: SchedulerRunTrigger;
   modelAlias: string;
   startedAt: string;
 }

@@ -263,7 +263,7 @@ export const SchedulerJobStateSchema = z.object({
   lastStatus: RunStatusSchema,
   lastSummary: z.string().nullable(),
   lastError: z.string().nullable(),
-  lastTrigger: z.enum(['schedule', 'manual']).nullable(),
+  lastTrigger: z.enum(['schedule', 'manual', 'pipeline']).nullable(),
   /**
    * How many of the most recent completed runs ended with `status: 'error'`
    * consecutively. 0 means the last run was not an error. Used by the stuck
@@ -276,7 +276,7 @@ export const SchedulerRunRecordSchema = z.object({
   id: z.string(),
   job: z.string(),
   label: z.string(),
-  trigger: z.enum(['schedule', 'manual']),
+  trigger: z.enum(['schedule', 'manual', 'pipeline']),
   modelAlias: z.string(),
   startedAt: z.string(),
   finishedAt: z.string().nullable(),
