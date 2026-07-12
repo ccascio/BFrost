@@ -44,7 +44,7 @@ Optional fields:
 - `dashboard.settings`: dashboard settings surfaces the worker owns
 - `dashboard.routes`: dashboard/API routes or dashboard tabs the worker uses
 
-Configuration surfaces can declare a `fields` array. The dashboard renders these fields centrally in the Config tab and seeds drafts from each field's `defaultValue` when the worker is discovered or installed. Supported field types are `text`, `textarea`, `number`, `boolean`, `select`, `string-list`, and `secret-reference`. Secrets should only use placeholders or empty defaults in the manifest; real values belong in local storage such as `.env` or a trusted worker backend endpoint.
+Configuration surfaces can declare a `fields` array. The dashboard renders these fields centrally in the Config tab and seeds drafts from each field's `defaultValue` when the worker is discovered or installed. Supported field types are `text`, `textarea`, `number`, `boolean`, `select`, `string-list`, `secret-reference`, and `model-alias`. Secrets should only use placeholders or empty defaults in the manifest; real values belong in local storage such as `.env` or a trusted worker backend endpoint.
 
 Every field can additionally declare `seedPath`, a dotted path into the dashboard's `workerData` bag (e.g. `core.news.sourceRules.minScore`). When the path resolves, the form initialises with the live value from the worker's data slice instead of the manifest's static default. This is how a worker lets the user *edit current settings* without writing any extra client code — the news worker's `source-quality-rules` surface is a complete example.
 

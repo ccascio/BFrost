@@ -50,6 +50,13 @@ export interface WorkerProviderSummary {
   };
 }
 
+export interface ModelOption {
+  alias: string;
+  id: string;
+  label: string;
+  provider: string;
+}
+
 export type WorkerDashboardField =
   | {
       type: 'text' | 'textarea' | 'secret-reference';
@@ -82,6 +89,15 @@ export type WorkerDashboardField =
       label: string;
       defaultValue: string;
       options: Array<{ label: string; value: string }>;
+      group?: string;
+      helpText?: string;
+    }
+  | {
+      type: 'model-alias';
+      key: string;
+      label: string;
+      defaultValue: string;
+      targetJob: string;
       group?: string;
       helpText?: string;
     }
@@ -153,6 +169,7 @@ export interface PlatformSettings {
 export interface DashboardSnapshot {
   workers: WorkerSummary[];
   cron: { jobs: SchedulerJobState[] };
+  models?: ModelOption[];
   integrations: Record<string, IntegrationStatus>;
   localRuntime: { running: boolean; loadedModels: string[]; loadedCount: number };
   platform: PlatformSettings;

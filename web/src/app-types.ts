@@ -187,6 +187,7 @@ export type JobDashboardField =
   | JobSelectField
   | JobStringListField
   | JobSecretReferenceField
+  | JobModelAliasField
   | JobActionField;
 
 export interface JobBaseField {
@@ -245,6 +246,12 @@ export interface JobSecretReferenceField extends JobBaseField {
   type: 'secret-reference';
   defaultValue: string;
   placeholder?: string;
+}
+
+export interface JobModelAliasField extends JobBaseField {
+  type: 'model-alias';
+  defaultValue: string;
+  targetJob: string;
 }
 
 export interface JobActionField extends JobBaseField {

@@ -417,6 +417,7 @@ export type WorkerJobDashboardField =
   | WorkerJobSelectField
   | WorkerJobStringListField
   | WorkerJobSecretReferenceField
+  | WorkerJobModelAliasField
   | WorkerJobActionField;
 
 interface WorkerJobBaseField {
@@ -480,6 +481,13 @@ export interface WorkerJobSecretReferenceField extends WorkerJobBaseField {
   type: 'secret-reference';
   defaultValue: string;
   placeholder?: string;
+}
+
+export interface WorkerJobModelAliasField extends WorkerJobBaseField {
+  type: 'model-alias';
+  defaultValue: string;
+  /** Scheduler job whose model override this field edits. */
+  targetJob: string;
 }
 
 export interface WorkerJobActionField extends WorkerJobBaseField {

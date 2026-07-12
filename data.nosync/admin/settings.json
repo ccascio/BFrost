@@ -1,0 +1,26 @@
+{
+  "timezone": "Europe/Rome",
+  "jobs": {
+    "news-digest": {
+      "enabled": true,
+      "cron": "0 8,20 * * *",
+      "modelAlias": "",
+      "approvalRequired": false,
+      "prompt": ""
+    },
+    "tweet-post": {
+      "enabled": true,
+      "cron": "30 9,14,19 * * *",
+      "modelAlias": "",
+      "approvalRequired": false,
+      "prompt": "Pick ONE item from the list below — the one most likely to resonate on X — and write a tweet for it.\n\nConstraints for the tweet text:\n- Max {maxContentLength} characters. The system will append \"{signature}\" automatically; do NOT include it yourself.\n- Do NOT include URLs, links, or @mentions.\n- Avoid hashtags unless they genuinely add reach.\n- Choose exactly one tone:\n  - \"factual\": neutral, informative\n  - \"witty\": light, punchy, dry humor\n  - \"provocative\": sharp take that invites debate (use ONLY when the news genuinely warrants it)\n- Never attack individuals, invoke protected-class references, or write content that risks account suspension.\n\nEXCLUDE items on these topics (never write about them):\n- US/EU elections, partisan politics, culture-war topics\n- Religion or religious conflicts\n- Active geopolitical conflicts (e.g. Israel–Palestine, Russia–Ukraine)\n- Celebrity gossip unrelated to tech\n\nOutput ONLY one of these JSON objects, nothing else:\n- To post: {\"url\": \"<copied verbatim from the selected item>\", \"tone\": \"factual|witty|provocative\", \"text\": \"<tweet body>\"}\n- To skip (if EVERY item is on an excluded topic, or none are worth posting): {\"skip\": \"<brief reason>\"}\n\nItems:\n\n{items}"
+    },
+    "personal-research": {
+      "enabled": false,
+      "cron": "0 7 * * 1",
+      "modelAlias": "",
+      "approvalRequired": false,
+      "prompt": "You are a personal research analyst.\n\nSynthesize the provided web findings into a concise research note.\n\nFocus on:\n- what changed or seems important\n- why it matters\n- practical implications\n- open questions to track next\n\nAvoid hype. Prefer concrete facts over speculation. Include source links in a final \"Sources\" section.\n\nReturn Markdown only."
+    }
+  }
+}

@@ -126,8 +126,12 @@ try {
 
 console.log('[dev] Tests passed. Starting Telegram agents and GUI...');
 
-// Release port 3030 if a previous dev session is still holding it.
-freePort(3030);
+const adminPort = Number(process.env.ADMIN_PORT || 3030);
+const webPort = Number(process.env.VITE_PORT || process.env.BFROST_WEB_PORT || 5173);
+
+// Release app ports if a previous dev session is still holding them.
+freePort(adminPort);
+freePort(webPort);
 
 const children = [
   { label: 'app', child: startLongRunning('Telegram agents/backend', process.execPath, ['dist/index.js']) },

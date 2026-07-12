@@ -1,5 +1,5 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
-import type { JobDashboardField, JobParamDraftValue } from '../app-types';
+import type { JobDashboardField, JobParamDraftValue, ModelOption } from '../app-types';
 import {
   addStringListDraftValue,
   fieldListPlaceholder,
@@ -16,6 +16,7 @@ interface DashboardFieldEditorProps {
   onChange: (value: JobParamDraftValue) => void;
   customListItemDrafts: Record<string, string>;
   setCustomListItemDrafts: Dispatch<SetStateAction<Record<string, string>>>;
+  modelOptions?: ModelOption[];
   draftKey?: string;
   onActionComplete?: () => void | Promise<void>;
 }
@@ -27,6 +28,7 @@ export function DashboardFieldEditor({
   onChange,
   customListItemDrafts,
   setCustomListItemDrafts,
+  modelOptions = [],
   draftKey = field.key,
   onActionComplete,
 }: DashboardFieldEditorProps) {
@@ -267,6 +269,23 @@ export function DashboardFieldEditor({
           {field.options.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
+            </option>
+          ))}
+        </select>
+        {field.helpText ? <small>{field.helpText}</small> : null}
+      </label>
+    );
+  }
+
+  if (field.type === 'model-alias') {
+    return (
+      <label className="field">
+        <span>{field.label}</span>
+        <select value={String(value)} onChange={(event) => onChange(event.target.value)}>
+          <option value="">Use default model</option>
+          {modelOptions.map((model) => (
+            <option key={model.alias} value={model.alias}>
+              {model.label}
             </option>
           ))}
         </select>

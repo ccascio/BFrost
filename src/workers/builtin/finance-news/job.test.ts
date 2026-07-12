@@ -7,6 +7,8 @@ import {
   tagCategory,
   matchTickers,
   parseRelevanceDecisions,
+  resolveRelevancePrompt,
+  DEFAULT_RELEVANCE_PROMPT,
 } from './job';
 
 test('params schema fills defaults and coerces bad input', () => {
@@ -39,21 +41,32 @@ test('tagCategory classifies by keyword, defaults to general', () => {
   assert.equal(tagCategory('A quiet day at the office'), 'general');
 });
 
-test('matchTickers includes the producing name plus any mentioned', () => {
-  const hits = matchTickers('AAPL and Microsoft announce a deal', ['AAPL', 'Microsoft', 'NVDA'], 'AAPL');
+test('matchTickers includes only mentioned watchlist entries and recognises company aliases', () => {
+  const hits = matchTickers('Apple and Microsoft announce a deal', ['AAPL', 'Microsoft', 'NVDA']);
   assert.ok(hits.includes('AAPL'));
   assert.ok(hits.includes('Microsoft'));
   assert.ok(!hits.includes('NVDA'));
-  // Producing name is always present even if not in the text.
-  assert.ok(matchTickers('unrelated text', ['AAPL'], 'AAPL').includes('AAPL'));
+  assert.deepEqual(matchTickers('unrelated text', ['AAPL']), []);
+  assert.deepEqual(matchTickers('The S&P 500 rose today', ['S&P 500']), ['S&P 500']);
 });
 
 test('parseRelevanceDecisions extracts a url-keyed map from noisy output', () => {
   const raw =
-    'Here is the JSON:\n[{"url":"https://x.com/a","relevant":true,"reason":"earnings beat"},' +
-    '{"url":"https://x.com/b","relevant":false,"reason":"recap"}] done';
+    'Here is the JSON:\n[{"url":"https://x.com/a","relevant":true,"targets":["AAPL"],"reason":"earnings beat"},' +
+    '{"url":"https://x.com/b","relevant":false,"targets":[],"reason":"recap"}] done';
   const map = parseRelevanceDecisions(raw);
   assert.equal(map.size, 2);
   assert.equal(map.get('https://x.com/a')?.relevant, true);
+  assert.deepEqual(map.get('https://x.com/a')?.targets, ['AAPL']);
   assert.equal(map.get('https://x.com/b')?.relevant, false);
+});
+
+test('resolveRelevancePrompt upgrades the former default but preserves custom text', () => {
+  const legacy = `You are a financial-news relevance filter working for an investor.
+
+For each article, decide whether it is *materially relevant* — i.e. a real development that a holder of these names would want to know about — versus noise (recaps, listicles, generic market wraps, ads, or stale repeats).
+
+Be strict: when in doubt, mark it not relevant. Never invent URLs; only use URLs present verbatim in the input. Do not give buy/sell advice — only judge relevance and state in one short sentence why it could matter.`;
+  assert.equal(resolveRelevancePrompt(legacy), DEFAULT_RELEVANCE_PROMPT);
+  assert.equal(resolveRelevancePrompt('Keep only filings.'), 'Keep only filings.');
 });

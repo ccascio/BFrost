@@ -8,6 +8,7 @@ import {
   runFinanceNewsScan,
 } from './job';
 import type { WorkerManifest } from '../../types';
+import { companyLabels } from './company-label';
 
 const CATEGORY_SUGGESTIONS = FINANCE_CATEGORIES.map((c) => c.value);
 
@@ -18,7 +19,7 @@ export const financeNewsWorker: WorkerManifest = {
   version: '0.1.0',
   description: 'Scans the web for developments on a watchlist of tickers/companies and queues finance.news items.',
   tagline:
-    'Follows the companies and themes you care about, optionally has the AI keep only what is materially relevant, and can ping your channel when something matters. Informational only — never trading advice.',
+    'Follows the companies and themes you care about, verifies which targets each story materially concerns, and feeds clean context to Finance Analyst for advice.',
   chatPrompts: [
     {
       label: 'Scan watchlist',
@@ -71,7 +72,7 @@ export const financeNewsWorker: WorkerManifest = {
       prompt: {
         editable: true,
         helpText:
-          'These instructions tell the AI how to judge whether a finance article is materially relevant. Applies only when "Filter for relevance with AI" is on. Keep it about relevance — not buy/sell advice.',
+          'These instructions tell the AI how to judge whether a finance article materially concerns a watchlist target. Applies only when "Filter for relevance with AI" is on; recommendations are produced by Finance Analyst downstream.',
         examples: [
           {
             label: 'Strict relevance (default)',
@@ -85,7 +86,7 @@ export const financeNewsWorker: WorkerManifest = {
 
 Keep an article ONLY if it reports a concrete, datable catalyst: an earnings/guidance release, an analyst rating or price-target change, a merger/acquisition, a regulatory or legal action, or a dividend/buyback decision. Drop opinion pieces, recaps, generic market wraps, and price-movement-only stories.
 
-Never invent URLs. Do not give buy/sell advice — only judge relevance and say in one short sentence what the catalyst is.`,
+Never invent URLs. Judge relevance and say in one short sentence what the catalyst is.`,
           },
           {
             label: 'Risk watch',
@@ -94,7 +95,7 @@ Never invent URLs. Do not give buy/sell advice — only judge relevance and say 
 
 Keep an article if it reports a negative or risk-raising development: a guidance cut, an earnings miss, a downgrade, an accounting/fraud concern, litigation/regulatory action, debt or liquidity stress, or executive departures. Drop routine positive PR and generic coverage.
 
-Never invent URLs. Do not give buy/sell advice — only judge relevance and state the risk in one short sentence.`,
+Never invent URLs. Judge relevance and state the risk in one short sentence.`,
           },
         ],
       },
@@ -217,7 +218,7 @@ Never invent URLs. Do not give buy/sell advice — only judge relevance and stat
       payload && typeof payload === 'object' && Array.isArray((payload as Record<string, unknown>)['tickers'])
         ? ((payload as Record<string, unknown>)['tickers'] as unknown[]).filter((t): t is string => typeof t === 'string')
         : [];
-    const meta = ['from core.finance-news', 'finance.news', ...(tickers.length ? [tickers.slice(0, 3).join(', ')] : [])];
+    const meta = ['from core.finance-news', 'finance.news', ...(tickers.length ? [companyLabels(tickers.slice(0, 3))] : [])];
     const parts = [`"${title}"`, `(${meta.join(' · ')})`];
     if (shortDesc) parts.push(`— ${shortDesc.slice(0, 120)}${shortDesc.length > 120 ? '…' : ''}`);
     return parts.join(' ');

@@ -119,8 +119,10 @@ function WorkerConfigurationSurface({
 
   const key = configSurfaceKey(worker.id, surface.id);
   const fields = surface.fields ?? [];
-  const draft = surfaceDrafts[key] ?? buildSurfaceDraft(surface, dashboard.workerData);
-  const canPersist = Boolean(surface.path && !surface.path.includes('#'));
+  const draft = surfaceDrafts[key] ?? buildSurfaceDraft(surface, dashboard.workerData, dashboard.cron.jobs);
+  const canPersistSurface = Boolean(surface.path && !surface.path.includes('#'));
+  const canPersistJobModels = fields.some((field) => field.type === 'model-alias' && field.targetJob);
+  const canPersist = canPersistSurface || canPersistJobModels;
   const canSubmit = canPersist && surfaceDraftHasValue(fields, draft);
   const fieldGroups = surface.fieldGroups ?? [];
   const groupedFields = fieldGroups.length > 0
@@ -161,11 +163,12 @@ function WorkerConfigurationSurface({
             <DashboardFieldEditor
               key={field.key}
               field={fieldWithSuggestions}
-              value={draft[field.key] ?? fieldDefaultDraftValue(field, dashboard.workerData)}
+              value={draft[field.key] ?? fieldDefaultDraftValue(field, dashboard.workerData, dashboard.cron.jobs)}
               formValues={draft}
               onChange={(nextValue) => updateSurfaceDraftParam(field.key, nextValue)}
               customListItemDrafts={customListItemDrafts}
               setCustomListItemDrafts={setCustomListItemDrafts}
+              modelOptions={dashboard.models}
               draftKey={`${key}.${field.key}`}
               onActionComplete={() => fetchDashboard(true)}
             />

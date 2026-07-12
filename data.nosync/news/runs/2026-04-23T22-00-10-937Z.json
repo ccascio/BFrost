@@ -1,0 +1,19 @@
+{
+  "ranAt": "2026-04-23T22:00:10.937Z",
+  "fetchedCount": 30,
+  "candidateCount": 30,
+  "articleFetchSuccessCount": 26,
+  "articleFetchFailureCount": 4,
+  "sourceQualifiedCount": 15,
+  "allowlistedCount": 0,
+  "blockedSourceCount": 8,
+  "lowScoreRejectedCount": 7,
+  "queuedCount": 9,
+  "rejectedCount": 20,
+  "seenCount": 1,
+  "duplicateUrlCount": 0,
+  "duplicateTitleCount": 0,
+  "nearDuplicateCount": 1,
+  "droppedHallucinated": 0,
+  "undecidedCount": 0
+}

@@ -108,6 +108,24 @@ test('admin API schemas accept expected dashboard payloads', () => {
     },
   );
   assert.deepEqual(
+    JobDashboardFieldSchema.parse({
+      key: 'modelAlias',
+      label: 'LLM model',
+      type: 'model-alias',
+      defaultValue: '',
+      targetJob: 'news-digest',
+      helpText: 'Leave blank to use the platform default.',
+    }),
+    {
+      key: 'modelAlias',
+      label: 'LLM model',
+      type: 'model-alias',
+      defaultValue: '',
+      targetJob: 'news-digest',
+      helpText: 'Leave blank to use the platform default.',
+    },
+  );
+  assert.deepEqual(
     SourceQualityRulesSchema.parse({
       minScore: 1,
       allowHosts: ['example.com'],

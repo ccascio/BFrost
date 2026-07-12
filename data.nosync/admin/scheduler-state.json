@@ -1,0 +1,13 @@
+{
+  "jobs": {
+    "tweet-post": {
+      "running": false,
+      "lastStartedAt": "2026-04-24T12:16:26.975Z",
+      "lastFinishedAt": "2026-04-24T12:17:26.867Z",
+      "lastStatus": "success",
+      "lastSummary": "Tweet pubblicato (factual):\nMicrosoft commits $18B to expand Australian AI infrastructure by 2029, marking its largest regional investment yet. GPU capacity will grow over 140% as cloud offerings scale. Big tech is clearly doubling down on AI readiness. — ConvertPrivately.com\n\nLink: https://x.com/Calogero1975/status/2047651121733181948",
+      "lastError": null,
+      "lastTrigger": "manual"
+    }
+  }
+}

@@ -170,7 +170,7 @@ export function StepWebSearch({
     if (!surface.path) return;
     const key = `${worker.id}:${surface.id}`;
     const fields = (surface.fields ?? []) as JobDashboardField[];
-    const draft = drafts[key] ?? buildSurfaceDraft(surface, dashboard.workerData);
+    const draft = drafts[key] ?? buildSurfaceDraft(surface, dashboard.workerData, dashboard.cron.jobs);
     setBusy(key);
     setMessage(null);
     try {
@@ -211,7 +211,7 @@ export function StepWebSearch({
           const surface = webSearchSurface(worker);
           const key = surface ? `${worker.id}:${surface.id}` : worker.id;
           const fields = ((surface?.fields ?? []) as JobDashboardField[]);
-          const draft = surface ? drafts[key] ?? buildSurfaceDraft(surface, dashboard.workerData) : {};
+          const draft = surface ? drafts[key] ?? buildSurfaceDraft(surface, dashboard.workerData, dashboard.cron.jobs) : {};
           const healthy = worker.healthState === 'healthy';
           return (
             <div key={worker.id} className={`wizard-worker-item${healthy ? ' enabled' : ''}`}>
@@ -239,6 +239,7 @@ export function StepWebSearch({
                         }}
                         customListItemDrafts={customListItemDrafts}
                         setCustomListItemDrafts={setCustomListItemDrafts}
+                        modelOptions={dashboard.models ?? []}
                         draftKey={`${key}:${field.key}`}
                         onActionComplete={onRefresh}
                       />

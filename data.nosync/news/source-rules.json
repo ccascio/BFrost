@@ -1,0 +1,37 @@
+{
+  "minScore": 0,
+  "allowHosts": [],
+  "blockHosts": [
+    "x.com",
+    "twitter.com",
+    "youtube.com",
+    "youtu.be",
+    "facebook.com",
+    "instagram.com",
+    "tiktok.com",
+    "linkedin.com"
+  ],
+  "preferredHosts": [
+    "openai.com",
+    "anthropic.com",
+    "google.com",
+    "deepmind.google",
+    "mistral.ai",
+    "huggingface.co",
+    "arxiv.org",
+    "techcrunch.com",
+    "theverge.com",
+    "arstechnica.com",
+    "wired.com",
+    "venturebeat.com",
+    "reuters.com",
+    "bloomberg.com"
+  ],
+  "lowQualityHosts": [
+    "prnewswire.com",
+    "businesswire.com",
+    "globenewswire.com",
+    "accessnewswire.com",
+    "newswire.com"
+  ]
+}

@@ -7,6 +7,8 @@ import type {
   WorkerDashboardSurface,
 } from '../app-types';
 
+type ModelAliasJobState = Pick<SchedulerJobState, 'name'> & { modelAlias?: string };
+
 export function jobScheduleChanges(job: SchedulerJobState, draft: JobDraft): Array<{ field: string; from: string; to: string }> {
   const changes: Array<{ field: string; from: string; to: string }> = [];
   if (draft.enabled !== job.enabled) {
@@ -112,6 +114,9 @@ export function buildJobParamsDraft(job: SchedulerJobState): Record<string, JobP
       if (field.type === 'select' || field.type === 'secret-reference') {
         return [field.key, typeof value === 'string' ? value : field.defaultValue];
       }
+      if (field.type === 'model-alias') {
+        return [field.key, typeof value === 'string' ? value : field.defaultValue];
+      }
       if (field.type === 'action') {
         return [field.key, ''];
       }
@@ -123,15 +128,17 @@ export function buildJobParamsDraft(job: SchedulerJobState): Record<string, JobP
 export function buildSurfaceDraft(
   surface: WorkerDashboardSurface,
   workerData?: Record<string, unknown>,
+  jobs: ModelAliasJobState[] = [],
 ): Record<string, JobParamDraftValue> {
   return Object.fromEntries(
-    (surface.fields ?? []).map((field) => [field.key, fieldDefaultDraftValue(field, workerData)]),
+    (surface.fields ?? []).map((field) => [field.key, fieldDefaultDraftValue(field, workerData, jobs)]),
   );
 }
 
 export function fieldDefaultDraftValue(
   field: JobDashboardField,
   workerData?: Record<string, unknown>,
+  jobs: ModelAliasJobState[] = [],
 ): JobParamDraftValue {
   if (field.seedPath && workerData) {
     const seeded = resolveSeedPath(workerData, field.seedPath);
@@ -144,7 +151,13 @@ export function fieldDefaultDraftValue(
       if ((field.type === 'text' || field.type === 'textarea' || field.type === 'select' || field.type === 'secret-reference') && typeof seeded === 'string') {
         return seeded;
       }
+      if (field.type === 'model-alias' && typeof seeded === 'string') {
+        return seeded;
+      }
     }
+  }
+  if (field.type === 'model-alias') {
+    return jobs.find((job) => job.name === field.targetJob)?.modelAlias ?? field.defaultValue;
   }
   if (field.type === 'action') return '';
   if (field.type === 'string-list') return field.defaultValue.join('\n');
@@ -177,7 +190,7 @@ export function serializeDashboardFields(
   draft: Record<string, JobParamDraftValue>,
 ): Record<string, unknown> {
   return Object.fromEntries(
-    fields.filter((field) => field.type !== 'action').map((field) => {
+    fields.filter((field) => field.type !== 'action' && field.type !== 'model-alias').map((field) => {
       const value = draft[field.key] ?? fieldDefaultDraftValue(field);
       if (field.type === 'string-list') {
         return [field.key, String(value).split('\n').map((item) => item.trim()).filter(Boolean)];
@@ -200,6 +213,7 @@ export function serializeJobParams(job: SchedulerJobState, draft: JobDraft): Rec
 export function surfaceDraftHasValue(fields: JobDashboardField[], draft: Record<string, JobParamDraftValue>): boolean {
   return fields.some((field) => {
     if (field.type === 'action') return false;
+    if (field.type === 'model-alias') return true;
     const value = draft[field.key] ?? fieldDefaultDraftValue(field);
     if (field.type === 'boolean') return true;
     if (field.type === 'number') return typeof value === 'number' && Number.isFinite(value);

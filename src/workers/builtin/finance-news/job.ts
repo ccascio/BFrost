@@ -3,6 +3,7 @@ import { generateText } from 'ai';
 import { config, findModel, type ModelOption } from '../../../config';
 import { getChatModel } from '../../../llm';
 import { searchGoogle, type SearchResult } from '../search-google/module';
+import { companyAliases, companyLabels } from './company-label';
 import { fetchArticle } from '../article-fetch/module';
 import { publishItem } from '../../../jobs/item-bus';
 import { loadKvJson, saveKvJson } from '../../../sqlite';
@@ -70,11 +71,17 @@ const LENS_FRAMING: Record<string, string> = {
 
 export const DEFAULT_WATCHLIST = ['AAPL', 'NVDA', 'Federal Reserve'];
 
-export const DEFAULT_RELEVANCE_PROMPT = `You are a financial-news relevance filter working for an investor.
+const LEGACY_DEFAULT_RELEVANCE_PROMPT = `You are a financial-news relevance filter working for an investor.
 
 For each article, decide whether it is *materially relevant* — i.e. a real development that a holder of these names would want to know about — versus noise (recaps, listicles, generic market wraps, ads, or stale repeats).
 
 Be strict: when in doubt, mark it not relevant. Never invent URLs; only use URLs present verbatim in the input. Do not give buy/sell advice — only judge relevance and state in one short sentence why it could matter.`;
+
+export const DEFAULT_RELEVANCE_PROMPT = `You are a financial-news relevance filter working for an investor.
+
+For each article, decide whether it is *materially relevant* — i.e. a real development that a holder of these names would want to know about — versus noise (recaps, listicles, generic market wraps, ads, or stale repeats).
+
+Be strict: when in doubt, mark it not relevant. Never invent URLs; only use URLs present verbatim in the input. Judge relevance and state in one short sentence why the catalyst could matter to the verified target.`;
 
 export const FinanceNewsParamsSchema = z.object({
   watchlist: z.array(z.string().min(1)).min(1).catch(DEFAULT_WATCHLIST),
@@ -117,14 +124,49 @@ function pruneSeen(seen: Record<string, string>, nowMs: number, ttlMs: number): 
 }
 
 interface StoredAdminSettings {
-  jobs?: Record<string, { prompt?: string }>;
+  jobs?: Record<string, { prompt?: string; [key: string]: unknown }>;
+  [key: string]: unknown;
 }
 
 /** Operator-edited relevance prompt (Jobs panel) falls back to the default. */
 async function loadRelevancePrompt(): Promise<string> {
   const stored = await loadKvJson<StoredAdminSettings>(ADMIN_SETTINGS_STORE_KEY);
-  const prompt = stored?.jobs?.[JOB_ID]?.prompt;
-  return typeof prompt === 'string' && prompt.trim() ? prompt : DEFAULT_RELEVANCE_PROMPT;
+  const current = stored?.jobs?.[JOB_ID]?.prompt;
+  const resolved = resolveRelevancePrompt(current);
+  if (stored && typeof current === 'string' && resolved !== current) {
+    await saveResolvedRelevancePrompt(stored, resolved);
+  }
+  return resolved;
+}
+
+/** Preserve custom prompts, but upgrade a persisted copy of the former built-in default. */
+export function resolveRelevancePrompt(prompt: unknown): string {
+  if (typeof prompt !== 'string' || !prompt.trim()) return DEFAULT_RELEVANCE_PROMPT;
+  return prompt.trim() === LEGACY_DEFAULT_RELEVANCE_PROMPT ? DEFAULT_RELEVANCE_PROMPT : prompt;
+}
+
+/** Upgrade only the known built-in legacy prompt in the worker-owned job settings. */
+export async function migrateLegacyRelevancePrompt(): Promise<boolean> {
+  const stored = await loadKvJson<StoredAdminSettings>(ADMIN_SETTINGS_STORE_KEY);
+  const current = stored?.jobs?.[JOB_ID]?.prompt;
+  if (!stored || typeof current !== 'string') return false;
+  const resolved = resolveRelevancePrompt(current);
+  if (resolved === current) return false;
+  await saveResolvedRelevancePrompt(stored, resolved);
+  return true;
+}
+
+async function saveResolvedRelevancePrompt(stored: StoredAdminSettings, prompt: string): Promise<void> {
+  await saveKvJson(ADMIN_SETTINGS_STORE_KEY, {
+    ...stored,
+    jobs: {
+      ...stored.jobs,
+      [JOB_ID]: {
+        ...stored.jobs?.[JOB_ID],
+        prompt,
+      },
+    },
+  });
 }
 
 /** Build one search query per watchlist name, OR-ing the selected category keywords. */
@@ -144,11 +186,18 @@ export function tagCategory(text: string): string {
   return 'general';
 }
 
-/** Watchlist names mentioned in the text, plus the name that produced the query. */
-export function matchTickers(text: string, watchlist: string[], producedBy: string): string[] {
+/** Watchlist entries actually mentioned in the text, including known company-name aliases. */
+export function matchTickers(text: string, watchlist: string[]): string[] {
   const lower = text.toLowerCase();
-  const hits = watchlist.filter((n) => lower.includes(n.toLowerCase()));
-  return [...new Set([producedBy, ...hits])];
+  return watchlist.filter((entry) =>
+    companyAliases(entry).some((alias) => containsEntity(lower, alias.toLowerCase())),
+  );
+}
+
+function containsEntity(lowerText: string, lowerAlias: string): boolean {
+  if (!lowerAlias) return false;
+  const escaped = lowerAlias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i').test(lowerText);
 }
 
 function extractJsonArray(text: string): unknown {
@@ -161,6 +210,7 @@ function extractJsonArray(text: string): unknown {
 const RelevanceDecisionSchema = z.object({
   url: z.string().url(),
   relevant: z.boolean(),
+  targets: z.array(z.string()).default([]),
   reason: z.string().min(1).max(240),
 });
 const RelevanceArraySchema = z.array(RelevanceDecisionSchema);
@@ -176,11 +226,12 @@ export function parseRelevanceDecisions(text: string): Map<string, RelevanceDeci
 
 interface Candidate {
   result: SearchResult;
-  name: string;
+  searchTargets: string[];
   tickers: string[];
   category: string;
   excerpt: string; // capped article/snippet text
   fullText: string; // longer text stored in payload for consumers
+  contentQuality: 'article' | 'partial' | 'snippet';
 }
 
 async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -200,16 +251,21 @@ async function runRelevancePass(
 ): Promise<Map<string, RelevanceDecision>> {
   const payload = candidates.map((c) => ({
     url: c.result.link,
+    searchTargets: c.searchTargets,
+    detectedTargets: c.tickers,
     title: c.result.title,
     snippet: c.result.snippet ?? '',
     excerpt: c.excerpt.slice(0, LLM_EXCERPT_CHARS),
+    contentQuality: c.contentQuality,
   }));
   const system =
     'You output only a valid JSON array. Never invent URLs; only use URLs present verbatim in the provided input.';
   const prompt =
     '/no_think\n' +
     `${promptTemplate}\n\nInvestor focus: ${lensFraming}\n\n` +
-    'Return a JSON array; one object per article: {"url": string, "relevant": boolean, "reason": string (<=200 chars)}.\n\n' +
+    'An article is relevant only when it materially concerns at least one search target; an incidental ticker, index quote, navigation label, or generic market comparison is not enough. ' +
+    'Copy every materially discussed target from searchTargets into targets. If targets is empty, relevant must be false.\n\n' +
+    'Return a JSON array; one object per article: {"url": string, "relevant": boolean, "targets": string[], "reason": string (<=200 chars)}.\n\n' +
     `Articles:\n${JSON.stringify(payload, null, 2)}`;
 
   const { text } = await generateText({
@@ -243,7 +299,7 @@ export async function runFinanceNewsScan(
 
   // 1. Search — one query per watchlist name, dedup by URL, drop already-seen.
   const queries = buildQueries(params.watchlist, params.categories);
-  const byUrl = new Map<string, { result: SearchResult; name: string }>();
+  const byUrl = new Map<string, { result: SearchResult; searchTargets: string[] }>();
   for (const { name, query } of queries) {
     const results = await searchGoogle(query, {
       num: params.maxResultsPerName,
@@ -251,8 +307,13 @@ export async function runFinanceNewsScan(
       sort: 'date',
     });
     for (const r of results) {
-      if (!r.link || seen[r.link] || byUrl.has(r.link)) continue;
-      byUrl.set(r.link, { result: r, name });
+      if (!r.link || seen[r.link]) continue;
+      const existing = byUrl.get(r.link);
+      if (existing) {
+        existing.searchTargets = [...new Set([...existing.searchTargets, name])];
+      } else {
+        byUrl.set(r.link, { result: r, searchTargets: [name] });
+      }
     }
   }
   const discovered = [...byUrl.values()].slice(0, Math.max(params.maxItems * 2, params.maxItems));
@@ -265,24 +326,28 @@ export async function runFinanceNewsScan(
   }
 
   // 2. Enrich — fetch article text (used by the relevance pass and stored for consumers).
-  const candidates: Candidate[] = await mapWithConcurrency(discovered, ARTICLE_FETCH_CONCURRENCY, async ({ result, name }) => {
+  const candidates: Candidate[] = await mapWithConcurrency(discovered, ARTICLE_FETCH_CONCURRENCY, async ({ result, searchTargets }) => {
     let fullText = result.snippet ?? '';
+    let fetchedArticle = false;
     try {
       const article = await fetchArticle(result.link, { maxExtractedTextChars: ARTICLE_FETCH_CHARS });
       if (article?.fetched && article.content) {
         fullText = buildFinanceArticleText(result, article.title, article.description, article.content);
+        fetchedArticle = true;
       }
     } catch {
       // keep the snippet on fetch failure
     }
     const tagText = `${result.title} ${result.snippet ?? ''} ${fullText}`;
+    const tickers = matchTickers(tagText, params.watchlist);
     return {
       result,
-      name,
-      tickers: matchTickers(`${result.title} ${result.snippet ?? ''}`, params.watchlist, name),
+      searchTargets,
+      tickers,
       category: tagCategory(tagText),
       excerpt: fullText,
       fullText,
+      contentQuality: fetchedArticle ? 'article' : fullText.length >= 240 ? 'partial' : 'snippet',
     };
   });
 
@@ -295,28 +360,39 @@ export async function runFinanceNewsScan(
     const lensFraming = LENS_FRAMING[params.investorLens] ?? LENS_FRAMING['none'];
     const promptTemplate = await loadRelevancePrompt();
     relevanceByUrl = await runRelevancePass(modelOption, candidates, lensFraming, promptTemplate);
-    kept = candidates.filter((c) => relevanceByUrl.get(c.result.link)?.relevant);
+    kept = candidates.filter((c) => {
+      const decision = relevanceByUrl.get(c.result.link);
+      if (!decision?.relevant) return false;
+      const allowed = new Set([...c.searchTargets, ...c.tickers].map((target) => target.toLowerCase()));
+      decision.targets = decision.targets.filter((target) => allowed.has(target.toLowerCase()));
+      return decision.targets.length > 0;
+    });
+  } else {
+    kept = candidates.filter((candidate) => candidate.tickers.length > 0);
   }
   kept = kept.slice(0, params.maxItems);
 
   // 4. Publish kept items to the Item Bus.
   for (const c of kept) {
     const decision = relevanceByUrl.get(c.result.link);
+    const targets = decision?.targets.length ? decision.targets : c.tickers;
     await publishItem({
       producerWorkerId: 'core.finance-news',
       itemType: FINANCE_NEWS_ITEM_TYPE,
-      tags: [c.category, ...c.tickers],
+      tags: [c.category, ...targets],
       title: c.result.title.slice(0, 200) || 'Untitled',
       shortDesc: (decision?.reason || c.result.snippet || '').slice(0, 400),
       url: c.result.link,
       payload: {
-        tickers: c.tickers,
+        tickers: targets,
         category: c.category,
         source: { host: hostOf(c.result.link), title: c.result.title },
         snippet: c.result.snippet ?? '',
         articleText: c.fullText.slice(0, ARTICLE_FETCH_CHARS),
+        articleChars: c.fullText.length,
+        contentQuality: c.contentQuality,
         relevanceReason: decision?.reason ?? null,
-        producedFor: c.name,
+        producedFor: c.searchTargets,
         fetchedAt: now.toISOString(),
       },
       selectionReason: decision?.reason,
@@ -369,8 +445,9 @@ async function notifyRelevant(
   filtered: boolean,
 ): Promise<void> {
   const lines = kept.slice(0, 6).map((c) => {
-    const reason = relevance.get(c.result.link)?.reason;
-    const who = c.tickers.slice(0, 3).join(', ');
+    const decision = relevance.get(c.result.link);
+    const reason = decision?.reason;
+    const who = companyLabels((decision?.targets.length ? decision.targets : c.tickers).slice(0, 3));
     return `• ${who}: ${reason || c.result.title}`;
   });
   const more = kept.length > 6 ? `\n…and ${kept.length - 6} more.` : '';

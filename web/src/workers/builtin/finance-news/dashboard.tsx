@@ -1,4 +1,5 @@
 import type { WorkerDashboardViewDefinition, WorkerQueueItem } from '../../types';
+import { companyLabels } from '../finance/company-label';
 
 const WORKER_ID = 'core.finance-news';
 const JOB_ID = 'finance-news-scan';
@@ -42,15 +43,17 @@ function itemFromQueue(item: WorkerQueueItem) {
 }
 
 function FinanceNewsDashboard(ctx: Record<string, any>) {
-  const {
-    activeWorkerTab,
-    dashboard,
-    busyKey,
-    triggerRun,
-    formatDate,
-    StatusPill,
-    Detail,
-  } = ctx;
+  const dashboard = ctx.dashboard ?? {};
+  const busyKey = ctx.busyKey;
+  const triggerRun = typeof ctx.triggerRun === 'function' ? ctx.triggerRun : async () => undefined;
+  const formatDate = typeof ctx.formatDate === 'function' ? ctx.formatDate : (value: unknown) => String(value || 'n/a');
+  const StatusPill = typeof ctx.StatusPill === 'function'
+    ? ctx.StatusPill
+    : ({ children }: Record<string, any>) => <span>{children}</span>;
+  const Detail = typeof ctx.Detail === 'function'
+    ? ctx.Detail
+    : ({ label, value }: Record<string, any>) => <p><strong>{label}:</strong> {value}</p>;
+  const workerName = ctx.activeWorkerTab?.worker?.name ?? 'Finance News';
   const slice = (dashboard.workerData?.[WORKER_ID] as any) ?? {};
   const job = (dashboard.cron?.jobs ?? []).find((entry: any) => entry.name === JOB_ID || entry.workerId === WORKER_ID);
   const runs = (dashboard.cron?.runs ?? []).filter((run: any) => run.job === JOB_ID);
@@ -66,7 +69,7 @@ function FinanceNewsDashboard(ctx: Record<string, any>) {
       <article className="panel">
         <div className="panel-head">
           <div>
-            <p className="panel-kicker">{activeWorkerTab.worker.name}</p>
+            <p className="panel-kicker">{workerName}</p>
             <h2>Scan output</h2>
           </div>
           <StatusPill tone={job?.enabled ? 'info' : 'muted'}>{job?.enabled ? 'Scheduled' : 'Paused'}</StatusPill>
@@ -106,7 +109,7 @@ function FinanceNewsDashboard(ctx: Record<string, any>) {
                   <strong>{item.title}</strong>
                 </a>
                 <span className="queue-meta">
-                  {arrayOfStrings(item.tickers).join(', ') || item.category || 'finance'} - {item.sourceHost || hostFromUrl(item.url)} - {formatDate(item.addedAt)}
+                  {companyLabels(arrayOfStrings(item.tickers)) || item.category || 'finance'} - {item.sourceHost || hostFromUrl(item.url)} - {formatDate(item.addedAt)}
                 </span>
                 <p>{item.relevanceReason || item.shortDesc}</p>
               </div>
@@ -119,26 +122,15 @@ function FinanceNewsDashboard(ctx: Record<string, any>) {
         </div>
       </article>
 
-      <article className="panel">
-        <div className="panel-head">
-          <div>
-            <p className="panel-kicker">Guide</p>
-            <h2>Reading the results</h2>
-          </div>
+      <details className="panel tab-page worker-help-footer" open={recentItems.length === 0}>
+        <summary><strong>Guide: using Finance News</strong></summary>
+        <div className="detail-body">
+          <p>This worker searches for watchlist developments, verifies materially discussed targets, and publishes <code>finance.news</code> items for Finance Analyst.</p>
+          <p>Configure the watchlist, categories, schedule, model, and relevance prompt in <strong>Jobs → Finance News Scan</strong>.</p>
+          <p><strong>Example watchlist:</strong> <code>AAPL, NVDA, MSFT</code>. Keep broad themes such as <code>S&amp;P 500</code> only when you want index-level advice downstream.</p>
+          <p><strong>Why was a result dropped?</strong> Incidental ticker mentions, index quotes, navigation labels, generic market recaps, and items with no verified target do not pass Phase 1 relevance.</p>
         </div>
-        <details className="detail-block" open={recentItems.length === 0}>
-          <summary>What should I check after a run?</summary>
-          <p>Confirm the latest run succeeded, then scan the recent articles list. Queued or approved items are available for downstream workers such as Finance Analyst.</p>
-        </details>
-        <details className="detail-block">
-          <summary>Where do I change the watchlist?</summary>
-          <p>Open Jobs, select Finance News Scan, then edit the watchlist, categories, schedule, model, and relevance prompt there.</p>
-        </details>
-        <details className="detail-block">
-          <summary>Is this trading advice?</summary>
-          <p>No. The worker collects and filters news for review. It does not recommend buying, selling, or holding any security.</p>
-        </details>
-      </article>
+      </details>
     </section>
   );
 }
@@ -154,9 +146,9 @@ export const dashboardView: WorkerDashboardViewDefinition = {
     label: 'Finance News',
   },
   count: ({ dashboard }) => {
-    const slice = (dashboard.workerData?.[WORKER_ID] as any) ?? {};
+    const slice = (dashboard?.workerData?.[WORKER_ID] as any) ?? {};
     if (Array.isArray(slice.recentItems)) return slice.recentItems.length;
-    return (dashboard.queue?.recentItems ?? []).filter(isFinanceNewsItem).length;
+    return (dashboard?.queue?.recentItems ?? []).filter(isFinanceNewsItem).length;
   },
   render: (ctx) => <FinanceNewsDashboard {...ctx} />,
 };

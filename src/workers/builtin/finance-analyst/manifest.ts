@@ -3,6 +3,7 @@ import {
   DEFAULT_ANALYSIS_PROMPT,
   FinanceAnalysisParamsSchema,
   INVESTOR_LENSES,
+  RISK_TOLERANCES,
   hasFinanceAnalysisWork,
   runFinanceAnalysis,
 } from './job';
@@ -13,19 +14,19 @@ export const financeAnalystWorker: WorkerManifest = {
   name: 'Finance Analyst',
   displayName: 'Finance Analyst',
   version: '0.1.0',
-  description: 'Reads finance.news items and attaches a structured, informational read of the likely market impact.',
+  description: 'Reads finance.news items and attaches advice plus a practical non-trading research priority for each verified target.',
   tagline:
-    'Reads the finance news collected for your watchlist and writes a short, sober take on each — likely direction, size, horizon, confidence, and whether it is already priced in. Informational only, never buy/sell advice.',
+    'Turns verified watchlist news into grounded advice plus a practical research priority: act on research, watch, no action, or insufficient evidence.',
   chatPrompts: [
     {
       label: 'Analyze finance news',
       description: 'Run analysis for pending finance.news items.',
-      prompt: 'Analyze pending finance news now and summarize the reads.',
+      prompt: 'Analyze pending finance news now and summarize the BUY, HOLD, or SELL recommendations.',
     },
     {
-      label: 'Latest reads',
-      description: 'Review recent finance analysis output.',
-      prompt: 'Show me the latest finance analyst reads with confidence and direction.',
+      label: 'Latest recommendations',
+      description: 'Review recent finance research priorities.',
+      prompt: 'Show me the latest finance analyst priorities with catalyst, evidence, confidence, risks, and next check.',
     },
   ],
   builtIn: true,
@@ -35,7 +36,7 @@ export const financeAnalystWorker: WorkerManifest = {
       {
         id: 'finance-analyst-dashboard',
         label: 'Finance Analyst',
-        description: 'Review analysed finance.news items, pending work, and recent analysis runs.',
+        description: 'Review finance.news recommendations, pending work, and recent analysis runs.',
         path: '/api/dashboard#workerData.core.finance-analyst',
       },
     ],
@@ -55,7 +56,7 @@ export const financeAnalystWorker: WorkerManifest = {
       id: 'finance-analysis',
       workerId: 'core.finance-analyst',
       label: 'Finance Analysis',
-      description: 'Analyses unhandled finance.news items and annotates each with a structured impact read.',
+      description: 'Analyses unhandled finance.news items and annotates each target with structured investment advice.',
       defaultEnabled: false,
       // Runs shortly after the finance-news scan presets so fresh items get a read.
       defaultCron: '20 7,13,19 * * 1-5',
@@ -66,19 +67,19 @@ export const financeAnalystWorker: WorkerManifest = {
       prompt: {
         editable: true,
         helpText:
-          'Instructions for how the AI should read each finance news item. Keep it informational — the worker is designed to characterise impact and uncertainty, not to give buy/sell advice.',
+          'Instructions for how the AI should turn each finance news item into grounded advice and a separate non-trading research priority. The output contract always requires both for every verified target.',
         examples: [
           {
-            label: 'Sober analyst (default)',
-            description: 'Balanced, uncertainty-aware read grounded in the article.',
+            label: 'Decisive analyst (default)',
+            description: 'Grounded advice with a practical research priority instead of defaulting to HOLD.',
             value: DEFAULT_ANALYSIS_PROMPT,
           },
           {
             label: 'Mechanism-first',
-            description: 'Emphasises the causal chain from the news to the share price.',
-            value: `You are a financial analyst. For each item, explain the causal mechanism first: what specifically changed, which line item or driver it affects, and how that transmits to the share price.
+            description: 'Gives advice after tracing the causal chain from the news to the share price.',
+            value: `You are an investment analyst. Give a BUY, HOLD, or SELL recommendation and a separate research priority for every target after explaining the causal mechanism: what specifically changed, which line item or driver it affects, and how that transmits to the share price.
 
-Ground every claim in the provided article text only. Be explicit about second-order effects and what is uncertain. Do NOT give buy/sell/hold advice — characterise the likely reaction and the mechanism only.`,
+Ground factual claims in the supplied input. Be explicit about catalyst, evidence, second-order effects, risks, and what evidence would change the recommendation. Use attention to say whether the operator should investigate now, watch, take no further research action, or treat the article as insufficient evidence.`,
           },
         ],
       },
@@ -103,11 +104,28 @@ Ground every claim in the provided article text only. Be explicit about second-o
           helpText: 'Tilts the read toward what matters for your style. Does not change the facts, only the emphasis.',
         },
         {
+          key: 'riskTolerance',
+          label: 'Risk tolerance',
+          type: 'select',
+          defaultValue: DEFAULT_FINANCE_ANALYSIS_PARAMS.riskTolerance,
+          options: RISK_TOLERANCES.map((entry) => ({ value: entry.value, label: entry.label })),
+          helpText: 'Calibrates how much uncertainty and downside the recommendation may accept.',
+        },
+        {
+          key: 'portfolioContext',
+          label: 'Portfolio context',
+          type: 'textarea',
+          defaultValue: DEFAULT_FINANCE_ANALYSIS_PARAMS.portfolioContext,
+          rows: 5,
+          placeholder: 'Optional: current holdings, cost basis, target horizon, position limits, or constraints.',
+          helpText: 'Passed to the analyst with every run so advice can reflect your actual exposure and constraints.',
+        },
+        {
           key: 'notifyOnAnalysis',
-          label: 'Send the reads to my channel',
+          label: 'Send the advice to my channel',
           type: 'boolean',
           defaultValue: DEFAULT_FINANCE_ANALYSIS_PARAMS.notifyOnAnalysis,
-          helpText: 'Delivers a compact digest of the reads to your primary channel (Telegram / Discord / email).',
+          helpText: 'Delivers a compact digest of the recommendations to your primary channel (Telegram / Discord / email).',
         },
       ],
       hasWork: () => hasFinanceAnalysisWork(),
@@ -122,7 +140,12 @@ Ground every claim in the provided article text only. Be explicit about second-o
         ? (metadata as Record<string, Record<string, unknown>>)['core.finance-analyst']
         : undefined;
     const dir = read ? safeStr(read['direction']) : '';
-    const meta = ['from core.finance-analyst', 'finance.news', ...(dir ? [`read: ${dir}`] : ['no read yet'])];
+    const recommendation = read ? safeStr(read['recommendation']) : '';
+    const meta = [
+      'from core.finance-analyst',
+      'finance.news',
+      ...(recommendation ? [`advice: ${recommendation}`] : dir ? [`legacy read: ${dir}`] : ['no advice yet']),
+    ];
     return `"${title}" (${meta.join(' · ')})`;
   },
 };

@@ -270,20 +270,35 @@ export default function App() {
 
 
   async function saveWorkerConfigurationSurface(worker: WorkerSummary, surface: WorkerDashboardSurface) {
-    if (!surface.path || surface.path.includes('#')) return;
     const key = configSurfaceKey(worker.id, surface.id);
     const fields = surface.fields ?? [];
-    const draft = surfaceDrafts[key] ?? buildSurfaceDraft(surface, dashboard?.workerData);
+    const draft = surfaceDrafts[key] ?? buildSurfaceDraft(surface, dashboard?.workerData, dashboard?.cron.jobs ?? []);
+    const surfacePayload = serializeDashboardFields(fields, draft);
 
-    await mutate(
-      `config-surface-${key}`,
-      surface.path,
-      {
-        method: 'POST',
-        body: JSON.stringify(serializeDashboardFields(fields, draft)),
-      },
-      `${surface.label} saved.`,
-    );
+    if (surface.path && !surface.path.includes('#') && Object.keys(surfacePayload).length > 0) {
+      await mutate(
+        `config-surface-${key}`,
+        surface.path,
+        {
+          method: 'POST',
+          body: JSON.stringify(surfacePayload),
+        },
+        `${surface.label} saved.`,
+      );
+    }
+
+    for (const field of fields) {
+      if (field.type !== 'model-alias') continue;
+      await mutate(
+        `config-surface-${key}`,
+        `/api/cron-jobs/${encodeURIComponent(field.targetJob)}`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ modelAlias: String(draft[field.key] ?? '') }),
+        },
+        `${field.label} saved.`,
+      );
+    }
   }
 
   if (!session) {

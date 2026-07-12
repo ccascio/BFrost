@@ -209,6 +209,16 @@ export const JobDashboardFieldSchema = z.discriminatedUnion('type', [
   z.object({
     key: z.string(),
     label: z.string(),
+    type: z.literal('model-alias'),
+    defaultValue: z.string(),
+    targetJob: z.string(),
+    group: z.string().optional(),
+    helpText: z.string().optional(),
+    seedPath: z.string().optional(),
+  }).strict(),
+  z.object({
+    key: z.string(),
+    label: z.string(),
     type: z.literal('action'),
     actionPath: z.string(),
     group: z.string().optional(),

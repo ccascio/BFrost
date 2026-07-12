@@ -81,6 +81,14 @@ export const newsWorker: WorkerManifest = {
         path: '/api/workers/news/digest-params',
         fields: [
           {
+            key: 'modelAlias',
+            label: 'LLM model',
+            type: 'model-alias',
+            defaultValue: '',
+            targetJob: 'news-digest',
+            helpText: 'Model Scout uses to evaluate and summarize articles. Leave blank to use the platform default.',
+          },
+          {
             key: 'queries',
             label: 'News interests',
             type: 'string-list',
