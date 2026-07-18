@@ -50,6 +50,22 @@ export async function runNamedJob(job: JobName, modelAlias?: string, params?: Re
     throw new Error(`Unknown model alias: ${requestedModel}`);
   }
 
+  // Local models are expensive to start and load. Give queue-backed workers a chance
+  // to report an empty input before touching the local runtime at all.
+  if (isActiveLocalRuntimeModel(primaryModel)) {
+    const workerJob = getWorkerJob(job);
+    if (workerJob.hasWork && !(await workerJob.hasWork(params))) {
+      return {
+        job,
+        modelAlias: primaryModel.alias,
+        modelId: primaryModel.id,
+        modelLabel: primaryModel.label,
+        summary: 'Nothing to do — skipped model load.',
+        itemCount: 0,
+      };
+    }
+  }
+
   return runWithModelFailover(primaryModel, async (model) => {
     const result = await invokeJob(job, model.id, params);
     return {
@@ -268,9 +284,10 @@ async function runWithPreparedLocalRuntimeModel<T>(
     }
     throw err;
   } finally {
-    // Unload the model we just ran, unless we want to keep it (chat with keepLoaded,
-    // or this IS the pinned model the user wants resident).
-    if (!keepRunningModel && modelPrepared && !alreadyLoadedOnlyModel && provider.unloadModel) {
+    // A model that was already resident is still unloaded after the call unless it is
+    // explicitly pinned. Otherwise an earlier call or external preload can leave a large
+    // local model resident indefinitely.
+    if (!keepRunningModel && modelPrepared && provider.unloadModel) {
       await provider.unloadModel(model.id);
     }
     // If a different model is pinned, restore it now so it stays resident across jobs.
