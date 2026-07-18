@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import cron, { ScheduledTask, type TaskContext } from 'node-cron';
 import { getDefaultModelAlias } from './config';
-import { loadAdminSettings, saveAdminSettings, schedulerStatePath, updateAdminJob, type AdminSettings, type CronJobUpdate, type CronJobSettings, jobLabels } from './admin-config';
+import { loadAdminSettings, saveAdminSettings, schedulerStatePath, updateAdminJob, updatePlatformSettings, type AdminSettings, type CronJobUpdate, type CronJobSettings, jobLabels } from './admin-config';
 import { type JobName, knownJobs, runNamedJob } from './job-runner';
 import { getRegisteredWorkerJob, notifyOperatorChannels } from './workers/registry';
 import type { WorkerJobDashboardField, WorkerJobPreset } from './workers/types';
@@ -60,6 +60,7 @@ export interface SchedulerJobState {
   approvalRequiredEditable: boolean;
   enabled: boolean;
   cron: string;
+  nextScheduledAt: string | null;
   modelAlias: string;
   approvalRequired: boolean;
   promptEditable: boolean;
@@ -70,6 +71,8 @@ export interface SchedulerJobState {
   dashboardFields: SchedulerJobDashboardField[];
   presets: WorkerJobPreset[];
   effectiveModelAlias: string;
+  queued: boolean;
+  queuedAt: string | null;
   running: boolean;
   lastStartedAt: string | null;
   lastFinishedAt: string | null;
@@ -101,6 +104,7 @@ interface PersistedSchedulerState {
         | 'approvalRequiredEditable'
         | 'enabled'
         | 'cron'
+        | 'nextScheduledAt'
         | 'modelAlias'
         | 'approvalRequired'
         | 'promptEditable'
@@ -198,7 +202,7 @@ export async function runPipelineTick(): Promise<PipelineTickResult> {
   return pipelineTickInFlight;
 }
 
-export async function getSchedulerSnapshot(): Promise<{ timezone: string; jobs: SchedulerJobState[] }> {
+export async function getSchedulerSnapshot(): Promise<{ timezone: string; automaticMissedRunRecovery: boolean; jobs: SchedulerJobState[] }> {
   const workerState = await loadWorkerState();
 
   // Load recent runs to compute per-job consecutive error counts (stuck detector).
@@ -212,10 +216,22 @@ export async function getSchedulerSnapshot(): Promise<{ timezone: string; jobs: 
 
   return {
     timezone: settings.timezone,
+    automaticMissedRunRecovery: settings.platform.automaticMissedRunRecovery,
     jobs: jobNames.map((name) =>
       buildJobState(name, settings.jobs[name], workerState, consecutiveErrorsByJob[name]),
     ),
   };
+}
+
+export async function updateAutomaticMissedRunRecovery(enabled: boolean): Promise<boolean> {
+  settingsCache = await updatePlatformSettings({ automaticMissedRunRecovery: enabled });
+  await recordEventSafe({
+    category: 'scheduler',
+    action: 'automatic_missed_run_recovery_updated',
+    summary: `Automatic missed-job recovery ${enabled ? 'enabled' : 'disabled'}.`,
+    metadata: { enabled },
+  });
+  return settingsCache.platform.automaticMissedRunRecovery;
 }
 
 /**
@@ -266,38 +282,17 @@ export async function triggerJobNow(name: JobName, options: TriggerJobOptions = 
   const registered = getRegisteredWorkerJob(name);
   const workerState = await loadWorkerState();
   const current = buildJobState(name, jobSettings, workerState);
-  if (current.running) {
-    throw new Error(`${jobLabels()[name]} is already running.`);
+  if (current.queued || current.running) {
+    throw new Error(`${jobLabels()[name]} is already queued or running.`);
   }
   if (!current.workerEnabled) {
     throw new Error(`${current.workerName} worker is disabled.`);
   }
 
-  const startedAt = new Date().toISOString();
-  const runRecord = await startSchedulerRunSafe({
-    job: name,
-    label: jobLabels()[name],
-    trigger: 'manual',
-    modelAlias: current.effectiveModelAlias,
-    startedAt,
-  });
-  runtimeCache[name] = { ...current, running: true, lastStartedAt: startedAt, lastTrigger: 'manual', lastError: null };
-  await persistRuntime();
-  await recordEventSafe({
-    category: 'job',
-    action: 'started',
-    summary: `${jobLabels()[name]} started by manual.`,
-    metadata: {
-      job: name,
-      workerId: registered.worker.id,
-      workerName: registered.worker.name,
-      trigger: 'manual',
-      modelAlias: current.effectiveModelAlias,
-    },
-  });
+  await markJobQueued(name, current, 'manual');
 
   detach(enqueueJobExecution(() =>
-    runJobWork(name, jobSettings, 'manual', startedAt, runRecord, current.effectiveModelAlias, {
+    executeQueuedJob(name, jobSettings, 'manual', current.effectiveModelAlias, {
       paramsOverride: options.paramsOverride,
       notifyOnCompletion: options.notifyOnCompletion ?? false,
     }),
@@ -378,7 +373,8 @@ async function runBusWake(name: JobName): Promise<void> {
   const workerState = await loadWorkerState();
   const registered = getRegisteredWorkerJob(name);
   if (!isWorkerEnabled(registered.worker.id, workerState)) return;
-  if (buildJobState(name, jobSettings, workerState).running) return;
+  const current = buildJobState(name, jobSettings, workerState);
+  if (current.queued || current.running) return;
   try {
     await runJob(name, jobSettings, 'event');
   } catch (err) {
@@ -420,7 +416,7 @@ async function doRunPipelineTick(): Promise<PipelineTickResult> {
     }
 
     const current = buildJobState(name, jobSettings, workerState);
-    if (current.running) {
+    if (current.queued || current.running) {
       result.skipped += 1;
       continue;
     }
@@ -614,7 +610,8 @@ async function recordSkippedScheduleExecution(
   // Misses are typically caused by macOS sleep freezing setTimeout timers; on wake-up
   // the heartbeat fires late and node-cron emits execution:missed for each skipped slot.
   if (reason === 'missed') {
-    if (isRecoverableSlotAge(slotAgeMs)) {
+    const recoveryEnabled = (await ensureSettings()).platform.automaticMissedRunRecovery;
+    if (recoveryEnabled && isRecoverableSlotAge(slotAgeMs)) {
       console.log(
         `[Scheduler] Missed ${name} execution (age: ${Math.round(slotAgeMs / 1000)}s) — catching up now.`,
       );
@@ -658,6 +655,7 @@ async function recordSkippedScheduleExecution(
       summary: null,
       error: message,
       itemCount: null,
+      skipReason: reason,
     });
   }
   await persistRuntime();
@@ -683,6 +681,7 @@ async function recordSkippedScheduleExecution(
  */
 export async function catchUpMissedRunsOnStartup(): Promise<void> {
   const settings = await ensureSettings();
+  const recoveryEnabled = settings.platform.automaticMissedRunRecovery;
   const now = new Date();
 
   for (const name of tasks.keys()) {
@@ -707,6 +706,18 @@ export async function catchUpMissedRunsOnStartup(): Promise<void> {
 
     const registered = getRegisteredWorkerJob(name);
     const slotAgeMin = Math.round(slotAgeMs / 60000);
+    if (!recoveryEnabled) {
+      const finishedAt = new Date().toISOString();
+      const message = `${jobLabels()[name]} missed its scheduled execution while BFrost was offline; automatic recovery is disabled.`;
+      await recordEventSafe({ category: 'job', action: 'missed', severity: 'warning', summary: message,
+        metadata: { job: name, workerId: registered.worker.id, workerName: registered.worker.name, trigger: 'schedule', scheduledAt, slotAgeMs, slotAgeMin, recovery: 'disabled' } });
+      runtimeCache[name] = { ...buildJobState(name, jobSettings), running: false, lastStartedAt: scheduledAt,
+        lastFinishedAt: finishedAt, lastStatus: 'skipped', lastSummary: null, lastError: message, lastTrigger: 'schedule' };
+      const runRecord = await startSchedulerRunSafe({ job: name, label: jobLabels()[name], trigger: 'schedule', modelAlias: jobSettings.modelAlias || getDefaultModelAlias(), startedAt: scheduledAt });
+      if (runRecord) await finishSchedulerRunSafe(runRecord.id, { finishedAt, status: 'skipped', error: message, skipReason: 'missed' });
+      await persistRuntime();
+      continue;
+    }
     console.log(
       `[Scheduler] Recovering missed ${name} execution from ${scheduledAt} ` +
         `(${slotAgeMin} min old) — BFrost was not running at the scheduled time.`,
@@ -781,8 +792,8 @@ async function runJob(
   const workerState = await loadWorkerState();
   const registered = getRegisteredWorkerJob(name);
   const current = buildJobState(name, jobSettings, workerState);
-  if (current.running) {
-    throw new Error(`${jobLabels()[name]} is already running.`);
+  if (current.queued || current.running) {
+    throw new Error(`${jobLabels()[name]} is already queued or running.`);
   }
   if (!current.workerEnabled) {
     throw new Error(`${current.workerName} worker is disabled.`);
@@ -794,38 +805,33 @@ async function runJob(
     }
   }
 
-  const startedAt = new Date().toISOString();
-  const runRecord = await startSchedulerRunSafe({
-    job: name,
-    label: jobLabels()[name],
-    trigger,
-    modelAlias: current.effectiveModelAlias,
-    startedAt,
-  });
-  runtimeCache[name] = {
-    ...current,
-    running: true,
-    lastStartedAt: startedAt,
-    lastTrigger: trigger,
-    lastError: null,
-  };
-  await persistRuntime();
-  await recordEventSafe({
-    category: 'job',
-    action: 'started',
-    summary: `${jobLabels()[name]} started by ${trigger}.`,
-    metadata: {
-      job: name,
-      workerId: registered.worker.id,
-      workerName: registered.worker.name,
-      trigger,
-      modelAlias: current.effectiveModelAlias,
-    },
-  });
+  await markJobQueued(name, current, trigger);
   await enqueueJobExecution(() =>
-    runJobWork(name, jobSettings, trigger, startedAt, runRecord, current.effectiveModelAlias),
+    executeQueuedJob(name, jobSettings, trigger, current.effectiveModelAlias),
   );
   return true;
+}
+
+async function markJobQueued(name: JobName, current: SchedulerJobState, trigger: SchedulerRunTrigger): Promise<void> {
+  const queuedAt = new Date().toISOString();
+  runtimeCache[name] = { ...current, queued: true, queuedAt, running: false, lastError: null };
+  await persistRuntime();
+  const registered = getRegisteredWorkerJob(name);
+  await recordEventSafe({
+    category: 'job', action: 'queued', summary: `${jobLabels()[name]} queued by ${trigger}.`,
+    metadata: { job: name, workerId: registered.worker.id, workerName: registered.worker.name, trigger, queuedAt },
+  });
+}
+
+async function executeQueuedJob(name: JobName, jobSettings: CronJobSettings, trigger: SchedulerRunTrigger, effectiveModelAlias: string, options: RunJobWorkOptions = {}): Promise<void> {
+  const startedAt = new Date().toISOString();
+  const current = buildJobState(name, jobSettings);
+  runtimeCache[name] = { ...current, queued: false, queuedAt: null, running: true, lastStartedAt: startedAt, lastTrigger: trigger, lastError: null };
+  await persistRuntime();
+  const runRecord = await startSchedulerRunSafe({ job: name, label: jobLabels()[name], trigger, modelAlias: effectiveModelAlias, startedAt });
+  const registered = getRegisteredWorkerJob(name);
+  await recordEventSafe({ category: 'job', action: 'started', summary: `${jobLabels()[name]} started by ${trigger}.`, metadata: { job: name, workerId: registered.worker.id, workerName: registered.worker.name, trigger, modelAlias: effectiveModelAlias } });
+  await runJobWork(name, jobSettings, trigger, startedAt, runRecord, effectiveModelAlias, options);
 }
 
 async function shouldRunJob(
@@ -899,6 +905,7 @@ async function recordNoWorkSkippedRun(name: JobName, jobSettings: CronJobSetting
       summary: null,
       error: message,
       itemCount: 0,
+      skipReason: 'no_work',
     });
   }
   await persistRuntime();
@@ -1230,6 +1237,8 @@ async function persistRuntime(): Promise<void> {
       continue;
     }
     payload.jobs[name] = {
+      queued: current.queued,
+      queuedAt: current.queuedAt,
       running: current.running,
       lastStartedAt: current.lastStartedAt,
       lastFinishedAt: current.lastFinishedAt,
@@ -1260,6 +1269,7 @@ function hydrateRuntimeFromState(parsed: PersistedSchedulerState): void {
       approvalRequiredEditable: getRegisteredWorkerJob(name).job.approvalRequiredEditable,
       enabled: false,
       cron: '',
+      nextScheduledAt: null,
       modelAlias: '',
       approvalRequired: false,
       promptEditable: getRegisteredWorkerJob(name).job.prompt.editable,
@@ -1269,6 +1279,8 @@ function hydrateRuntimeFromState(parsed: PersistedSchedulerState): void {
       dashboardFields: getRegisteredWorkerJob(name).job.dashboardFields,
       presets: getRegisteredWorkerJob(name).job.presets ?? [],
       effectiveModelAlias: getDefaultModelAlias(),
+      queued: false,
+      queuedAt: null,
       running: false,
       lastStartedAt: saved.lastStartedAt ?? null,
       lastFinishedAt: saved.lastFinishedAt ?? null,
@@ -1302,6 +1314,7 @@ function buildJobState(
     approvalRequiredEditable: registered.job.approvalRequiredEditable,
     enabled: settings.enabled,
     cron: settings.cron,
+    nextScheduledAt: tasks.get(name)?.getNextRun()?.toISOString() ?? null,
     modelAlias: settings.modelAlias,
     approvalRequired: settings.approvalRequired,
     promptEditable: registered.job.prompt.editable,
@@ -1312,6 +1325,8 @@ function buildJobState(
     dashboardFields: registered.job.dashboardFields,
     presets: registered.job.presets ?? [],
     effectiveModelAlias,
+    queued: saved?.queued ?? false,
+    queuedAt: saved?.queuedAt ?? null,
     running: saved?.running ?? false,
     lastStartedAt: saved?.lastStartedAt ?? null,
     lastFinishedAt: saved?.lastFinishedAt ?? null,

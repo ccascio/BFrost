@@ -14,6 +14,10 @@ export const PlatformSettingsBodySchema = z.object({
   primaryChannelId: z.string().optional(),
 }).strict();
 
+export const SchedulerRecoverySettingsBodySchema = z.object({
+  automaticMissedRunRecovery: z.boolean(),
+}).strict();
+
 export const EmbeddingSettingsBodySchema = z.object({
   provider: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
@@ -43,6 +47,7 @@ export const PlatformSettingsSchema = z.object({
   localWorkerCodeEnabled: z.boolean(),
   adminSessionTtlHours: z.number(),
   jobLlmTimeoutMs: z.number(),
+  automaticMissedRunRecovery: z.boolean(),
   adminHost: z.string(),
   adminPort: z.number(),
 }).strict();
@@ -247,6 +252,7 @@ export const SchedulerJobStateSchema = z.object({
   approvalRequiredEditable: z.boolean(),
   enabled: z.boolean(),
   cron: z.string(),
+  nextScheduledAt: z.string().nullable(),
   modelAlias: z.string(),
   approvalRequired: z.boolean(),
   promptEditable: z.boolean(),
@@ -267,6 +273,8 @@ export const SchedulerJobStateSchema = z.object({
     }).strict(),
   ),
   effectiveModelAlias: z.string(),
+  queued: z.boolean(),
+  queuedAt: z.string().nullable(),
   running: z.boolean(),
   lastStartedAt: z.string().nullable(),
   lastFinishedAt: z.string().nullable(),
@@ -294,6 +302,7 @@ export const SchedulerRunRecordSchema = z.object({
   summary: z.string().nullable(),
   error: z.string().nullable(),
   itemCount: z.number().nullable(),
+  skipReason: z.enum(['missed', 'overlap', 'no_work']).nullable().optional(),
   attempts: z.array(z.object({
     attempt: z.number().int().min(1),
     startedAt: z.string(),

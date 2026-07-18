@@ -8,6 +8,8 @@ import { closeDb } from './sqlite';
 import {
   abandonRunningSchedulerRuns,
   finishSchedulerRun,
+  dismissSkippedSchedulerRun,
+  listSkippedScheduledRuns,
   listSchedulerRuns,
   recordSchedulerRunAttempt,
   startSchedulerRun,
@@ -43,6 +45,23 @@ test('scheduler runs persist start and finish records', async () => {
     assert.equal(runs[0].status, 'success');
     assert.equal(runs[0].summary, 'News digest completed.');
     assert.equal(runs[0].itemCount, 3);
+  } finally {
+    config.appDbPath = previousDbPath;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('missed scheduled runs remain recoverable until dismissed', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-scheduler-runs-'));
+  const previousDbPath = config.appDbPath;
+  config.appDbPath = path.join(dir, 'app.sqlite');
+  try {
+    const run = await startSchedulerRun({ job: 'news-digest', label: 'News Digest', trigger: 'schedule', modelAlias: 'local-model', startedAt: '2026-04-24T08:00:00.000Z' });
+    await finishSchedulerRun(run.id, { finishedAt: '2026-04-24T08:01:00.000Z', status: 'skipped', error: 'offline', skipReason: 'missed' });
+    assert.deepEqual((await listSkippedScheduledRuns()).map((item) => item.id), [run.id]);
+    assert.equal((await dismissSkippedSchedulerRun(run.id))?.id, run.id);
+    assert.deepEqual(await listSkippedScheduledRuns(), []);
   } finally {
     config.appDbPath = previousDbPath;
     closeDb();

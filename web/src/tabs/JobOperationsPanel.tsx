@@ -160,7 +160,7 @@ export function JobOperationsPanel({
           Save schedule
         </button>
         <button
-          disabled={busyKey === `run-${job.name}` || job.running || !job.workerEnabled}
+          disabled={busyKey === `run-${job.name}` || job.queued || job.running || !job.workerEnabled}
           onClick={() =>
             void triggerRun(
               `run-${job.name}`,
@@ -169,7 +169,7 @@ export function JobOperationsPanel({
             )
           }
         >
-          {job.running ? 'Running...' : 'Run now'}
+          {job.queued ? 'Queued...' : job.running ? 'Running...' : 'Run now'}
         </button>
         {jobDrafts[job.name] !== undefined ? (
           <button
@@ -480,6 +480,8 @@ function JobTimeline({ job, runs }: { job: SchedulerJobState; runs: SchedulerRun
         <Detail label="Worker type" value={job.workerBuiltIn ? 'built-in' : 'local'} />
         <Detail label="Enabled" value={job.enabled ? 'yes' : 'no'} />
         <Detail label="Cron" value={job.cron} />
+        <Detail label="Next scheduled" value={formatDate(job.nextScheduledAt)} />
+        <Detail label="Queued at" value={formatDate(job.queuedAt)} />
         <Detail label="Effective model" value={job.effectiveModelAlias} />
         <Detail label="Last trigger" value={job.lastTrigger ?? 'n/a'} />
         <Detail label="Last started" value={formatDate(job.lastStartedAt)} />

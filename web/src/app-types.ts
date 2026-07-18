@@ -151,6 +151,7 @@ export interface SchedulerJobState {
   approvalRequiredEditable: boolean;
   enabled: boolean;
   cron: string;
+  nextScheduledAt: string | null;
   modelAlias: string;
   approvalRequired: boolean;
   promptEditable: boolean;
@@ -161,6 +162,8 @@ export interface SchedulerJobState {
   dashboardFields: JobDashboardField[];
   presets: JobPreset[];
   effectiveModelAlias: string;
+  queued: boolean;
+  queuedAt: string | null;
   running: boolean;
   lastStartedAt: string | null;
   lastFinishedAt: string | null;
@@ -282,6 +285,7 @@ export interface SchedulerRunRecord {
   summary: string | null;
   error: string | null;
   itemCount: number | null;
+  skipReason?: 'missed' | 'overlap' | 'no_work' | null;
   attempts: SchedulerRunAttempt[];
 }
 
@@ -340,6 +344,7 @@ export interface PlatformSettings {
   localWorkerCodeEnabled: boolean;
   adminSessionTtlHours: number;
   jobLlmTimeoutMs: number;
+  automaticMissedRunRecovery: boolean;
   adminHost: string;
   adminPort: number;
 }

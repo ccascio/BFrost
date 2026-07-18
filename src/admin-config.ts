@@ -22,6 +22,8 @@ export interface PlatformSettings {
   activeLocalProviderId: string;
   /** Worker-channel id selected as the primary recipient for operator notifications. */
   primaryChannelId: string;
+  /** Whether recent schedules missed while offline/asleep should run automatically. */
+  automaticMissedRunRecovery: boolean;
 }
 
 export interface AdminSettings {
@@ -33,6 +35,7 @@ export interface AdminSettings {
 export interface PlatformSettingsUpdate {
   activeLocalProviderId?: string;
   primaryChannelId?: string;
+  automaticMissedRunRecovery?: boolean;
 }
 
 export interface CronJobUpdate {
@@ -157,6 +160,7 @@ function normalizeSettings(input: Partial<AdminSettings>): AdminSettings {
       typeof input.platform?.primaryChannelId === 'string' && input.platform.primaryChannelId.trim()
         ? input.platform.primaryChannelId.trim()
         : config.primaryChannelId,
+    automaticMissedRunRecovery: input.platform?.automaticMissedRunRecovery === true,
   };
 
   return { timezone, jobs, platform };
@@ -183,6 +187,7 @@ export async function updatePlatformSettings(patch: PlatformSettingsUpdate): Pro
   const next: PlatformSettings = {
     activeLocalProviderId: patch.activeLocalProviderId?.trim() || settings.platform.activeLocalProviderId,
     primaryChannelId: patch.primaryChannelId?.trim() || settings.platform.primaryChannelId,
+    automaticMissedRunRecovery: patch.automaticMissedRunRecovery ?? settings.platform.automaticMissedRunRecovery,
   };
   settings.platform = next;
   await saveAdminSettings(settings);

@@ -9,6 +9,7 @@ const RUN_RETENTION = 200;
 export const SchedulerRunStatusSchema = z.enum(['running', 'success', 'error', 'skipped']);
 export const SchedulerRunTriggerSchema = z.enum(['schedule', 'manual', 'pipeline', 'event']);
 export const SchedulerRunAttemptStatusSchema = z.enum(['success', 'error', 'skipped']);
+export const SchedulerRunSkipReasonSchema = z.enum(['missed', 'overlap', 'no_work']);
 
 const SchedulerRunAttemptSchema = z.object({
   attempt: z.number().int().min(1),
@@ -33,6 +34,7 @@ const SchedulerRunRecordSchema = z.object({
   summary: z.string().nullable(),
   error: z.string().nullable(),
   itemCount: z.number().nullable(),
+  skipReason: SchedulerRunSkipReasonSchema.nullable().optional(),
   attempts: z.array(SchedulerRunAttemptSchema).default([]),
 });
 
@@ -56,6 +58,7 @@ export interface SchedulerRunFinishInput {
   summary?: string | null;
   error?: string | null;
   itemCount?: number | null;
+  skipReason?: z.infer<typeof SchedulerRunSkipReasonSchema> | null;
 }
 
 export interface SchedulerRunAttemptInput {
@@ -87,6 +90,7 @@ export async function startSchedulerRun(input: SchedulerRunStartInput): Promise<
     summary: null,
     error: null,
     itemCount: null,
+    skipReason: null,
     attempts: [],
   };
   const runs = await loadSchedulerRuns(RUN_RETENTION);
@@ -133,6 +137,7 @@ export async function finishSchedulerRun(
       summary: input.summary ?? null,
       error: input.error ?? null,
       itemCount: input.itemCount ?? null,
+      skipReason: input.skipReason ?? run.skipReason ?? null,
     };
     return updated;
   });
@@ -147,6 +152,39 @@ export async function finishSchedulerRun(
 
 export async function listSchedulerRuns(limit = 50): Promise<SchedulerRunRecord[]> {
   return (await loadSchedulerRuns(limit)).slice(0, clampLimit(limit));
+}
+
+export async function listSkippedScheduledRuns(): Promise<SchedulerRunRecord[]> {
+  return (await loadSchedulerRuns(RUN_RETENTION))
+    .filter((run) => run.status === 'skipped' && run.trigger === 'schedule' && run.skipReason === 'missed');
+}
+
+export async function dismissSkippedSchedulerRun(id: string): Promise<SchedulerRunRecord | null> {
+  const runs = await loadSchedulerRuns(RUN_RETENTION);
+  let dismissed: SchedulerRunRecord | null = null;
+  const next = runs.filter((run) => {
+    if (run.id !== id || run.status !== 'skipped' || run.trigger !== 'schedule' || run.skipReason !== 'missed') return true;
+    dismissed = run;
+    return false;
+  });
+  if (!dismissed) return null;
+  await saveRuns(next);
+  return dismissed;
+}
+
+export async function dismissSkippedScheduledRunsForJobs(jobNames: readonly string[]): Promise<SchedulerRunRecord[]> {
+  const jobs = new Set(jobNames);
+  if (jobs.size === 0) return [];
+  const runs = await loadSchedulerRuns(RUN_RETENTION);
+  const dismissed: SchedulerRunRecord[] = [];
+  const next = runs.filter((run) => {
+    const shouldDismiss = run.status === 'skipped' && run.trigger === 'schedule'
+      && run.skipReason === 'missed' && jobs.has(run.job);
+    if (shouldDismiss) dismissed.push(run);
+    return !shouldDismiss;
+  });
+  if (dismissed.length > 0) await saveRuns(next);
+  return dismissed;
 }
 
 export async function abandonRunningSchedulerRuns(

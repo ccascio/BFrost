@@ -61,7 +61,7 @@ export function JobsTab(props: JobsTabProps) {
                       <span>{job.enabled ? job.cron : 'disabled'} · {job.effectiveModelAlias}</span>
                     </div>
                     <StatusPill tone={statusTone(job.lastStatus)}>
-                      {job.running ? 'running' : job.lastStatus}
+                      {job.queued ? 'queued' : job.running ? 'running' : job.lastStatus}
                     </StatusPill>
                   </button>
                 ))}
@@ -79,7 +79,7 @@ export function JobsTab(props: JobsTabProps) {
               </div>
               {selectedJob ? (
                 <StatusPill tone={statusTone(selectedJob.lastStatus)}>
-                  {selectedJob.running ? 'running' : selectedJob.lastStatus}
+                  {selectedJob.queued ? 'queued' : selectedJob.running ? 'running' : selectedJob.lastStatus}
                 </StatusPill>
               ) : null}
             </div>

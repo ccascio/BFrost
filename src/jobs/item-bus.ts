@@ -48,7 +48,7 @@ export interface PublishItemInput {
   selectionReason?: string;
   rejectionReason?: string;
   stateReason?: string;
-  /** Optional id override. Producers should normally let the bus derive a stable id. */
+  /** Optional identity override. Use a deterministic version id for replayable facts. */
   id?: string;
 }
 
@@ -110,19 +110,30 @@ export function emitItemPublished(event: ItemPublishedEvent): void {
 
 /** Persist a newly-produced item. Returns the stored item. */
 export async function publishItem(input: PublishItemInput): Promise<QueueItem> {
-  const created = await withQueueLock(async () => {
+  const result = await withQueueLock(async () => {
     const queue = await loadQueue();
+    if (input.id) {
+      const existing = queue.find((item) => item.id === input.id);
+      if (existing) {
+        if (existing.producerWorkerId !== input.producerWorkerId || existing.itemType !== input.itemType) {
+          throw new Error(`Item Bus id collision for ${input.id}: existing owner/type does not match the publisher.`);
+        }
+        return { item: existing, published: false };
+      }
+    }
     const stored = createQueueItem(buildItemDraft(input));
     queue.push(stored);
     await saveQueue(queue);
-    return stored;
+    return { item: stored, published: true };
   });
-  emitItemPublished({
-    itemType: input.itemType,
-    producerWorkerId: input.producerWorkerId,
-    state: created.state,
-  });
-  return created;
+  if (result.published) {
+    emitItemPublished({
+      itemType: input.itemType,
+      producerWorkerId: input.producerWorkerId,
+      state: result.item.state,
+    });
+  }
+  return result.item;
 }
 
 /** Filter items in memory according to a consumer's subscription. */

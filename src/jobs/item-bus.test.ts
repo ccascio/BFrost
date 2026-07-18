@@ -17,7 +17,7 @@ import {
   setConsumerMetadata,
   type ItemPublishedEvent,
 } from './item-bus';
-import { createQueueItem } from './queue';
+import { createQueueItem, loadQueue } from './queue';
 
 function withTempStore<T>(fn: () => Promise<T>): Promise<T> {
   return (async () => {
@@ -83,6 +83,33 @@ test('publishItem emits an item-published event; unsubscribe stops delivery', as
       url: 'https://example.com/wake/2',
     });
     assert.equal(received.length, 1);
+  });
+});
+
+test('publishItem is idempotent for an explicit stable id', async () => {
+  await withTempStore(async () => {
+    const received: ItemPublishedEvent[] = [];
+    const unsubscribe = onItemPublished((event) => received.push(event));
+    try {
+      const input = {
+        id: 'q_stable_delivery_v1',
+        producerWorkerId: 'test.producer',
+        itemType: 'test.snapshot',
+        title: 'Versioned snapshot',
+        shortDesc: 'Must exist once.',
+        url: 'https://example.com/snapshot/v1',
+        state: 'approved' as const,
+        payload: { version: 1 },
+      };
+      const first = await publishItem(input);
+      const replay = await publishItem(input);
+      assert.equal(replay.id, first.id);
+      assert.equal((await loadQueue()).filter((item) => item.id === input.id).length, 1);
+      assert.equal(received.length, 1);
+      await assert.rejects(() => publishItem({ ...input, producerWorkerId: 'different.producer' }), /id collision/i);
+    } finally {
+      unsubscribe();
+    }
   });
 });
 

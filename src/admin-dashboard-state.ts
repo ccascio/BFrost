@@ -153,8 +153,9 @@ export async function buildDashboardState(): Promise<DashboardState> {
   await syncHiddenBuiltIns();
 
   const localProvider = getActiveLocalProvider();
-  const [scheduler, localRuntimeRunning, loadedCount, health, localResult, pinnedModelId] = await Promise.all([
+  const [scheduler, recentSchedulerRuns, localRuntimeRunning, loadedCount, health, localResult, pinnedModelId] = await Promise.all([
     getSchedulerSnapshot(),
+    listSchedulerRuns(200),
     localProvider?.getRuntimeStatus ? localProvider.getRuntimeStatus() : Promise.resolve(false),
     countLoadedModels(localProvider),
     getAppHealthSnapshot(),
@@ -191,7 +192,7 @@ export async function buildDashboardState(): Promise<DashboardState> {
       loadedCount,
       pinnedModelId,
     },
-    cron: { timezone: scheduler.timezone, jobs: scheduler.jobs },
+    cron: { timezone: scheduler.timezone, jobs: scheduler.jobs, runs: recentSchedulerRuns },
     workers: workerSummaries,
     workerIssues: localResult.issues,
     platform: {
@@ -203,6 +204,7 @@ export async function buildDashboardState(): Promise<DashboardState> {
       localWorkerCodeEnabled: config.localWorkerCodeEnabled,
       adminSessionTtlHours: config.adminSessionTtlHours,
       jobLlmTimeoutMs: config.jobLlmTimeoutMs,
+      automaticMissedRunRecovery: scheduler.automaticMissedRunRecovery,
       adminHost: config.adminHost,
       adminPort: config.adminPort,
     },

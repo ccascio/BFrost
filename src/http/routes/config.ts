@@ -16,13 +16,15 @@ import { upsertEnvValue } from '../../env-file';
 import { getActiveLocalProvider, getRegisteredProvider, listRegisteredChannels } from '../../workers/registry';
 import { updatePlatformSettings } from '../../admin-config';
 import { recordEventSafe } from '../../event-log';
-import { getSchedulerSnapshot, reloadSchedulerSchedules, triggerJobNow, updateSchedulerJob } from '../../scheduler';
+import { getSchedulerSnapshot, reloadSchedulerSchedules, triggerJobNow, updateAutomaticMissedRunRecovery, updateSchedulerJob } from '../../scheduler';
+import { dismissSkippedSchedulerRun, dismissSkippedScheduledRunsForJobs, listSkippedScheduledRuns } from '../../scheduler-runs';
 import { isJobName, pinAndLoadModel, unpinAndUnloadModel } from '../../job-runner';
 import { sessions } from '../../admin-auth';
 import { BadRequestError } from '../../admin-route';
 import {
   DefaultModelBodySchema,
   PlatformSettingsBodySchema,
+  SchedulerRecoverySettingsBodySchema,
   EmbeddingSettingsBodySchema,
   CoreSettingsBodySchema,
   CronJobUpdateBodySchema,
@@ -79,6 +81,31 @@ export function registerConfigRoutes(router: HttpRouter): void {
       metadata: patch,
     });
     return sendJson(res, 200, { ok: true });
+  });
+
+  router.add('POST', '/api/scheduler-recovery-settings', async (req, res) => {
+    const body = await readJsonBody(req, SchedulerRecoverySettingsBodySchema);
+    const automaticMissedRunRecovery = await updateAutomaticMissedRunRecovery(body.automaticMissedRunRecovery);
+    return sendJson(res, 200, { ok: true, automaticMissedRunRecovery });
+  });
+
+  router.add('POST', '/api/scheduler-runs/:run/dismiss', async (_req, res, { params }) => {
+    const dismissed = await dismissSkippedSchedulerRun(params.run);
+    if (!dismissed) return sendJson(res, 404, { error: 'Skipped scheduled run not found.' });
+    return sendJson(res, 200, { ok: true });
+  });
+
+  router.add('POST', '/api/scheduler-runs/recover', async (_req, res) => {
+    const skipped = await listSkippedScheduledRuns();
+    const jobNames = [...new Set(skipped.map((run) => run.job))].filter(isJobName);
+    const queued: string[] = [];
+    const unavailable: { job: string; error: string }[] = [];
+    for (const jobName of jobNames) {
+      try { await triggerJobNow(jobName); queued.push(jobName); }
+      catch (cause) { unavailable.push({ job: jobName, error: cause instanceof Error ? cause.message : String(cause) }); }
+    }
+    const dismissed = await dismissSkippedScheduledRunsForJobs(queued);
+    return sendJson(res, 202, { ok: true, queued, unavailable, dismissedRunCount: dismissed.length });
   });
 
   router.add('POST', '/api/local-runtime', async (req, res) => {
