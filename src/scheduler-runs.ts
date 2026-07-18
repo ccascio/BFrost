@@ -7,7 +7,7 @@ const SCHEDULER_RUNS_STORE_KEY = 'scheduler.runs';
 const RUN_RETENTION = 200;
 
 export const SchedulerRunStatusSchema = z.enum(['running', 'success', 'error', 'skipped']);
-export const SchedulerRunTriggerSchema = z.enum(['schedule', 'manual', 'pipeline']);
+export const SchedulerRunTriggerSchema = z.enum(['schedule', 'manual', 'pipeline', 'event']);
 export const SchedulerRunAttemptStatusSchema = z.enum(['success', 'error', 'skipped']);
 
 const SchedulerRunAttemptSchema = z.object({

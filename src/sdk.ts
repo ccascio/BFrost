@@ -17,6 +17,7 @@ import { openWorkerDb } from './workers/db';
 import { requestFileRead, requestFileWrite } from './actions/primitives';
 import {
   publishItem,
+  emitItemPublished,
   listItemsForConsumer,
   filterItemsForConsumer,
   applyConsumerSuccess,
@@ -73,6 +74,7 @@ export const bfrostSdk = {
   requestFileWrite,
   // Item Bus (cross-worker producer/consumer queue)
   publishItem,
+  emitItemPublished,
   listItemsForConsumer,
   filterItemsForConsumer,
   applyConsumerSuccess,

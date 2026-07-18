@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { config } from './config';
 import { closeDb } from './sqlite';
 import { listSchedulerRuns } from './scheduler-runs';
-import { CATCHUP_WINDOW_MS, PIPELINE_TICK_INTERVAL_MS, getSchedulerSnapshot, isRecoverableSlotAge, runPipelineTick, triggerJobNow } from './scheduler';
+import { CATCHUP_WINDOW_MS, PIPELINE_TICK_INTERVAL_MS, getSchedulerSnapshot, isRecoverableSlotAge, runPipelineTick, triggerJobNow, wakeJobsForItemType } from './scheduler';
 import { seedDeclaredProviderModels } from './model-discovery';
 import { registerLoadedLocalModule, unregisterLocalWorkerModule } from './workers/registry';
 import type { BackendWorkerModule } from './workers/module';
@@ -40,6 +40,11 @@ const LATE_JOB_ID = 'test.fake-scheduler-late-job';
 const PIPELINE_WORKER_ID = 'test.fake-pipeline-worker';
 const PIPELINE_READY_JOB_ID = 'test.fake-pipeline-ready';
 const PIPELINE_IDLE_JOB_ID = 'test.fake-pipeline-idle';
+const WAKE_WORKER_ID = 'test.fake-wake-worker';
+const WAKE_READY_JOB_ID = 'test.fake-wake-ready';
+const WAKE_IDLE_JOB_ID = 'test.fake-wake-idle';
+const WAKE_OTHER_TYPE_JOB_ID = 'test.fake-wake-other-type';
+const WAKE_ITEM_TYPE = 'test.wake-signal';
 
 function buildFakeWorkerModule(): BackendWorkerModule {
   let transientAttempts = 0;
@@ -116,6 +121,89 @@ function buildFakeWorkerModule(): BackendWorkerModule {
 
   return { manifest };
 }
+
+function buildWakeWorkerModule(): BackendWorkerModule {
+  const baseJob = {
+    workerId: WAKE_WORKER_ID,
+    defaultEnabled: true,
+    defaultCron: '0 0 * * *',
+    defaultModelAlias: 'gpt-5.4-mini',
+    approvalRequiredDefault: false,
+    approvalRequiredEditable: false,
+    defaultPrompt: '',
+    prompt: { editable: false },
+    paramsSchema: z.object({}),
+    defaultParams: {},
+    dashboardFields: [],
+  };
+  const manifest: WorkerManifest = {
+    id: WAKE_WORKER_ID,
+    name: 'Bus Wake Test Worker',
+    version: '0.1.0',
+    description: 'Fake worker used to test event-driven bus wakes.',
+    builtIn: false,
+    jobs: [
+      {
+        ...baseJob,
+        id: WAKE_READY_JOB_ID,
+        label: 'Wake Ready Job',
+        description: 'Wakes on the test item type and has work.',
+        wakeOn: [WAKE_ITEM_TYPE],
+        hasWork: async () => true,
+        run: async () => ({ summary: 'Wake job completed.', itemCount: 1 }),
+      },
+      {
+        ...baseJob,
+        id: WAKE_IDLE_JOB_ID,
+        label: 'Wake Idle Job',
+        description: 'Wakes on the test item type but has no work.',
+        wakeOn: [WAKE_ITEM_TYPE],
+        hasWork: async () => false,
+        run: async () => ({ summary: 'Idle wake job should not run.', itemCount: 1 }),
+      },
+      {
+        ...baseJob,
+        id: WAKE_OTHER_TYPE_JOB_ID,
+        label: 'Wake Other Type Job',
+        description: 'Wakes on a different item type.',
+        wakeOn: ['test.some-other-type'],
+        hasWork: async () => true,
+        run: async () => ({ summary: 'Other-type job should not run.', itemCount: 1 }),
+      },
+    ],
+  };
+  return { manifest };
+}
+
+test('bus wake triggers only matching jobs with work and records the event trigger', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-bus-wake-'));
+  const prevDbPath = config.appDbPath;
+  const prevOpenaiKey = resolveOpenAIApiKey();
+  const prevFallbacks = config.modelFallbackAliases;
+  config.appDbPath = path.join(dir, 'app.sqlite');
+  setOpenAIApiKey('test-key');
+  config.modelFallbackAliases = [];
+  registerLoadedLocalModule(buildWakeWorkerModule());
+  try {
+    assert.deepEqual(await wakeJobsForItemType(WAKE_ITEM_TYPE), [WAKE_READY_JOB_ID]);
+    const runs = await pollUntil(
+      () => listSchedulerRuns(),
+      (records) => records.some((record) => record.job === WAKE_READY_JOB_ID && record.status === 'success'),
+    );
+    const readyRun = runs.find((record) => record.job === WAKE_READY_JOB_ID);
+    assert.equal(readyRun?.trigger, 'event');
+    assert.equal(readyRun?.summary, 'Wake job completed.');
+    assert.equal(runs.find((record) => record.job === WAKE_IDLE_JOB_ID), undefined);
+    assert.equal(runs.find((record) => record.job === WAKE_OTHER_TYPE_JOB_ID), undefined);
+  } finally {
+    unregisterLocalWorkerModule(WAKE_WORKER_ID);
+    config.appDbPath = prevDbPath;
+    setOpenAIApiKey(prevOpenaiKey);
+    config.modelFallbackAliases = prevFallbacks;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 function buildLateWorkerModule(): BackendWorkerModule {
   const manifest: WorkerManifest = {

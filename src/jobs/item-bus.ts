@@ -82,15 +82,47 @@ export function buildItemDraft(input: PublishItemInput): QueueItemDraft {
   };
 }
 
+/** In-process notification emitted after an item is durably stored. */
+export interface ItemPublishedEvent {
+  itemType: ItemType;
+  producerWorkerId: string;
+  state: QueueItemState;
+}
+
+type ItemPublishedListener = (event: ItemPublishedEvent) => void;
+const itemPublishedListeners = new Set<ItemPublishedListener>();
+
+export function onItemPublished(listener: ItemPublishedListener): () => void {
+  itemPublishedListeners.add(listener);
+  return () => itemPublishedListeners.delete(listener);
+}
+
+/** Batch-saving producers may emit this after their own durable save. */
+export function emitItemPublished(event: ItemPublishedEvent): void {
+  for (const listener of [...itemPublishedListeners]) {
+    try {
+      listener(event);
+    } catch (err) {
+      console.warn('[ItemBus] item-published listener failed:', err);
+    }
+  }
+}
+
 /** Persist a newly-produced item. Returns the stored item. */
 export async function publishItem(input: PublishItemInput): Promise<QueueItem> {
-  return withQueueLock(async () => {
+  const created = await withQueueLock(async () => {
     const queue = await loadQueue();
-    const created = createQueueItem(buildItemDraft(input));
-    queue.push(created);
+    const stored = createQueueItem(buildItemDraft(input));
+    queue.push(stored);
     await saveQueue(queue);
-    return created;
+    return stored;
   });
+  emitItemPublished({
+    itemType: input.itemType,
+    producerWorkerId: input.producerWorkerId,
+    state: created.state,
+  });
+  return created;
 }
 
 /** Filter items in memory according to a consumer's subscription. */

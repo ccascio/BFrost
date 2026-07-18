@@ -17,9 +17,10 @@ import {
 } from './scheduler-runs';
 import { acquireSchedulerExecutionLock } from './scheduler-locks';
 import { isWorkerEnabled, loadWorkerState, type WorkerStateStore } from './workers/state';
+import { onItemPublished } from './jobs/item-bus';
 import { detach } from './process-lifecycle';
 import type { WorkerJobRetryPolicy } from './workers/types';
-import { getPreviousCronMatch } from './cron-internals';
+import { getPreviousCronMatch, installReliableCronMatcher } from './cron-internals';
 
 const SCHEDULER_STATE_STORE_KEY = 'scheduler.state';
 // Recover a missed slot if it elapsed within this window. Sized to cover a daily
@@ -27,6 +28,8 @@ const SCHEDULER_STATE_STORE_KEY = 'scheduler.state';
 // still treating older slots as too stale to be worth replaying.
 export const CATCHUP_WINDOW_MS = 26 * 60 * 60 * 1000; // 26 hours
 export const PIPELINE_TICK_INTERVAL_MS = 15 * 60 * 1000;
+export const BUS_WAKE_DEBOUNCE_MS = 500;
+export const PIPELINE_KICK_DELAY_MS = 2_000;
 const DEFAULT_JOB_RETRY_POLICY: Required<WorkerJobRetryPolicy> = {
   maxRetries: 2,
   initialBackoffMs: 1_000,
@@ -118,6 +121,9 @@ let started = false;
 const tasks = new Map<JobName, ScheduledTask>();
 let pipelineTickTimer: NodeJS.Timeout | null = null;
 let pipelineTickInFlight: Promise<PipelineTickResult> | null = null;
+let busWakeUnsubscribe: (() => void) | null = null;
+const busWakeTimers = new Map<JobName, NodeJS.Timeout>();
+let pipelineKickTimer: NodeJS.Timeout | null = null;
 
 // Coalesce concurrent reloadSchedules() calls: at most one in-flight + one queued.
 // All callers read the same fresh settings, so there is no value in running more
@@ -150,6 +156,7 @@ export async function startScheduler(): Promise<void> {
   await reconcileAbandonedRuns();
   await reloadSchedules();
   startPipelineTick();
+  startBusWake();
 }
 
 export async function stopScheduler(): Promise<void> {
@@ -167,6 +174,8 @@ export async function stopScheduler(): Promise<void> {
     clearInterval(pipelineTickTimer);
     pipelineTickTimer = null;
   }
+
+  stopBusWake();
 
   started = false;
 }
@@ -314,6 +323,80 @@ function startPipelineTick(): void {
   pipelineTickTimer.unref?.();
 }
 
+/** Subscribe enabled consumer jobs to immediate, debounced Item Bus wakes. */
+function startBusWake(): void {
+  if (busWakeUnsubscribe) return;
+  busWakeUnsubscribe = onItemPublished((event) => {
+    for (const name of jobsWakingOn(event.itemType)) scheduleBusWake(name);
+  });
+}
+
+function stopBusWake(): void {
+  busWakeUnsubscribe?.();
+  busWakeUnsubscribe = null;
+  for (const timer of busWakeTimers.values()) clearTimeout(timer);
+  busWakeTimers.clear();
+  if (pipelineKickTimer) clearTimeout(pipelineKickTimer);
+  pipelineKickTimer = null;
+}
+
+function schedulePipelineKick(): void {
+  if (!started || pipelineKickTimer) return;
+  pipelineKickTimer = setTimeout(() => {
+    pipelineKickTimer = null;
+    detach(runPipelineTick(), 'scheduler:pipeline-kick');
+  }, PIPELINE_KICK_DELAY_MS);
+  pipelineKickTimer.unref?.();
+}
+
+function jobsWakingOn(itemType: string): JobName[] {
+  const jobs: JobName[] = [];
+  for (const name of knownJobs()) {
+    try {
+      if (getRegisteredWorkerJob(name).job.wakeOn?.includes(itemType)) jobs.push(name);
+    } catch {
+      // A local worker may disappear between enumeration and lookup.
+    }
+  }
+  return jobs;
+}
+
+function scheduleBusWake(name: JobName): void {
+  if (busWakeTimers.has(name)) return;
+  const timer = setTimeout(() => {
+    busWakeTimers.delete(name);
+    detach(runBusWake(name), `scheduler:bus-wake:${name}`);
+  }, BUS_WAKE_DEBOUNCE_MS);
+  timer.unref?.();
+  busWakeTimers.set(name, timer);
+}
+
+async function runBusWake(name: JobName): Promise<void> {
+  const settings = await ensureSettings();
+  const jobSettings = settings.jobs[name];
+  if (!jobSettings?.enabled) return;
+  const workerState = await loadWorkerState();
+  const registered = getRegisteredWorkerJob(name);
+  if (!isWorkerEnabled(registered.worker.id, workerState)) return;
+  if (buildJobState(name, jobSettings, workerState).running) return;
+  try {
+    await runJob(name, jobSettings, 'event');
+  } catch (err) {
+    console.warn(`[Scheduler] Bus wake failed for ${name}:`, err);
+  }
+}
+
+/** Test seam for the immediate wake path. */
+export async function wakeJobsForItemType(itemType: string): Promise<JobName[]> {
+  const startedJobs: JobName[] = [];
+  for (const name of jobsWakingOn(itemType)) {
+    const before = runtimeCache[name]?.lastStartedAt ?? null;
+    await runBusWake(name);
+    if ((runtimeCache[name]?.lastStartedAt ?? null) !== before) startedJobs.push(name);
+  }
+  return startedJobs;
+}
+
 async function doRunPipelineTick(): Promise<PipelineTickResult> {
   const settings = await ensureSettings();
   const workerState = await loadWorkerState();
@@ -434,7 +517,7 @@ async function doReloadSchedules(): Promise<void> {
       continue;
     }
 
-    const task = cron.schedule(
+    const task = cron.createTask(
       jobSettings.cron,
       (ctx) => {
         detach(
@@ -448,6 +531,7 @@ async function doReloadSchedules(): Promise<void> {
         noOverlap: true,
       },
     );
+    installReliableCronMatcher(task, jobSettings.cron, settings.timezone);
     task.on('execution:missed', (ctx) => {
       detach(
         recordSkippedScheduleExecution(name, jobSettings, 'missed', ctx),
@@ -461,6 +545,7 @@ async function doReloadSchedules(): Promise<void> {
       );
     });
     tasks.set(name, task);
+    task.start();
   }
 }
 
@@ -949,6 +1034,9 @@ async function runJobWork(
           error: null,
           itemCount: result.itemCount ?? null,
         });
+      }
+      if ((result.itemCount ?? 0) > 0) {
+        schedulePipelineKick();
       }
       break;
     } catch (err) {

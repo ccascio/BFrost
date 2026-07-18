@@ -1,15 +1,47 @@
 import type { ScheduledTask } from 'node-cron';
+import { CronExpressionParser } from 'cron-parser';
 
 const DEFAULT_LOOKBACK_MS = 48 * 60 * 60 * 1000;
 const DEFAULT_MAX_ITERATIONS = 3_000;
 
 interface TimeMatcherLike {
   getNextMatch(date: Date): Date;
+  match(date: Date): boolean;
 }
 
 export interface PreviousCronMatchOptions {
   lookbackMs?: number;
   maxIterations?: number;
+}
+
+/** Return the next concrete cron slot using a timezone-aware parser. */
+export function getNextCronMatch(expression: string, timezone: string, after: Date): Date {
+  return CronExpressionParser.parse(expression, {
+    currentDate: after,
+    tz: timezone,
+  }).next().toDate();
+}
+
+/**
+ * Replace node-cron's faulty constrained-weekday matcher before the task starts.
+ * node-cron 4.2.1 can advance the year instead of the day for weekly schedules.
+ */
+export function installReliableCronMatcher(
+  task: ScheduledTask,
+  expression: string,
+  timezone: string,
+): void {
+  const candidate = Reflect.get(task, 'timeMatcher');
+  if (!candidate || typeof candidate !== 'object') {
+    throw new Error('Scheduled task does not expose a compatible time matcher.');
+  }
+
+  Reflect.set(candidate, 'getNextMatch', (date: Date) => getNextCronMatch(expression, timezone, date));
+  Reflect.set(candidate, 'match', (date: Date) => {
+    const normalized = new Date(Math.floor(date.getTime() / 1000) * 1000);
+    const previousSecond = new Date(normalized.getTime() - 1000);
+    return getNextCronMatch(expression, timezone, previousSecond).getTime() === normalized.getTime();
+  });
 }
 
 /**
@@ -55,7 +87,11 @@ function readTimeMatcher(task: ScheduledTask): TimeMatcherLike | null {
     return null;
   }
   const getNextMatch = Reflect.get(candidate, 'getNextMatch');
-  return typeof getNextMatch === 'function'
-    ? { getNextMatch: (date: Date) => getNextMatch.call(candidate, date) }
+  const match = Reflect.get(candidate, 'match');
+  return typeof getNextMatch === 'function' && typeof match === 'function'
+    ? {
+        getNextMatch: (date: Date) => getNextMatch.call(candidate, date),
+        match: (date: Date) => match.call(candidate, date),
+      }
     : null;
 }

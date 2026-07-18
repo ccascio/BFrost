@@ -8,11 +8,14 @@ import { closeDb } from '../sqlite';
 import {
   applyConsumerFailure,
   applyConsumerSuccess,
+  emitItemPublished,
   filterItemsForConsumer,
   listItemsForConsumer,
+  onItemPublished,
   publishItem,
   readConsumerMetadata,
   setConsumerMetadata,
+  type ItemPublishedEvent,
 } from './item-bus';
 import { createQueueItem } from './queue';
 
@@ -52,6 +55,48 @@ test('publishItem persists a producer-tagged item with payload', async () => {
     assert.equal((created.payload as any).source.host, 'example.com');
     assert.equal(created.state, 'queued');
   });
+});
+
+test('publishItem emits an item-published event; unsubscribe stops delivery', async () => {
+  await withTempStore(async () => {
+    const received: ItemPublishedEvent[] = [];
+    const unsubscribe = onItemPublished((event) => received.push(event));
+    await publishItem({
+      producerWorkerId: 'test.producer',
+      itemType: 'test.signal',
+      title: 'Wake target',
+      shortDesc: 'Emits an event.',
+      url: 'https://example.com/wake/1',
+      state: 'approved',
+    });
+    assert.deepEqual(received, [{
+      itemType: 'test.signal',
+      producerWorkerId: 'test.producer',
+      state: 'approved',
+    }]);
+    unsubscribe();
+    await publishItem({
+      producerWorkerId: 'test.producer',
+      itemType: 'test.signal',
+      title: 'After unsubscribe',
+      shortDesc: 'No event expected.',
+      url: 'https://example.com/wake/2',
+    });
+    assert.equal(received.length, 1);
+  });
+});
+
+test('emitItemPublished isolates a throwing listener from the others', () => {
+  const received: string[] = [];
+  const unsubscribeBad = onItemPublished(() => { throw new Error('Listener failed on purpose.'); });
+  const unsubscribeGood = onItemPublished((event) => received.push(event.itemType));
+  try {
+    emitItemPublished({ itemType: 'test.signal', producerWorkerId: 'test.producer', state: 'queued' });
+    assert.deepEqual(received, ['test.signal']);
+  } finally {
+    unsubscribeBad();
+    unsubscribeGood();
+  }
 });
 
 test('filterItemsForConsumer matches itemType, tags, state, and excludeAlreadyHandled', () => {

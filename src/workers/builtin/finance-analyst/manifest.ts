@@ -129,6 +129,7 @@ Ground factual claims in the supplied input. Be explicit about catalyst, evidenc
         },
       ],
       hasWork: () => hasFinanceAnalysisWork(),
+      wakeOn: ['finance.news'],
       run: (modelId, params) => runFinanceAnalysis(modelId, FinanceAnalysisParamsSchema.parse(params ?? {})),
     },
   ],

@@ -374,6 +374,12 @@ export interface WorkerJobManifest {
    * consumers can return true when their input queue has work ready.
    */
   hasWork?: (params?: Record<string, unknown>) => boolean | Promise<boolean>;
+  /**
+   * Item types that wake this job immediately after publication. Wakes are debounced
+   * and still pass through enabled/running/hasWork guards; the periodic pipeline tick
+   * remains the recovery path for missed in-process events.
+   */
+  wakeOn?: string[];
   run: (modelId: string, params?: Record<string, unknown>) => Promise<WorkerJobRunResult>;
 }
 
