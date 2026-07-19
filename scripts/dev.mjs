@@ -1,4 +1,7 @@
 import { spawn, execFileSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { stopAllServerInstances } from './process-lock.mjs';
 
 const npmCli = process.env.npm_execpath;
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -130,7 +133,9 @@ const adminPort = Number(process.env.ADMIN_PORT || 3030);
 const webPort = Number(process.env.VITE_PORT || process.env.BFROST_WEB_PORT || 5173);
 
 // Release app ports if a previous dev session is still holding them.
-freePort(adminPort);
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const stoppedPids = stopAllServerInstances({ ENTRY: path.join(root, 'dist', 'index.js'), RUNNER: path.join(root, 'scripts', 'run-server.mjs'), PORT: adminPort });
+if (stoppedPids.length) console.log(`[dev] Stopped previous backend instance(s) (PID ${stoppedPids.join(', ')})`);
 freePort(webPort);
 
 const children = [

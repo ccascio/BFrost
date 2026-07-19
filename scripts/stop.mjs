@@ -12,6 +12,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stopAllServerInstances } from './process-lock.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.BFROST_PORT ?? 3030);
@@ -41,6 +42,17 @@ if (process.platform === 'darwin') {
     }
     process.exit(0);
   } catch { /* service not installed — fall through to port-based stop */ }
+}
+
+try {
+  const entry = path.join(ROOT, 'dist', 'index.js');
+  const runner = path.join(ROOT, 'scripts', 'run-server.mjs');
+  const projectPids = stopAllServerInstances({ ENTRY: entry, RUNNER: runner, PORT });
+  console.log(projectPids.length ? `Stopped BFrost (PID ${projectPids.join(', ')})` : 'BFrost is not running.');
+  process.exit(0);
+} catch (err) {
+  console.error('Failed to stop BFrost:', err.message);
+  process.exit(1);
 }
 
 try {

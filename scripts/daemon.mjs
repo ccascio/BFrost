@@ -13,6 +13,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_MAX_LOG_BYTES, DEFAULT_LOG_ROTATIONS, defaultLogFile } from './logging.mjs';
+import { stopAllServerInstances } from './process-lock.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ENTRY = path.join(ROOT, 'dist', 'index.js');
@@ -118,7 +119,8 @@ function stopExisting() {
   }
 }
 
-stopExisting();
+const stoppedPids = stopAllServerInstances({ ENTRY, RUNNER, PORT });
+if (stoppedPids.length) console.log(`Stopped existing BFrost instance(s) (PID ${stoppedPids.join(', ')})...`);
 
 mkdirSync(path.dirname(LOG_FILE), { recursive: true });
 
