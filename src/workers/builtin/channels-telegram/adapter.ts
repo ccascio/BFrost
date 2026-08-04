@@ -175,6 +175,18 @@ export function createTelegramBot(token: string): Telegraf {
   return bot;
 }
 
+export function stopTelegramBot(bot: Telegraf, reason: string): void {
+  try {
+    bot.stop(reason);
+  } catch (err) {
+    // Telegraf throws when launch() failed before polling was initialized (or when
+    // shutdown races with launch()). That is already a stopped bot, not a cleanup
+    // failure for BFrost.
+    if (err instanceof Error && err.message === 'Bot is not running!') return;
+    throw err;
+  }
+}
+
 export function createTelegramChannelAdapter(): ChannelAdapter {
   let bot: Telegraf | null = null;
 
@@ -199,8 +211,9 @@ export function createTelegramChannelAdapter(): ChannelAdapter {
     },
     async stop(reason: string) {
       if (!bot) return;
-      bot.stop(reason);
+      const currentBot = bot;
       bot = null;
+      stopTelegramBot(currentBot, reason);
     },
     async notifyOperator(text: string) {
       if (!config.allowedUserId) {
