@@ -2,6 +2,8 @@ import { useState, useEffect, type CSSProperties, type SyntheticEvent } from 're
 import { Icon } from './icons';
 import { Tooltip } from './ui';
 
+const COLLAPSED_GROUPS_STORAGE_KEY = 'bfrost.sidebarCollapsedGroups';
+
 export interface SidebarEntry<T extends string = string> {
   id: T;
   label: string;
@@ -20,6 +22,13 @@ interface SidebarProps<T extends string = string> {
   onSelect: (id: T) => void;
   onToggleCollapsed: () => void;
   onOpenSettings?: () => void;
+  /**
+   * Preferred ordering of group headings. Groups named here render in this order;
+   * any group not listed falls in afterwards in first-appearance order. The names
+   * are opaque to the core shell — providers and workers supply them via their
+   * manifest `menu.group`.
+   */
+  groupOrder?: string[];
 }
 
 export function Sidebar<T extends string>({
@@ -29,43 +38,77 @@ export function Sidebar<T extends string>({
   onSelect,
   onToggleCollapsed,
   onOpenSettings,
+  groupOrder,
 }: SidebarProps<T>) {
   // Build the set of parent IDs (entries that have children).
   const parentIds = new Set(entries.filter((e) => e.parentId).map((e) => e.parentId!));
 
-  // Track which parent subtrees are expanded. Default: all collapsed.
-  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+  // Track which single parent subtree is expanded — accordion behavior: expanding
+  // one parent (e.g. navigating into a worker's Config child) always collapses any
+  // other parent that was previously open.
+  const [expandedParentId, setExpandedParentId] = useState<string | null>(null);
 
-  // Auto-expand the parent when the active tab is a child.
+  // Track which groups are collapsed, persisted across reloads. Storing the *collapsed*
+  // names (not the open ones) means a group that appears for the first time — a newly
+  // installed worker's group, or a first run with no stored state — defaults to open.
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(COLLAPSED_GROUPS_STORAGE_KEY) ?? '[]');
+      return new Set(Array.isArray(stored) ? stored.filter((name): name is string => typeof name === 'string') : []);
+    } catch {
+      return new Set();
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(COLLAPSED_GROUPS_STORAGE_KEY, JSON.stringify([...collapsedGroups]));
+  }, [collapsedGroups]);
+
+  // Auto-expand the parent when the active tab is a child — and collapse any other
+  // parent that was previously expanded (accordion: only one open at a time).
   useEffect(() => {
     const activeEntry = entries.find((e) => e.id === activeTab);
     if (activeEntry?.parentId) {
-      setExpandedParents((prev) => {
-        if (prev.has(activeEntry.parentId!)) return prev;
+      setExpandedParentId((prev) => (prev === activeEntry.parentId ? prev : activeEntry.parentId!));
+    }
+  }, [activeTab, entries]);
+
+  // Auto-expand the group when the active tab is inside it.
+  useEffect(() => {
+    const activeEntry = entries.find((e) => e.id === activeTab);
+    if (activeEntry) {
+      setCollapsedGroups((prev) => {
+        if (!prev.has(activeEntry.group)) return prev;
         const next = new Set(prev);
-        next.add(activeEntry.parentId!);
+        next.delete(activeEntry.group);
         return next;
       });
     }
   }, [activeTab, entries]);
 
-  function toggleExpand(parentId: string, e: SyntheticEvent) {
-    e.stopPropagation();
-    setExpandedParents((prev) => {
+  function toggleGroup(groupName: string) {
+    setCollapsedGroups((prev) => {
       const next = new Set(prev);
-      if (next.has(parentId)) next.delete(parentId);
-      else next.add(parentId);
+      if (next.has(groupName)) next.delete(groupName);
+      else next.add(groupName);
       return next;
     });
   }
 
-  // Entries visible: children only when their parent is expanded.
+  function toggleExpand(parentId: string, e: SyntheticEvent) {
+    e.stopPropagation();
+    setExpandedParentId((prev) => (prev === parentId ? null : parentId));
+  }
+
+  // Entries visible: children only when their parent is the single expanded one.
   const visibleEntries = entries.filter((entry) => {
     if (!entry.parentId) return true;
-    return expandedParents.has(entry.parentId);
+    return expandedParentId === entry.parentId;
   });
 
-  const groups = groupEntries(visibleEntries);
+  const groups = groupEntries(visibleEntries, groupOrder);
   let globalItemIdx = 0;
 
   function moveFocus(current: HTMLButtonElement, direction: 1 | -1) {
@@ -88,15 +131,33 @@ export function Sidebar<T extends string>({
       </div>
 
       <nav className="sidebar-nav" aria-label="Dashboard sections">
-        {groups.map((group) => (
+        {groups.map((group) => {
+          const isSingleEntryGroup = group.entries.length === 1;
+          const groupCollapsed = !isSingleEntryGroup && !collapsed && collapsedGroups.has(group.name);
+          return (
           <section className="sidebar-group" key={group.name}>
-            <h2>{group.name}</h2>
+            {!isSingleEntryGroup && (
+              <button
+                className={`sidebar-group-heading${groupCollapsed ? '' : ' open'}`}
+                type="button"
+                aria-expanded={!groupCollapsed}
+                onClick={() => !collapsed && toggleGroup(group.name)}
+              >
+                {group.name}
+                {!collapsed && (
+                  <span className={`sidebar-group-chevron${groupCollapsed ? '' : ' open'}`} aria-hidden="true">
+                    <Icon name="chevron-right" />
+                  </span>
+                )}
+              </button>
+            )}
+            <div className={`sidebar-group-items-wrap${groupCollapsed ? ' collapsed' : ''}`}>
             <div className="sidebar-group-items">
               {group.entries.map((entry, entryIndex) => {
                 const selected = entry.id === activeTab;
                 const isChild = !!entry.parentId;
                 const isParent = parentIds.has(entry.id);
-                const isExpanded = isParent && expandedParents.has(entry.id);
+                const isExpanded = isParent && expandedParentId === entry.id;
                 const itemIdx = globalItemIdx++;
 
                 const itemStyle: CSSProperties = {
@@ -156,8 +217,10 @@ export function Sidebar<T extends string>({
                 ) : item;
               })}
             </div>
+            </div>
           </section>
-        ))}
+          );
+        })}
       </nav>
 
       {onOpenSettings && (() => {
@@ -201,19 +264,28 @@ export function Sidebar<T extends string>({
   );
 }
 
-function groupEntries<T extends string>(entries: SidebarEntry<T>[]) {
-  const groupOrder = new Map<string, number>();
+function groupEntries<T extends string>(entries: SidebarEntry<T>[], preferredOrder?: string[]) {
+  const appearance = new Map<string, number>();
   const groups = new Map<string, SidebarEntry<T>[]>();
   entries.forEach((entry, index) => {
     if (!groups.has(entry.group)) {
       groups.set(entry.group, []);
-      groupOrder.set(entry.group, index);
+      appearance.set(entry.group, index);
     }
     groups.get(entry.group)!.push(entry);
   });
 
+  // Groups listed in `preferredOrder` sort first in that order; the rest keep
+  // their first-appearance order, sequenced after the named groups.
+  const preferredIndex = new Map((preferredOrder ?? []).map((name, idx) => [name, idx]));
+  const rank = (name: string): number => {
+    const explicit = preferredIndex.get(name);
+    if (explicit !== undefined) return explicit;
+    return (preferredOrder?.length ?? 0) + (appearance.get(name) ?? 0);
+  };
+
   return Array.from(groups.entries())
-    .sort(([a], [b]) => (groupOrder.get(a) ?? 0) - (groupOrder.get(b) ?? 0))
+    .sort(([a], [b]) => rank(a) - rank(b))
     .map(([name, groupEntries]) => {
       const entryIds = new Set(groupEntries.map((entry) => entry.id));
       const childrenByParent = new Map<T, SidebarEntry<T>[]>();

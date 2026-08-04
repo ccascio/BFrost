@@ -498,6 +498,7 @@ export default function App() {
       />
       <Sidebar
         entries={sidebarEntries}
+        groupOrder={CORE_MENU_GROUP_ORDER}
         activeTab={activeTab}
         collapsed={sidebarCollapsed}
         onSelect={(tab) => {
