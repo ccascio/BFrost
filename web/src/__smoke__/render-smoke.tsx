@@ -3,7 +3,7 @@
 // per-tab split (CODE_ROADMAP Phase 1.2) — vite/tsc cannot catch a mis-wired prop
 // that only blows up at render time; this can. Run via `npm run smoke:web`.
 import { renderToStaticMarkup } from 'react-dom/server';
-import { createElement, type ReactElement } from 'react';
+import { createElement, type ComponentProps, type ReactElement } from 'react';
 import {
   Metric,
   Detail,
@@ -48,13 +48,24 @@ const noopAsync = async () => {};
 const mockDashboard = {
   workers: [],
   workerIssues: [],
-  defaultModel: { alias: 'local', provider: 'local' },
+  models: [
+    { alias: 'local', id: 'local-model', label: 'Local model', provider: 'local' },
+    {
+      alias: 'cloud',
+      id: 'cloud-model',
+      label: 'Cloud model',
+      provider: 'cloud',
+      reasoningLevels: ['low', 'medium', 'high'],
+    },
+  ],
+  defaultModel: { alias: 'local', id: 'local-model', label: 'Local model', provider: 'local' },
+  defaultReasoningLevel: 'medium',
 } as unknown as DashboardState;
 
 const overviewDashboard = {
   app: {
-    name: 'BFrost',
-    adminUrl: 'http://127.0.0.1:3030',
+    name: 'WFrost',
+    adminUrl: 'http://127.0.0.1:3032',
     timezone: 'UTC',
     now: new Date().toISOString(),
     pid: 123,
@@ -91,7 +102,7 @@ const overviewDashboard = {
     adminSessionTtlHours: 24,
     jobLlmTimeoutMs: 120000,
     adminHost: '127.0.0.1',
-    adminPort: 3030,
+    adminPort: 3032,
   },
   availableLocalProviders: [],
   availableChannels: [],
@@ -135,7 +146,6 @@ const overviewSetupProps = {
   setError: noop,
   setDashboard: noop,
   setActiveTab: noop,
-  onboardingRan: true,
   runDemoAction: noopAsync,
   fetchDashboard: noopAsync,
   firstResultJob: null,
@@ -145,6 +155,7 @@ const overviewSetupProps = {
   setLmAdoptDismissed: noop,
   lmAdopting: false,
   setLmAdopting: noop,
+  onboardingRan: false,
   demoNarration: null,
   demoRecap: null,
   setDemoRecap: noop,
@@ -196,8 +207,9 @@ const mockJob: SchedulerJobState = {
   approvalRequiredEditable: true,
   enabled: true,
   cron: '0 9 * * *',
-  nextScheduledAt: null,
+  nextScheduledAt: '2026-04-25T09:00:00.000Z',
   modelAlias: 'demo',
+  reasoningLevel: '',
   approvalRequired: false,
   promptEditable: true,
   prompt: 'Summarize.',
@@ -205,6 +217,7 @@ const mockJob: SchedulerJobState = {
   dashboardFields: [],
   presets: [],
   effectiveModelAlias: 'demo',
+  effectiveReasoningLevel: '',
   queued: false,
   queuedAt: null,
   running: false,
@@ -238,6 +251,52 @@ interface SmokeCase {
   name: string;
   el: ReactElement;
 }
+
+// Hoisted so the ChatTab cases can vary one prop without restating forty.
+const chatTabProps: ComponentProps<typeof ChatTab> = {
+  dashboard: mockDashboard,
+  dashboardViews: [],
+  busyKey: null,
+  chatDraft: '',
+  setChatDraft: () => {},
+  chatTurns: [],
+  chatThreads: [],
+  chatProjects: [],
+  activeProjectId: null,
+  setActiveProjectId: () => {},
+  activeConversationId: null,
+  chatArrivingFromOverview: false,
+  chatModelAlias: null,
+  setChatModelAlias: () => {},
+  chatReasoningLevel: null,
+  setChatReasoningLevel: () => {},
+  chatQuery: '',
+  setChatQuery: () => {},
+  projectComboOpen: false,
+  setProjectComboOpen: () => {},
+  projectComboQuery: '',
+  setProjectComboQuery: () => {},
+  projectComboRef: nullRef,
+  chatLogRef: nullRef,
+  chatInputRef: nullRef,
+  createChatProject: () => {},
+  renameChatProject: () => {},
+  startNewChat: () => {},
+  openChatThread: () => {},
+  renameChatThread: () => {},
+  deleteChatThread: () => {},
+  sendDashboardChat: () => {},
+  fillChatDraft: () => {},
+  artifacts: [],
+  artifactPanelOpen: false,
+  setArtifactPanelOpen: () => {},
+  artifactPanelPinned: false,
+  setArtifactPanelPinned: () => {},
+  activeArtifactId: null,
+  setActiveArtifactId: () => {},
+  openArtifact: () => {},
+  deleteArtifactFromConversation: () => {},
+};
 
 // Render-only smoke: each case must produce markup without throwing.
 const cases: SmokeCase[] = [
@@ -319,7 +378,11 @@ const cases: SmokeCase[] = [
     el: createElement(WorkerConfigPage, {
       worker: mockWorker,
       surfaces: [mockWorkerSurface],
-      dashboard: overviewDashboard,
+      // Include a job owned by the mock worker so the per-job Models panel renders too.
+      dashboard: {
+        ...overviewDashboard,
+        cron: { ...overviewDashboard.cron, jobs: [mockJob] },
+      },
       dashboardViews: [],
       surfaceDrafts: {},
       setSurfaceDrafts: noop,
@@ -328,6 +391,7 @@ const cases: SmokeCase[] = [
       busyKey: null,
       fetchDashboard: noopAsync,
       saveWorkerConfigurationSurface: noop,
+      saveJobModel: noop,
     }),
   },
   {
@@ -407,45 +471,16 @@ const cases: SmokeCase[] = [
   },
   {
     name: 'ChatTab (empty)',
+    el: createElement(ChatTab, chatTabProps),
+  },
+  {
+    // The composer's reasoning picker only renders for a model that declares levels —
+    // reachable here only through the conversation override.
+    name: 'ChatTab (reasoning-capable model selected)',
     el: createElement(ChatTab, {
-      dashboard: mockDashboard,
-      dashboardViews: [],
-      busyKey: null,
-      chatDraft: '',
-      setChatDraft: () => {},
-      chatTurns: [],
-      chatThreads: [],
-      chatProjects: [],
-      activeProjectId: null,
-      setActiveProjectId: () => {},
-      activeConversationId: null,
-      chatArrivingFromOverview: false,
-      chatQuery: '',
-      setChatQuery: () => {},
-      projectComboOpen: false,
-      setProjectComboOpen: () => {},
-      projectComboQuery: '',
-      setProjectComboQuery: () => {},
-      projectComboRef: nullRef,
-      chatLogRef: nullRef,
-      chatInputRef: nullRef,
-      createChatProject: () => {},
-      renameChatProject: () => {},
-      startNewChat: () => {},
-      openChatThread: () => {},
-      renameChatThread: () => {},
-      deleteChatThread: () => {},
-      sendDashboardChat: () => {},
-      fillChatDraft: () => {},
-      artifacts: [],
-      artifactPanelOpen: false,
-      setArtifactPanelOpen: () => {},
-      artifactPanelPinned: false,
-      setArtifactPanelPinned: () => {},
-      activeArtifactId: null,
-      setActiveArtifactId: () => {},
-      openArtifact: () => {},
-      deleteArtifactFromConversation: () => {},
+      ...chatTabProps,
+      chatModelAlias: 'cloud',
+      chatReasoningLevel: 'high',
     }),
   },
   {
@@ -463,7 +498,7 @@ const cases: SmokeCase[] = [
         },
         backups: [],
         events: [],
-        app: { adminUrl: 'http://127.0.0.1:3030' },
+        app: { adminUrl: 'http://127.0.0.1:3032' },
       } as unknown as DashboardState,
       whatsNew: null,
       autoBackupSettings: null,
@@ -487,12 +522,12 @@ const cases: SmokeCase[] = [
       dashboard: mockDashboard,
       busyKey: null,
       workerDescription: '',
-      setWorkerDescription: () => {},
+      setWorkerDescription: noop,
       generatedWorker: null,
       workerUploadFile: null,
       setWorkerUploadFile: () => {},
       storeUpdates: new Map<string, string>(),
-      generateWorkerFromDescription: () => {},
+      generateWorkerFromDescription: noopAsync,
       uploadWorkerZip: () => {},
       deleteWorker: () => {},
       mutate: () => {},

@@ -9,11 +9,14 @@ const CONVERSATION_STORE_KEY = 'assistant.conversations';
 
 const conversations = new Map<number, ModelMessage[]>();
 const selectedModels = new Map<number, string>();
+const selectedReasoningLevels = new Map<number, string>();
 
 interface PersistedConversationStore {
   version: 1;
   conversations: Record<string, ModelMessage[]>;
   selectedModels: Record<string, string>;
+  /** Per-thread reasoning level. Absent for threads that never overrode the platform default. */
+  selectedReasoningLevels?: Record<string, string>;
 }
 
 export async function hydrateConversations(): Promise<void> {
@@ -43,8 +46,32 @@ export function getSelectedModel(chatId: number): string {
   return selectedModels.get(chatId) ?? config.ollamaModel;
 }
 
+/**
+ * Model this thread was explicitly switched to, if any. Unlike {@link getSelectedModel}
+ * this does not fall back to the platform default, so callers can tell "pinned to the
+ * model that happens to be the default" from "never chose one".
+ */
+export function getSelectedModelOverride(chatId: number): string | undefined {
+  return selectedModels.get(chatId);
+}
+
 export function setSelectedModel(chatId: number, modelId: string): void {
   selectedModels.set(chatId, modelId);
+  schedulePersist();
+}
+
+/**
+ * Reasoning level this thread has been switched to, if any. Undefined means the thread
+ * never overrode the platform default and `resolveReasoningLevel` should decide.
+ */
+export function getSelectedReasoningLevel(chatId: number): string | undefined {
+  return selectedReasoningLevels.get(chatId);
+}
+
+export function setSelectedReasoningLevel(chatId: number, level: string): void {
+  const normalized = level.trim().toLowerCase();
+  if (normalized) selectedReasoningLevels.set(chatId, normalized);
+  else selectedReasoningLevels.delete(chatId);
   schedulePersist();
 }
 
@@ -100,6 +127,9 @@ function buildSnapshot(): PersistedConversationStore {
     selectedModels: Object.fromEntries(
       [...selectedModels.entries()].map(([chatId, modelId]) => [String(chatId), modelId]),
     ),
+    selectedReasoningLevels: Object.fromEntries(
+      [...selectedReasoningLevels.entries()].map(([chatId, level]) => [String(chatId), level]),
+    ),
   };
 }
 
@@ -110,6 +140,7 @@ async function saveSnapshot(snapshot: PersistedConversationStore): Promise<void>
 function hydrateFromStore(parsed: Partial<PersistedConversationStore>): void {
   conversations.clear();
   selectedModels.clear();
+  selectedReasoningLevels.clear();
 
   for (const [chatId, history] of Object.entries(parsed.conversations ?? {})) {
     const numericChatId = Number(chatId);
@@ -122,6 +153,13 @@ function hydrateFromStore(parsed: Partial<PersistedConversationStore>): void {
     const numericChatId = Number(chatId);
     if (Number.isSafeInteger(numericChatId) && typeof modelId === 'string' && modelId.trim()) {
       selectedModels.set(numericChatId, modelId);
+    }
+  }
+
+  for (const [chatId, level] of Object.entries(parsed.selectedReasoningLevels ?? {})) {
+    const numericChatId = Number(chatId);
+    if (Number.isSafeInteger(numericChatId) && typeof level === 'string' && level.trim()) {
+      selectedReasoningLevels.set(numericChatId, level.trim().toLowerCase());
     }
   }
 }

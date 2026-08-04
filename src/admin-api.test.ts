@@ -10,6 +10,7 @@ import {
   QueueItemActionBodySchema,
   SourceQualityRulesSchema,
   JobMetricsResponseSchema,
+  SchedulerRecoverySettingsBodySchema,
 } from './admin-api';
 
 test('admin API schemas accept expected dashboard payloads', () => {
@@ -22,10 +23,19 @@ test('admin API schemas accept expected dashboard payloads', () => {
     { alias: 'local-model' },
   );
   assert.deepEqual(
+    DefaultModelBodySchema.parse({ alias: 'local-model', reasoningLevel: 'medium' }),
+    { alias: 'local-model', reasoningLevel: 'medium' },
+  );
+  assert.deepEqual(
+    SchedulerRecoverySettingsBodySchema.parse({ automaticMissedRunRecovery: false }),
+    { automaticMissedRunRecovery: false },
+  );
+  assert.deepEqual(
     CronJobUpdateBodySchema.parse({
       enabled: true,
       cron: '*/30 * * * *',
       modelAlias: 'local-model',
+      reasoningLevel: 'high',
       approvalRequired: true,
       prompt: 'Use {items}.',
     }),
@@ -33,6 +43,7 @@ test('admin API schemas accept expected dashboard payloads', () => {
       enabled: true,
       cron: '*/30 * * * *',
       modelAlias: 'local-model',
+      reasoningLevel: 'high',
       approvalRequired: true,
       prompt: 'Use {items}.',
     },
@@ -113,7 +124,7 @@ test('admin API schemas accept expected dashboard payloads', () => {
       label: 'LLM model',
       type: 'model-alias',
       defaultValue: '',
-      targetJob: 'news-digest',
+      targetJob: 'scout-run',
       helpText: 'Leave blank to use the platform default.',
     }),
     {
@@ -121,7 +132,7 @@ test('admin API schemas accept expected dashboard payloads', () => {
       label: 'LLM model',
       type: 'model-alias',
       defaultValue: '',
-      targetJob: 'news-digest',
+      targetJob: 'scout-run',
       helpText: 'Leave blank to use the platform default.',
     },
   );
@@ -153,13 +164,23 @@ test('dashboard response schema accepts the control-room payload shape', () => {
   const payload = {
     app: {
       name: 'BFrost Control Room',
-      adminUrl: 'http://127.0.0.1:3030',
+      adminUrl: 'http://127.0.0.1:3032',
       timezone: 'UTC',
       now: '2026-04-24T12:00:00.000Z',
       pid: 123,
     },
-    models: [{ alias: 'local-model', id: 'local/model', label: 'Local Model', provider: 'lmstudio' }],
+    models: [
+      { alias: 'local-model', id: 'local/model', label: 'Local Model', provider: 'lmstudio' },
+      {
+        alias: 'cloud-model',
+        id: 'cloud/model',
+        label: 'Cloud Model',
+        provider: 'cloud',
+        reasoningLevels: ['low', 'medium', 'high'],
+      },
+    ],
     defaultModel: { alias: 'local-model', id: 'local/model', label: 'Local Model', provider: 'lmstudio' },
+    defaultReasoningLevel: 'medium',
     localRuntime: {
       running: true,
       loadedModels: ['local/model'],
@@ -170,17 +191,19 @@ test('dashboard response schema accepts the control-room payload shape', () => {
       timezone: 'UTC',
       jobs: [
         {
-          name: 'tweet-post',
+          name: 'personal-research',
           label: 'Tweet Post',
           description: 'Chooses a strong queue item and writes a bounded post for X.',
-          workerId: 'core.publisher.x',
+          workerId: 'core.research',
           workerName: 'X Publisher',
           workerBuiltIn: true,
           workerEnabled: true,
           approvalRequiredEditable: true,
-          enabled: false,
-          cron: '30 9,14,19 * * *',
-          modelAlias: '',
+           enabled: false,
+           cron: '30 9,14,19 * * *',
+           nextScheduledAt: null,
+           modelAlias: '',
+          reasoningLevel: '',
           approvalRequired: true,
           promptEditable: true,
           promptHelpText: 'Available placeholders: {items}, {maxContentLength}, {signature}.',
@@ -195,9 +218,7 @@ test('dashboard response schema accepts the control-room payload shape', () => {
           dashboardFields: [],
           presets: [],
           effectiveModelAlias: 'local-model',
-          nextScheduledAt: null,
-          queued: false,
-          queuedAt: null,
+          effectiveReasoningLevel: '',
           running: false,
           lastStartedAt: null,
           lastFinishedAt: null,
@@ -210,7 +231,7 @@ test('dashboard response schema accepts the control-room payload shape', () => {
       runs: [
         {
           id: 'run-1',
-          job: 'tweet-post',
+          job: 'personal-research',
           label: 'Tweet Post',
           trigger: 'manual',
           modelAlias: 'local-model',
@@ -225,7 +246,7 @@ test('dashboard response schema accepts the control-room payload shape', () => {
     },
     workers: [
       {
-        id: 'core.publisher.x',
+        id: 'core.research',
         name: 'X Publisher',
         version: '0.1.0',
         description: 'Selects approved queue items and drafts or publishes X posts.',
@@ -240,10 +261,10 @@ test('dashboard response schema accepts the control-room payload shape', () => {
           id: 'try-x',
           title: '▶ Draft a sample post',
           description: 'See the X publisher draft a post from an approved item.',
-          runJob: 'tweet-post',
+          runJob: 'personal-research',
+          completedWhenHealthKey: 'publisherConfigured',
           priority: 10,
         },
-        demoNotice: 'Sample mode is on. Delete this worker to turn it off.',
         builtIn: true,
         kind: 'feature',
         enabled: true,
@@ -266,35 +287,35 @@ test('dashboard response schema accepts the control-room payload shape', () => {
         ],
         ownedSettings: [
           {
-            key: 'tweet-post-job',
+            key: 'personal-research-job',
             label: 'Tweet post schedule',
             description: 'Cron, approval, model, prompt, and parameter settings for the X publisher job.',
             scope: 'job',
-            storageKey: 'admin.settings.jobs.tweet-post',
+            storageKey: 'admin.settings.jobs.personal-research',
             dashboardTarget: 'jobs',
           },
         ],
         dashboard: {
           settings: [
             {
-              id: 'tweet-post-params',
+              id: 'personal-research-params',
               label: 'Post parameters',
               description: 'Signature appended to every tweet, character budget, and candidate selection limits.',
               tab: 'config',
-              path: '/api/workers/publisher-x/params',
+              path: '/api/workers/research/params',
               fields: [
-                { key: 'signature', label: 'Signature', type: 'text', defaultValue: '', helpText: 'Text appended to every published tweet. Leave blank for no signature.', seedPath: 'core.publisher.x.signature' },
-                { key: 'maxContentLength', label: 'Max content length', type: 'number', defaultValue: 250, min: 1, max: 280, helpText: 'Character limit for the tweet body (excluding signature). Max 280.', seedPath: 'core.publisher.x.maxContentLength' },
+                { key: 'signature', label: 'Signature', type: 'text', defaultValue: '', helpText: 'Text appended to every published tweet. Leave blank for no signature.', seedPath: 'core.research.signature' },
+                { key: 'maxContentLength', label: 'Max content length', type: 'number', defaultValue: 250, min: 1, max: 280, helpText: 'Character limit for the tweet body (excluding signature). Max 280.', seedPath: 'core.research.maxContentLength' },
               ],
             },
             {
-              id: 'tweet-post-prompt',
+              id: 'personal-research-prompt',
               label: 'Writing instructions',
               description: 'The prompt template the LLM uses to draft each tweet. Placeholders: {items}, {maxContentLength}, {signature}.',
               tab: 'config',
-              path: '/api/cron-jobs/tweet-post',
+              path: '/api/cron-jobs/personal-research',
               fields: [
-                { key: 'prompt', label: 'Prompt template', type: 'textarea', defaultValue: '', rows: 10, helpText: 'Available placeholders: {items}, {maxContentLength}, {signature}.', seedPath: 'core.publisher.x.prompt' },
+                { key: 'prompt', label: 'Prompt template', type: 'textarea', defaultValue: '', rows: 10, helpText: 'Available placeholders: {items}, {maxContentLength}, {signature}.', seedPath: 'core.research.prompt' },
               ],
             },
             {
@@ -318,7 +339,7 @@ test('dashboard response schema accepts the control-room payload shape', () => {
         providers: [],
         jobs: [
           {
-            id: 'tweet-post',
+            id: 'personal-research',
             label: 'Tweet Post',
             description: 'Chooses a strong queue item and writes a bounded post for X.',
             enabled: false,
@@ -345,7 +366,7 @@ test('dashboard response schema accepts the control-room payload shape', () => {
       jobLlmTimeoutMs: 600000,
       automaticMissedRunRecovery: false,
       adminHost: '127.0.0.1',
-      adminPort: 3030,
+      adminPort: 3032,
     },
     availableLocalProviders: [
       { id: 'lmstudio', label: 'LM Studio', workerId: 'core.providers.lmstudio', workerName: 'LM Studio Provider' },
@@ -410,8 +431,8 @@ test('dashboard response schema accepts the control-room payload shape', () => {
     events: [],
     backups: [
       {
-        file: 'bfrost-2026-04-24T08-00-00-000Z.sqlite',
-        path: 'data/admin/backups/bfrost-2026-04-24T08-00-00-000Z.sqlite',
+        file: 'BFrost-2026-04-24T08-00-00-000Z.sqlite',
+        path: 'data/admin/backups/BFrost-2026-04-24T08-00-00-000Z.sqlite',
         createdAt: '2026-04-24T08:00:00.000Z',
         sizeBytes: 4096,
       },
@@ -422,6 +443,7 @@ test('dashboard response schema accepts the control-room payload shape', () => {
       events: [],
     },
     recipes: [],
+    pipelineStages: [],
   };
 
   assert.equal(DashboardStateSchema.safeParse(payload).success, true);
@@ -431,7 +453,7 @@ test('JobMetricsResponseSchema accepts a valid per-worker metrics payload', () =
   const payload = {
     workers: [
       {
-        workerId: 'core.publisher.x',
+        workerId: 'core.research',
         workerName: 'X Publisher',
         totalRuns: 10,
         successRate: 0.9,
@@ -440,9 +462,9 @@ test('JobMetricsResponseSchema accepts a valid per-worker metrics payload', () =
         lastFailureReason: 'API rate limit exceeded.',
         jobs: [
           {
-            jobName: 'tweet-post',
+            jobName: 'personal-research',
             jobLabel: 'Tweet Post',
-            workerId: 'core.publisher.x',
+            workerId: 'core.research',
             totalRuns: 10,
             successCount: 9,
             errorCount: 1,
@@ -463,7 +485,7 @@ test('JobMetricsResponseSchema accepts a valid per-worker metrics payload', () =
 
   const result = JobMetricsResponseSchema.safeParse(payload);
   assert.equal(result.success, true);
-  assert.equal(result.data?.workers[0].workerId, 'core.publisher.x');
+  assert.equal(result.data?.workers[0].workerId, 'core.research');
   assert.equal(result.data?.workers[0].jobs[0].successRate, 0.9);
 });
 

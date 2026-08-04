@@ -18,6 +18,10 @@ export interface ChannelMessage {
   imageMimeType?: string;
   /** Optional project grouping to scope the turn (and seed a brand-new thread). */
   projectId?: string | null;
+  /** Model this thread should switch to for this and later turns (alias or id). */
+  modelAlias?: string;
+  /** Reasoning level this thread should switch to for this and later turns. */
+  reasoningLevel?: string;
 }
 
 export async function processChannelMessage(message: ChannelMessage): Promise<AgentResponse> {
@@ -41,6 +45,8 @@ export async function processChannelMessage(message: ChannelMessage): Promise<Ag
     message: message.text,
     imageBase64: message.imageBase64,
     imageMimeType: message.imageMimeType,
+    modelAlias: message.modelAlias,
+    reasoningLevel: message.reasoningLevel,
   });
 }
 

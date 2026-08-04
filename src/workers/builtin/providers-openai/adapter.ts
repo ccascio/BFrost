@@ -1,6 +1,7 @@
 import { createOpenAI } from '@ai-sdk/openai';
+import { wrapLanguageModel, type LanguageModel } from 'ai';
 import type { ProviderModelOption } from '../../../config';
-import type { ProviderAdapter } from '../../module';
+import type { ChatModelOptions, NativeWebSearchOptions, ProviderAdapter } from '../../module';
 import {
   resolveOpenAIApiKey,
   resolveOpenAIAuthMode,
@@ -32,6 +33,43 @@ function parseEmbeddingResponse(data: unknown): number[] {
   return embedding.map(Number);
 }
 
+/**
+ * Reasoning-effort levels per OpenAI model family, per vendor docs. OpenAI's /v1/models
+ * endpoint does not expose reasoning capabilities, so this map is maintained from the
+ * published API documentation. The GPT-5.6 family (sol/terra/luna) accepts the full
+ * range and defaults to medium.
+ */
+function reasoningLevelsFor(modelId: string): string[] | undefined {
+  if (modelId.toLowerCase().startsWith('gpt-5.6')) {
+    return ['none', 'low', 'medium', 'high', 'xhigh', 'max'];
+  }
+  return undefined;
+}
+
+/**
+ * Apply a selected reasoning level by injecting OpenAI's `reasoningEffort` provider
+ * option ahead of every generate/stream call on this handle.
+ */
+function withReasoningEffort(model: LanguageModel, effort: string | undefined): LanguageModel {
+  if (!effort) return model;
+  return wrapLanguageModel({
+    model: model as Parameters<typeof wrapLanguageModel>[0]['model'],
+    middleware: {
+      specificationVersion: 'v3',
+      transformParams: async ({ params }) => ({
+        ...params,
+        providerOptions: {
+          ...params.providerOptions,
+          openai: {
+            ...(params.providerOptions?.openai ?? {}),
+            reasoningEffort: effort,
+          },
+        },
+      }),
+    },
+  }) as LanguageModel;
+}
+
 // Heuristic: chat-capable OpenAI model ids start with gpt-, chatgpt-, or o[0-9].
 // Filters out embedding/whisper/tts/dall-e ids so the dashboard model picker stays useful.
 function isChatCapable(id: string): boolean {
@@ -52,16 +90,42 @@ async function fetchModelList(apiKey: string): Promise<ProviderModelOption[]> {
   const entries = body.data ?? [];
   return entries
     .filter((entry) => entry.id && isChatCapable(entry.id))
-    .map((entry) => ({ id: entry.id, label: entry.id }));
+    .map((entry) => {
+      const reasoningLevels = reasoningLevelsFor(entry.id);
+      return { id: entry.id, label: entry.id, ...(reasoningLevels ? { reasoningLevels } : {}) };
+    });
 }
 
-function subscriptionModel(): ProviderModelOption {
-  const id = resolveOpenAICodexCliModel();
-  return {
-    id,
-    alias: `openai-subscription-${id}`.toLowerCase().replace(/[^a-z0-9._-]+/g, '-'),
-    label: `ChatGPT subscription (${id})`,
-  };
+// Known chat-capable models available through ChatGPT subscription (Codex CLI).
+const OPENAI_SUBSCRIPTION_MODELS = [
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
+  'gpt-5.5',
+  'gpt-5.4',
+  'gpt-5.4-mini',
+  'gpt-5.4-nano',
+  'o4-mini',
+  'o3',
+  'o3-mini',
+  'gpt-4o',
+  'gpt-4o-mini',
+];
+
+function subscriptionModels(): ProviderModelOption[] {
+  const configured = resolveOpenAICodexCliModel();
+  const ids = OPENAI_SUBSCRIPTION_MODELS.includes(configured)
+    ? OPENAI_SUBSCRIPTION_MODELS
+    : [configured, ...OPENAI_SUBSCRIPTION_MODELS];
+  return ids.map((id) => {
+    const reasoningLevels = reasoningLevelsFor(id);
+    return {
+      id,
+      alias: `openai-subscription-${id}`.toLowerCase().replace(/[^a-z0-9._-]+/g, '-'),
+      label: `ChatGPT subscription (${id})`,
+      ...(reasoningLevels ? { reasoningLevels } : {}),
+    };
+  });
 }
 
 export function createOpenAIProviderAdapter(): ProviderAdapter {
@@ -82,19 +146,61 @@ export function createOpenAIProviderAdapter(): ProviderAdapter {
       if (resolveOpenAIAuthMode() === 'subscription') return readOpenAICodexSubscriptionReady();
       return Boolean(resolveOpenAIApiKey());
     },
-    getChatModel(modelId: string) {
+    getChatModel(modelId: string, options?: ChatModelOptions) {
+      const reasoningLevel = options?.reasoningLevel;
       if (resolveOpenAIAuthMode() === 'subscription') {
-        return createOpenAICodexSubscriptionLanguageModel(modelId || resolveOpenAICodexCliModel());
+        return withReasoningEffort(
+          createOpenAICodexSubscriptionLanguageModel(
+            modelId || resolveOpenAICodexCliModel(),
+          ) as LanguageModel,
+          reasoningLevel,
+        );
       }
       if (!resolveOpenAIApiKey()) {
         throw new Error('OPENAI_API_KEY is required to use OpenAI models.');
       }
       refreshClientIfKeyChanged();
+      if (reasoningLevel) {
+        // The Responses API accepts the full vendor effort range (including `max`,
+        // which the Chat Completions schema does not); reasoning models dispatch there.
+        return withReasoningEffort(client.responses(modelId) as LanguageModel, reasoningLevel);
+      }
       return client.chat(modelId);
+    },
+    getNativeWebSearch(modelId: string, options?: NativeWebSearchOptions) {
+      const reasoningLevel = options?.reasoningLevel;
+      const webSearch = client.tools.webSearch({
+        searchContextSize: options?.searchContextSize,
+        filters: options?.allowedDomains?.length
+          ? { allowedDomains: options.allowedDomains }
+          : undefined,
+      });
+      if (resolveOpenAIAuthMode() === 'subscription') {
+        return {
+          model: withReasoningEffort(
+            createOpenAICodexSubscriptionLanguageModel(modelId || resolveOpenAICodexCliModel()) as LanguageModel,
+            reasoningLevel,
+          ),
+          tools: { web_search: webSearch },
+        };
+      }
+      if (!resolveOpenAIApiKey()) return undefined;
+      refreshClientIfKeyChanged();
+      // OpenAI's web_search tool is only exposed through the Responses API, not Chat
+      // Completions, so API-key mode needs its own Responses model handle.
+      return {
+        model: withReasoningEffort(client.responses(modelId) as LanguageModel, reasoningLevel),
+        tools: { web_search: client.tools.webSearch({
+          searchContextSize: options?.searchContextSize,
+          filters: options?.allowedDomains?.length
+            ? { allowedDomains: options.allowedDomains }
+            : undefined,
+        }) },
+      };
     },
     async listAvailableModels() {
       if (resolveOpenAIAuthMode() === 'subscription') {
-        return readOpenAICodexSubscriptionReady() ? [subscriptionModel()] : [];
+        return readOpenAICodexSubscriptionReady() ? subscriptionModels() : [];
       }
       const key = resolveOpenAIApiKey();
       if (!key) return [];

@@ -6,12 +6,19 @@ export interface ModelOption {
   id: string;
   label: string;
   provider: string;
+  /**
+   * Reasoning-effort levels this model accepts, as declared by the provider worker
+   * (vendor-ordered, lightest first). Absent/empty means the model has no
+   * selectable reasoning level and callers must not send one.
+   */
+  reasoningLevels?: string[];
 }
 
 export interface ProviderModelOption {
   alias?: string;
   id: string;
   label?: string;
+  reasoningLevels?: string[];
 }
 
 export const availableModels: ModelOption[] = [];
@@ -26,6 +33,11 @@ function positiveNumberEnv(name: string, fallback: number): number {
 
 export const config = {
   ollamaModel: process.env.OLLAMA_MODEL || '',
+  /**
+   * Platform-wide reasoning level applied when a model supports reasoning levels and no
+   * per-job override is set. Persisted alongside the default model choice.
+   */
+  defaultReasoningLevel: process.env.DEFAULT_REASONING_LEVEL || 'medium',
   ollamaBaseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434/v1',
   allowedUserId: Number(process.env.ALLOWED_USER_ID || '0'),
   whisperModelPath: process.env.WHISPER_MODEL_PATH || './models/ggml-large-v3-turbo-q5_0.bin',
@@ -39,7 +51,7 @@ export const config = {
   embeddingProvider: process.env.EMBEDDING_PROVIDER || 'local',
   memoryStorePath: process.env.MEMORY_STORE_PATH || './data/memory.json',
   conversationStorePath: process.env.CONVERSATION_STORE_PATH || './data/conversations.json',
-  appDbPath: process.env.APP_DB_PATH || './data/bfrost.sqlite',
+  appDbPath: process.env.APP_DB_PATH || './data/BFrost.sqlite',
   itemBusStoreDir: process.env.BFROST_ITEM_BUS_DIR || './data/item-bus',
   xConsumerKey: process.env.X_CONSUMER_KEY || '',
   xConsumerSecret: process.env.X_CONSUMER_SECRET || '',
@@ -47,11 +59,32 @@ export const config = {
   xAccessTokenSecret: process.env.X_ACCESS_TOKEN_SECRET || '',
   xUsername: process.env.X_USERNAME || '',
   adminHost: process.env.ADMIN_HOST || '127.0.0.1',
+  // BFrost defaults to 3032 so it can run alongside BFrost (3030) and WFrost (3031).
   adminPort: Number(process.env.ADMIN_PORT || '3030'),
   adminStoreDir: process.env.ADMIN_STORE_DIR || './data/admin',
   adminPassword: process.env.ADMIN_PASSWORD || '',
   adminSessionTtlHours: Number(process.env.ADMIN_SESSION_TTL_HOURS || '24'),
   jobLlmTimeoutMs: positiveNumberEnv('JOB_LLM_TIMEOUT_MS', 600000),
+  /**
+   * How many job runs the scheduler will have in flight at once. Jobs used to be strictly
+   * serialised, so one slow job delayed every other job behind it. Kept deliberately small:
+   * runs share the app database and the Item Bus, and each is mostly waiting on an LLM.
+   */
+  jobMaxConcurrency: positiveNumberEnv('JOB_MAX_CONCURRENCY', 3),
+  /**
+   * Wall-clock budget for a single job attempt. `jobLlmTimeoutMs` only bounds one model
+   * call, so a job that loops over many items could previously run unbounded — one observed
+   * run took 34 minutes and blocked the whole desk. See `JobTimeoutError` in scheduler.ts
+   * for what this can and cannot stop.
+   */
+  jobTimeoutMs: positiveNumberEnv('JOB_TIMEOUT_MS', 900000),
+  /**
+   * Delay before the one-off pipeline sweep that runs after startup. Without that sweep a
+   * freshly started BFrost ignores an existing backlog until the first periodic tick, up to
+   * 15 minutes later. Long enough for the rest of boot to settle, short enough to feel
+   * immediate. See `scheduleBootPipelineSweep` in scheduler.ts.
+   */
+  pipelineBootSweepMs: positiveNumberEnv('PIPELINE_BOOT_SWEEP_MS', 10000),
   workerPaths: (process.env.BFROST_WORKER_PATHS || './workers/local,./workers')
     .split(',')
     .map((item) => item.trim())
@@ -115,6 +148,7 @@ function rebuildAvailableModels(): void {
         id,
         label: model.label?.trim() || id,
         provider,
+        reasoningLevels: normalizeReasoningLevels(model.reasoningLevels),
       });
     }
   }
@@ -135,9 +169,35 @@ function dedupeProviderModels(models: ProviderModelOption[]): ProviderModelOptio
       alias: model.alias?.trim(),
       id,
       label: model.label?.trim(),
+      reasoningLevels: normalizeReasoningLevels(model.reasoningLevels),
     });
   }
   return result;
+}
+
+function normalizeReasoningLevels(levels: string[] | undefined): string[] | undefined {
+  if (!Array.isArray(levels)) return undefined;
+  const cleaned = levels.map((level) => level.trim().toLowerCase()).filter(Boolean);
+  return cleaned.length > 0 ? Array.from(new Set(cleaned)) : undefined;
+}
+
+/**
+ * Resolve the reasoning level to actually send for a model: the explicit choice when the
+ * model supports it, otherwise the platform default, then the vendor's medium/first level.
+ * Models without vendor-declared levels never receive one.
+ */
+export function resolveReasoningLevel(
+  model: Pick<ModelOption, 'reasoningLevels'>,
+  requested?: string,
+): string | undefined {
+  const levels = model.reasoningLevels ?? [];
+  if (levels.length === 0) return undefined;
+  const wanted = requested?.trim().toLowerCase();
+  if (wanted && levels.includes(wanted)) return wanted;
+  const fallback = config.defaultReasoningLevel.trim().toLowerCase();
+  if (levels.includes(fallback)) return fallback;
+  if (levels.includes('medium')) return 'medium';
+  return levels[0];
 }
 
 function uniqueAlias(raw: string, usedAliases: Set<string>, provider: string): string {
@@ -184,6 +244,10 @@ export function setDefaultModel(aliasOrId: string): ModelOption {
   }
   config.ollamaModel = model.id;
   return model;
+}
+
+export function setDefaultReasoningLevel(level: string): void {
+  config.defaultReasoningLevel = level.trim().toLowerCase() || 'medium';
 }
 
 export function setGoogleCredentials(values: { googleApiKey?: string; googleSearchEngineId?: string }): void {

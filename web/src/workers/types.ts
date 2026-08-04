@@ -12,7 +12,15 @@ export interface WorkerDashboardViewDefinition {
     group?: string;
     order?: number;
     label?: string;
+    /** Sidebar entry to nest under (e.g. the core 'jobs' tab) — renders as a collapsible child. */
+    parentId?: string;
   };
+  /**
+   * The queueFilter value the core shell should select whenever this worker's dashboard
+   * tab becomes active (e.g. "pending") — falls back to "all" when unset. The core doesn't
+   * know what this string means; it just relays whichever value the worker declares.
+   */
+  defaultQueueFilter?: string;
   count?: (ctx: Record<string, any>) => number | undefined;
   render?: (ctx: Record<string, any>) => ReactNode;
   /**

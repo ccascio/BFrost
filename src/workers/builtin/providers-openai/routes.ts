@@ -22,6 +22,15 @@ const OAUTH_CALLBACK_PATH = '/auth/callback';
 const OAUTH_REDIRECT_URI = `http://localhost:${OAUTH_CALLBACK_PORT}${OAUTH_CALLBACK_PATH}`;
 const OAUTH_SCOPE = 'openid profile email offline_access';
 
+function describeFetchFailure(err: unknown): string {
+  const error = err instanceof Error ? err : new Error(String(err));
+  const cause = (error as Error & { cause?: unknown }).cause;
+  if (cause instanceof Error) return `${error.message} (${cause.message})`;
+  if (cause && typeof cause === 'object' && 'code' in cause) return `${error.message} (${String((cause as { code?: unknown }).code)})`;
+  if (typeof cause === 'string') return `${error.message} (${cause})`;
+  return error.message;
+}
+
 const OpenAICredentialsBodySchema = z.object({
   authMode: z.enum(['api', 'subscription']).optional(),
   apiKey: z.string().optional(),
@@ -71,7 +80,7 @@ function oauthCallbackHtml(status: 'success' | 'error', message: string): string
     </main>
     <script>
       if (window.opener) {
-        window.opener.postMessage({ type: 'bfrost:oauth-complete', provider: 'openai', status: ${safeStatus}, message: ${safeMessage} }, '*');
+        window.opener.postMessage({ type: 'BFrost:oauth-complete', provider: 'openai', status: ${safeStatus}, message: ${safeMessage} }, '*');
       }
       ${status === 'success' ? 'setTimeout(() => window.close(), 1200);' : ''}
     </script>
@@ -108,17 +117,22 @@ async function exchangeOAuthCode(code: string, verifier: string): Promise<{
   expires: number;
   idToken?: string;
 }> {
-  const response = await fetch(OAUTH_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      client_id: OAUTH_CLIENT_ID,
-      redirect_uri: OAUTH_REDIRECT_URI,
-      code,
-      code_verifier: verifier,
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(OAUTH_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: OAUTH_CLIENT_ID,
+        redirect_uri: OAUTH_REDIRECT_URI,
+        code,
+        code_verifier: verifier,
+      }),
+    });
+  } catch (err) {
+    throw new Error(`OpenAI OAuth token exchange failed: ${describeFetchFailure(err)}`);
+  }
   if (!response.ok) {
     const text = await response.text().catch(() => '');
     throw new Error(`OpenAI OAuth token exchange failed (${response.status}): ${text || response.statusText}`);
@@ -151,7 +165,7 @@ function createOAuthAuthorizationUrl(state: string, challenge: string): string {
   url.searchParams.set('state', state);
   url.searchParams.set('id_token_add_organizations', 'true');
   url.searchParams.set('codex_cli_simplified_flow', 'true');
-  url.searchParams.set('originator', 'bfrost');
+  url.searchParams.set('originator', 'WFrost');
   return url.toString();
 }
 
@@ -187,7 +201,7 @@ async function startOpenAIOAuthFlow(): Promise<string> {
         }
         const credentials = await exchangeOAuthCode(code, flow.verifier);
         await persistOpenAICodexSubscriptionCredentials(credentials);
-        await upsertEnvValue(path.join(process.cwd(), '.env'), 'BFROST_OPENAI_AUTH_MODE', 'subscription');
+        await upsertEnvValue(path.join(process.cwd(), '.env'), 'BFrost_OPENAI_AUTH_MODE', 'subscription');
         setOpenAIAuthMode('subscription');
         await refreshCloudProviderModels();
         await recordEventSafe({
@@ -236,11 +250,11 @@ export const openaiProviderApiRoutes: AdminApiRoute[] = [
         throw new BadRequestError('apiKey must not be empty when provided.');
       }
 
-      await upsertEnvValue(path.join(process.cwd(), '.env'), 'BFROST_OPENAI_AUTH_MODE', mode);
+      await upsertEnvValue(path.join(process.cwd(), '.env'), 'BFrost_OPENAI_AUTH_MODE', mode);
       setOpenAIAuthMode(mode);
       if (body.codexCliModel !== undefined) {
         const cliModel = body.codexCliModel.trim() || 'gpt-5.4-mini';
-        await upsertEnvValue(path.join(process.cwd(), '.env'), 'BFROST_OPENAI_CODEX_MODEL', cliModel);
+        await upsertEnvValue(path.join(process.cwd(), '.env'), 'BFrost_OPENAI_CODEX_MODEL', cliModel);
         setOpenAICodexCliModel(cliModel);
       }
       if (key) {

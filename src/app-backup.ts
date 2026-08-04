@@ -44,7 +44,7 @@ export async function createAppBackup(nowIso = new Date().toISOString()): Promis
   const dir = appBackupDir();
   await fs.mkdir(dir, { recursive: true });
 
-  const file = `bfrost-${nowIso.replace(/[:.]/g, '-')}.sqlite`;
+  const file = `BFrost-${nowIso.replace(/[:.]/g, '-')}.sqlite`;
   const backupPath = path.join(dir, file);
 
   await createBackup(backupPath);
@@ -242,7 +242,7 @@ export async function applyPendingRestoreIfAny(): Promise<void> {
   const dest = config.appDbPath;
   await fs.mkdir(path.dirname(dest), { recursive: true });
 
-  // Swap: current → .pre-restore, backup → current
+  // Keep the outgoing database for rollback and post-mortem.
   const preRestorePath = dest + '.pre-restore';
   try {
     await fs.copyFile(dest, preRestorePath);
@@ -250,7 +250,59 @@ export async function applyPendingRestoreIfAny(): Promise<void> {
     // DB might not exist yet — that's fine.
   }
 
-  await fs.copyFile(backupPath, dest);
+  /*
+   * Stage, verify, then swap — never write the live path incrementally.
+   *
+   * Copying the backup straight over the live database means a crash, a full disk or an I/O
+   * error mid-copy leaves the only database as a half-written file: the backup is intact and
+   * the original is destroyed, which is precisely the moment a restore must not fail. So the
+   * copy lands on a temporary file **in the same directory** (same filesystem, so the final
+   * move is a rename rather than another copy), is re-verified after landing — the earlier
+   * integrity check proved the *source* was sound, not that the copy is — and only then
+   * replaces the live path.
+   *
+   * `fs.rename` over an existing file is atomic within a filesystem on both POSIX and
+   * Windows, so an observer sees either the old database or the new one, never a partial.
+   */
+  const stagingPath = dest + '.restore-staging';
+  try {
+    await fs.rm(stagingPath, { force: true });
+    await fs.copyFile(backupPath, stagingPath);
+
+    const staged = new Database(stagingPath, { readonly: true, fileMustExist: true });
+    let stagedOk = false;
+    try {
+      const row = staged.prepare('PRAGMA integrity_check').get() as { integrity_check?: string } | undefined;
+      stagedOk = row?.integrity_check === 'ok';
+    } finally {
+      staged.close();
+    }
+    if (!stagedOk) throw new Error('the staged copy did not pass its own integrity check');
+
+    // A WAL belongs to one exact main-database image. Replacing only the main file while
+    // leaving an older `-wal`/`-shm` pair can replay pages from the database being replaced
+    // into the restored snapshot and immediately produce SQLITE_CORRUPT. Startup invokes this
+    // before opening the application DB, so these sidecars are safe and mandatory to remove.
+    // Done immediately before the swap so the window where they are missing is minimal.
+    await fs.rm(dest + '-wal', { force: true });
+    await fs.rm(dest + '-shm', { force: true });
+    await fs.rename(stagingPath, dest);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // The live database was never written, so there is nothing to roll back: abandoning the
+    // staging file leaves the installation exactly as it was.
+    await fs.rm(stagingPath, { force: true });
+    console.error(`[Backup] Restore aborted while staging ${pendingFile} — ${msg}. The existing database is untouched.`);
+    await recordEventSafe({
+      category: 'admin',
+      action: 'backup_restore_failed',
+      severity: 'error',
+      summary: `Backup restore aborted while staging: ${pendingFile}`,
+      metadata: { file: pendingFile, error: msg, preRestore: preRestorePath },
+    });
+    await cancelPendingRestore();
+    return;
+  }
   await cancelPendingRestore();
   await recordEventSafe({
     category: 'admin',

@@ -1,11 +1,15 @@
 import { generateText } from 'ai';
 import { HttpRouter } from '../router';
 import { readJsonBody, sendJson } from '../responses';
-import { availableModels } from '../../config';
+import { availableModels, findModel } from '../../config';
 import { getChatModel } from '../../llm';
 import { recordEventSafe } from '../../event-log';
 import { processChannelMessage } from '../../channel';
-import { getFullHistory } from '../../conversation';
+import {
+  getFullHistory,
+  getSelectedModelOverride,
+  getSelectedReasoningLevel,
+} from '../../conversation';
 import {
   listThreads,
   getThread,
@@ -52,6 +56,8 @@ export function registerChatRoutes(router: HttpRouter): void {
       username: 'dashboard',
       text: body.message,
       projectId: body.projectId,
+      modelAlias: body.modelAlias,
+      reasoningLevel: body.reasoningLevel,
     });
     await recordEventSafe({
       category: 'chat',
@@ -96,7 +102,17 @@ export function registerChatRoutes(router: HttpRouter): void {
       .filter((message) => message.role === 'user' || message.role === 'assistant')
       .map((message) => ({ role: message.role, text: extractTurnText(message.content) }))
       .filter((turn) => turn.text.length > 0);
-    return sendJson(res, 200, { thread, turns });
+    // The composer keys its picker on aliases; storage keeps model ids. Null when the
+    // thread never overrode the default — the composer then shows the default without
+    // pinning the thread to it on the next send.
+    const override = getSelectedModelOverride(thread.chatId);
+    const selected = override ? findModel(override) : undefined;
+    return sendJson(res, 200, {
+      thread,
+      turns,
+      modelAlias: selected?.alias ?? null,
+      reasoningLevel: getSelectedReasoningLevel(thread.chatId) ?? null,
+    });
   });
 
   router.add('PATCH', '/api/chats/:id', async (req, res, { params }) => {

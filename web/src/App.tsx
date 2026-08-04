@@ -23,7 +23,7 @@ import {
 } from './app-shell/routing';
 import { workerDashboardUi } from './workers/ui-contract';
 import {
-  ActionClass, ActionRequest, ActionState, AppBackupRecord, AppError, AuthSession, AutoBackupSettings, CORE_CHAT_PROMPTS, CORE_MENU_ENTRIES, ChatProject, ChatPromptButton, ChatPromptExample, ChatThread, ChatTurn, CoreConfigKey, CoreDashboardTab, DASHBOARD_REFRESH_INTERVAL_MS, DashboardSectionName, DashboardState, DashboardTab, EventLogRecord, HealthStatus, JOBS_REFRESH_INTERVAL_MS, JobBaseField, JobBooleanField, JobDashboardField, JobDraft, JobMetricsResponse, JobNumberField, JobParamDraftValue, JobPreset, JobRunMetrics, JobSecretReferenceField, JobSelectField, JobStringListField, JobTextField, JobTextareaField, ModelOption, PERMISSION_INFO, PlatformSettings, QueueFilter, QueueItem, RecipeInputStorage, RegisteredPlatformEntry, RunStatus, SchedulerJobState, SchedulerRunRecord, SettingsTab, SourceQualityRules, StoreWorkerDetail, StoreWorkerListing, StoreWorkerVersion, WhatsNewEntry, WorkerDashboardManifest, WorkerDashboardSurface, WorkerHealthRequirementStatus, WorkerHealthState, WorkerJobSummary, WorkerKind, WorkerLoadIssue, WorkerOnboardingAction, WorkerOwnedSetting, WorkerRecipe, WorkerRecipeInput, WorkerRecipeStep, WorkerRunMetrics, WorkerSummary, WorkerTabDefinition, toAppError,
+  ActionClass, ActionRequest, ActionState, AppBackupRecord, AppError, AuthSession, AutoBackupSettings, CORE_CHAT_PROMPTS, CORE_MENU_ENTRIES, CORE_MENU_GROUP_ORDER, ChatProject, ChatPromptButton, ChatPromptExample, ChatThread, ChatTurn, CoreConfigKey, CoreDashboardTab, DASHBOARD_REFRESH_INTERVAL_MS, DashboardSectionName, DashboardState, DashboardTab, EventLogRecord, HealthStatus, JOBS_REFRESH_INTERVAL_MS, JobBaseField, JobBooleanField, JobDashboardField, JobDraft, JobMetricsResponse, JobNumberField, JobParamDraftValue, JobPreset, JobRunMetrics, JobSecretReferenceField, JobSelectField, JobStringListField, JobTextField, JobTextareaField, ModelOption, PERMISSION_INFO, PlatformSettings, QueueFilter, QueueItem, RecipeInputStorage, RegisteredPlatformEntry, RunStatus, SchedulerJobState, SchedulerRunRecord, SettingsTab, SourceQualityRules, StoreWorkerDetail, StoreWorkerListing, StoreWorkerVersion, WhatsNewEntry, WorkerDashboardManifest, WorkerDashboardSurface, WorkerHealthRequirementStatus, WorkerHealthState, WorkerJobSummary, WorkerKind, WorkerLoadIssue, WorkerOnboardingAction, WorkerOwnedSetting, WorkerRecipe, WorkerRecipeInput, WorkerRecipeStep, WorkerRunMetrics, WorkerSummary, WorkerTabDefinition, toAppError,
 } from './app-types';
 import {
   ChatSuggestions, ChatWelcome, Detail, HealthRow, HelpTip, PipelineNode, PipelineTopology, RUN_ERROR_PREVIEW_CHARS, RunError, STORE_PALETTE_COUNT, STORE_VISUAL_RULES, StatusPill, StoreTrustBadge, StoreVisualWorker, StoreWorkerLogo, buildChatPromptButtons, buildJobParamsDraft, buildPipelineTopology, buildSurfaceDraft, buildWorkerTabDefinitions, configSurfaceKey, coreMenuCount, draftToHosts, eventSeverityTone, formatBytes, formatDate, formatDuration, formatRelativeTime, formatTime, hostsToDraft, jobConfigSummary, jobScheduleChanges, mergeSection, normalizeStringListItem, queueItemReason, queueItemTone, renderPipelineTab, renderWorkerDashboardView, resolveDashboardTab, resolveSeedPath, runDuration, runSeverity, runStatusSummary, runStatusTone, safeWorkerViewCount, sectionEndpoint, sectionsForTab, serializeDashboardFields, serializeJobParams, statusTone, storeAuthorHandle, storeCategoryKey, storeCategoryLabel, storePaletteIndex, storeTrustTone, storeWorkerIcon, workerDeclaresView, workerOwnsEvent, workerTabId,
@@ -34,9 +34,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(() => readDashboardRoute().settingsOpen);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>(() => readDashboardRoute().settingsTab);
 
-  const SETTINGS_TABS = new Set<string>(['channels', 'config', 'system', 'actions']);
   function setActiveTab(tab: DashboardTab) {
-    if (SETTINGS_TABS.has(tab) || (tab as string).startsWith('worker-settings:')) {
+    if (tab === 'config' || (tab as string).startsWith('worker-settings:')) {
       openSettingsTab(tab as SettingsTab);
       return;
     }
@@ -89,7 +88,7 @@ export default function App() {
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
   const [introPhase, setIntroPhase] = useState<'loading' | 'splash-exit' | 'enter' | 'done'>('loading');
   const introFiredRef = useRef(false);
-  const data = useDashboardData({ activeTab, setWizardCompleted, setWizardOpen });
+  const data = useDashboardData({ activeTab, setWizardCompleted, setWizardOpen, setQueueFilter });
   const {
     dashboard,
     setDashboard,
@@ -197,11 +196,11 @@ export default function App() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [sidebarMobileOpen]);
 
-  // Load store catalog when the Store tab is opened. Re-fetches when the search query changes.
+  // Load store catalog when the Store settings tab is opened. Re-fetches when the search query changes.
   useEffect(() => {
-    if (activeTab !== 'store') return;
+    if (!settingsOpen || settingsTab !== 'store') return;
     void store.fetchStoreCatalog(store.storeQuery);
-  }, [activeTab, store.storeQuery]);
+  }, [settingsOpen, settingsTab, store.storeQuery]);
 
   async function updateQueueItem(id: string, action: 'approve' | 'reject') {
     await mutate(
@@ -270,7 +269,7 @@ export default function App() {
 
 
   async function saveWorkerConfigurationSurface(worker: WorkerSummary, surface: WorkerDashboardSurface) {
-    const key = configSurfaceKey(worker.id, surface.id);
+    const key = configSurfaceKey(worker.id, surface.id, dashboard?.scope?.activeScopeId ?? null);
     const fields = surface.fields ?? [];
     const draft = surfaceDrafts[key] ?? buildSurfaceDraft(surface, dashboard?.workerData, dashboard?.cron.jobs ?? []);
     const surfacePayload = serializeDashboardFields(fields, draft);
@@ -342,7 +341,12 @@ export default function App() {
       worker,
       jobs: dashboard.cron.jobs.filter((job) => job.workerId === worker.id),
     }))
-    .filter((group) => group.jobs.length > 0);
+    .filter((group) => group.jobs.length > 0)
+    .sort((a, b) => {
+      const oa = a.worker.menuOrder ?? 1000;
+      const ob = b.worker.menuOrder ?? 1000;
+      return oa !== ob ? oa - ob : a.worker.id.localeCompare(b.worker.id);
+    });
   const configGroupsByWorker = dashboard.workers
     .filter((worker) => worker.kind !== 'channel' && (worker.enabled || worker.kind === 'provider'))
     .map((worker) => ({
@@ -350,6 +354,18 @@ export default function App() {
       surfaces: worker.dashboard.settings.filter((surface) => (surface.tab ?? 'config') === 'config'),
     }))
     .filter((group) => group.surfaces.length > 0);
+  // Workers that declare no config surfaces but own jobs still get a Config child in the
+  // sidebar: their page exposes the generic per-job model selector. Only workers with a
+  // dashboard tab qualify — the entry nests under that tab, like the Jobs children.
+  const jobModelConfigWorkers = dashboard.workers.filter(
+    (worker) =>
+      worker.enabled &&
+      worker.kind !== 'channel' &&
+      worker.kind !== 'provider' &&
+      !worker.settingsOnly &&
+      !configGroupsByWorker.some((group) => group.worker.id === worker.id) &&
+      dashboard.cron.jobs.some((job) => job.workerId === worker.id),
+  );
   const configJobCount = 0;
   const configSurfaceCount = configGroupsByWorker.filter(
     ({ worker }) => worker.settingsOnly && worker.kind !== 'provider',
@@ -411,13 +427,19 @@ export default function App() {
       icon: tab.definition.menu?.icon ?? 'workers',
       group: tab.definition.menu?.group ?? (tab.worker.section === 'system' ? 'System' : 'Workers'),
       order: tab.definition.menu?.order ?? 1000,
+      parentId: tab.definition.menu?.parentId as DashboardTab | undefined,
       count: safeWorkerViewCount(tab.definition, workerViewContext),
     })),
     // Per-worker Config entries.
     // Workers WITH a dashboard tab → "Config" child under the parent.
     // Providers and settingsOnly workers live in the Settings modal Config tab instead.
     // Workers WITHOUT a dashboard tab (and not settingsOnly) → standalone entry with the worker's name.
-    ...configGroupsByWorker.flatMap(({ worker }) => {
+    // Workers with jobs but no config surfaces get a child too (per-job model panel),
+    // but only under an existing dashboard tab — never a standalone entry.
+    ...[
+      ...configGroupsByWorker.map(({ worker }) => ({ worker, requiresTab: false })),
+      ...jobModelConfigWorkers.map((worker) => ({ worker, requiresTab: true })),
+    ].flatMap(({ worker, requiresTab }) => {
       if (worker.settingsOnly || worker.kind === 'provider') return [];
       const workerTab = workerTabDefinitions.find((t) => t.worker.id === worker.id);
       const baseOrder = workerTab ? (workerTab.definition.menu?.order ?? 1000) : 900;
@@ -433,6 +455,7 @@ export default function App() {
           parentId: workerTab.id as DashboardTab,
         }];
       }
+      if (requiresTab) return [];
       return [{
         id: `worker-config:${worker.id}` as DashboardTab,
         label: worker.displayName ?? worker.name,
@@ -455,8 +478,10 @@ export default function App() {
         }
         adminUrl={dashboard.app.adminUrl}
         pid={dashboard.app.pid}
+        pipelineStages={dashboard.pipelineStages ?? []}
         models={dashboard.models}
         selectedModelAlias={selectedModelAlias}
+        defaultReasoningLevel={dashboard.defaultReasoningLevel}
         modelBusy={busyKey === 'save-model'}
         selectedModelIsLocal={
           dashboard.models.find((m) => m.alias === selectedModelAlias)?.provider ===
@@ -470,11 +495,19 @@ export default function App() {
         pinBusy={busyKey === 'toggle-pin'}
         authEnabled={session.authEnabled}
         logoutBusy={busyKey === 'logout'}
+        scope={dashboard.scope}
+        onScopeChanged={async () => {
+          setSurfaceDrafts({});
+          await fetchDashboard(true);
+        }}
         onOpenNavigation={() => setSidebarMobileOpen(true)}
         onModelChange={(event) => {
           const alias = event.target.value;
           setSelectedModelAlias(alias);
           saveDefaultModel(alias);
+        }}
+        onReasoningLevelChange={(event) => {
+          saveDefaultModel(selectedModelAlias, event.target.value);
         }}
         onTogglePin={() => {
           const isPinned =
@@ -506,7 +539,7 @@ export default function App() {
           setSidebarMobileOpen(false);
         }}
         onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
-        onOpenSettings={() => openSettingsTab(settingsTab)}
+        onOpenSettings={() => openSettingsTab('config')}
       />
       <button
         className="sidebar-mobile-backdrop"
@@ -591,7 +624,12 @@ export default function App() {
         setSurfaceDrafts={setSurfaceDrafts}
         saveWorkerConfigurationSurface={saveWorkerConfigurationSurface}
         extraSettingsTabs={configGroupsByWorker
-          .filter(({ worker }) => worker.settingsOnly && !workerTabDefinitions.some((t) => t.worker.id === worker.id))
+          // Non-provider settingsOnly workers already get a row inside the Config tab's
+          // body (see `settingsWorkerEntries` in DashboardRoutes.tsx) — giving them their
+          // own top-level Settings-modal tab too would render the same config surface
+          // twice. Only providers, which are deliberately excluded from that list, need
+          // their own tab here.
+          .filter(({ worker }) => worker.settingsOnly && worker.kind === 'provider' && !workerTabDefinitions.some((t) => t.worker.id === worker.id))
           .map(({ worker }) => ({
             id: `worker-settings:${worker.id}` as import('./app-types').SettingsTab,
             label: worker.displayName ?? worker.name,

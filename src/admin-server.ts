@@ -11,6 +11,7 @@ import { isAdminAuthEnabled, isAuthenticated } from './admin-auth';
 import { BadRequestError } from './admin-route';
 import { handleAuthRoutes } from './http/routes/auth';
 import { detach } from './process-lifecycle';
+import { getActiveScopeId } from './active-scope';
 
 let server: Server | null = null;
 
@@ -92,6 +93,7 @@ function buildRequestRouter(): HttpRouter {
       const response = await route.handle({
         req: rq,
         url: ctx.url,
+        activeScopeId: await getActiveScopeId(),
         readJsonBody,
         getDashboardState: buildDashboardState,
       });
@@ -104,7 +106,7 @@ function buildRequestRouter(): HttpRouter {
 
 // The dashboard build lives next to the working directory in a repo checkout, but
 // next to the compiled module when BFrost runs from an installed npm package
-// (where cwd is the user's data home, e.g. ~/.bfrost).
+// (where cwd is the user's data home, e.g. ~/.BFrost).
 let cachedFrontendDir: string | undefined;
 function frontendDistDir(): string {
   if (!cachedFrontendDir) {

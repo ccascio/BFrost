@@ -13,12 +13,14 @@ import {
   getFullHistory,
   getHistory,
   getSelectedModel,
+  getSelectedReasoningLevel,
   hydrateConversations,
   setSelectedModel,
+  setSelectedReasoningLevel,
 } from './conversation';
 
 test('conversation history and model selections persist to disk', async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-conversation-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-conversation-'));
   const previousPath = config.conversationStorePath;
   const previousDbPath = config.appDbPath;
   const previousModel = config.ollamaModel;
@@ -48,8 +50,37 @@ test('conversation history and model selections persist to disk', async () => {
   }
 });
 
+test('per-thread reasoning levels persist and stay scoped to their thread', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-conversation-'));
+  const previousPath = config.conversationStorePath;
+  const previousDbPath = config.appDbPath;
+  config.conversationStorePath = path.join(dir, 'conversations.json');
+  config.appDbPath = path.join(dir, 'app.sqlite');
+
+  try {
+    setSelectedReasoningLevel(321, ' High ');
+    await flushConversations();
+
+    await hydrateConversations();
+    assert.equal(getSelectedReasoningLevel(321), 'high');
+    // A thread that never chose one stays undefined so the platform default decides.
+    assert.equal(getSelectedReasoningLevel(322), undefined);
+
+    // An empty level clears the override rather than storing a blank.
+    setSelectedReasoningLevel(321, '');
+    await flushConversations();
+    await hydrateConversations();
+    assert.equal(getSelectedReasoningLevel(321), undefined);
+  } finally {
+    config.conversationStorePath = previousPath;
+    config.appDbPath = previousDbPath;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('full history is stored untrimmed while the model window is capped', async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-conversation-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-conversation-'));
   const previousPath = config.conversationStorePath;
   const previousDbPath = config.appDbPath;
   config.conversationStorePath = path.join(dir, 'conversations.json');
@@ -79,7 +110,7 @@ test('full history is stored untrimmed while the model window is capped', async 
 });
 
 test('conversation hydration trims oversized histories', async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-conversation-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-conversation-'));
   const previousPath = config.conversationStorePath;
   const previousDbPath = config.appDbPath;
   config.conversationStorePath = path.join(dir, 'conversations.json');

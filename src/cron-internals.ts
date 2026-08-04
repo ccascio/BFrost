@@ -14,7 +14,13 @@ export interface PreviousCronMatchOptions {
   maxIterations?: number;
 }
 
-/** Return the next concrete cron slot using a timezone-aware parser. */
+/**
+ * Return the next concrete cron slot using a timezone-aware parser.
+ *
+ * node-cron 4.2.1's MatcherWalker advances the year instead of the day while
+ * resolving a constrained weekday. Keeping this calculation here isolates that
+ * upstream bug from both scheduler timing and dashboard projections.
+ */
 export function getNextCronMatch(expression: string, timezone: string, after: Date): Date {
   return CronExpressionParser.parse(expression, {
     currentDate: after,
@@ -23,8 +29,9 @@ export function getNextCronMatch(expression: string, timezone: string, after: Da
 }
 
 /**
- * Replace node-cron's faulty constrained-weekday matcher before the task starts.
- * node-cron 4.2.1 can advance the year instead of the day for weekly schedules.
+ * Replace node-cron's faulty matcher methods before a task starts. The runner
+ * retains this same matcher object, so the correction applies to heartbeats,
+ * missed-run detection, and ScheduledTask.getNextRun().
  */
 export function installReliableCronMatcher(
   task: ScheduledTask,

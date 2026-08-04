@@ -27,6 +27,11 @@ export function useChatController({
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [chatArrivingFromOverview, setChatArrivingFromOverview] = useState(false);
+  // Per-conversation model / reasoning override. `null` means "follow the platform
+  // default" — the composer shows that default and sends nothing, so the thread is not
+  // pinned until the user actually picks something.
+  const [chatModelAlias, setChatModelAlias] = useState<string | null>(null);
+  const [chatReasoningLevel, setChatReasoningLevel] = useState<string | null>(null);
   const [chatQuery, setChatQuery] = useState('');
   const [projectComboOpen, setProjectComboOpen] = useState(false);
   const [projectComboQuery, setProjectComboQuery] = useState('');
@@ -123,6 +128,8 @@ export function useChatController({
   function startNewChat() {
     setActiveConversationId(mintConversationId());
     setChatTurns([]);
+    setChatModelAlias(null);
+    setChatReasoningLevel(null);
     setArtifacts([]);
     setArtifactPanelOpen(false);
     setActiveArtifactId(null);
@@ -139,13 +146,20 @@ export function useChatController({
         credentials: 'include',
       });
       const payload = (await response.json()) as
-        | { thread: ChatThread; turns: { role: 'user' | 'assistant'; text: string }[] }
+        | {
+            thread: ChatThread;
+            turns: { role: 'user' | 'assistant'; text: string }[];
+            modelAlias?: string;
+            reasoningLevel?: string | null;
+          }
         | { error: string };
       if (!response.ok || 'error' in payload) {
         throw new Error('error' in payload ? payload.error : 'Failed to open chat');
       }
       setActiveConversationId(thread.conversationId);
       setActiveProjectId(thread.projectId ?? null);
+      setChatModelAlias(payload.modelAlias ?? null);
+      setChatReasoningLevel(payload.reasoningLevel ?? null);
       setChatTurns(payload.turns.map((turn) => ({ ...turn, createdAt: thread.lastMessageAt })));
       const savedArtifacts = await fetchArtifacts(thread.conversationId);
       setArtifacts(savedArtifacts);
@@ -228,7 +242,13 @@ export function useChatController({
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, conversationId, projectId: activeProjectId ?? undefined }),
+        body: JSON.stringify({
+          message,
+          conversationId,
+          projectId: activeProjectId ?? undefined,
+          modelAlias: chatModelAlias ?? undefined,
+          reasoningLevel: chatReasoningLevel ?? undefined,
+        }),
       });
       const payload = (await response.json()) as { response: string; dashboard: DashboardState } | { error: string };
       if (!response.ok || 'error' in payload) {
@@ -317,6 +337,10 @@ export function useChatController({
     setActiveProjectId,
     activeConversationId,
     chatArrivingFromOverview,
+    chatModelAlias,
+    setChatModelAlias,
+    chatReasoningLevel,
+    setChatReasoningLevel,
     chatQuery,
     setChatQuery,
     projectComboOpen,

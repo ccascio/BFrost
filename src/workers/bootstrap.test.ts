@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { config } from '../config';
 import { closeDb } from '../sqlite';
-import { bootstrapLocalWorkers } from './bootstrap';
+import { bootstrapLocalWorkers, migrateBuiltInWorkers } from './bootstrap';
 import { unregisterLocalWorkerModule } from './registry';
 import { loadWorkerState, saveWorkerState, setWorkerInstalledVersion } from './state';
 
@@ -98,7 +98,7 @@ async function readLifecycleCalls(workerDir: string): Promise<LifecycleCall[]> {
 type TestFn = (workerDir: string) => Promise<void>;
 
 async function withBootstrapSetup(moduleJs: string, fn: TestFn): Promise<void> {
-  const parentDir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-bootstrap-'));
+  const parentDir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-bootstrap-'));
   const workerDir = await setupWorkerDir(parentDir, moduleJs);
   const prevDbPath = config.appDbPath;
   const prevWorkerPaths = config.workerPaths;
@@ -224,6 +224,95 @@ test('bootstrap — onMigrate failure leaves installedVersion unchanged for retr
     assert.equal(
       state.workers[WORKER_ID]?.installedVersion,
       previousVersion,
+      'installedVersion must not advance when onMigrate throws',
+    );
+  });
+});
+
+/**
+ * Built-ins are statically imported and never pass through `activateLocalWorker`, so before
+ * `migrateBuiltInWorkers` existed a built-in could declare `onMigrate` and silently never have
+ * it run. These cover the contract core now owes them.
+ */
+const BUILTIN_ID = 'core.migtest-builtin';
+
+async function withBuiltInState(run: () => Promise<void>): Promise<void> {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-builtin-migrate-'));
+  const previousDbPath = config.appDbPath;
+  config.appDbPath = path.join(dir, 'app.sqlite');
+  try {
+    await run();
+  } finally {
+    config.appDbPath = previousDbPath;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+function builtInModule(version: string, onMigrate: () => Promise<void>) {
+  return [{ manifest: { id: BUILTIN_ID, version }, lifecycle: { onMigrate } }];
+}
+
+test('built-in onMigrate runs when the manifest version moved, and records the new version', async () => {
+  await withBuiltInState(async () => {
+    await saveWorkerState({ workers: { [BUILTIN_ID]: { builtIn: true, enabled: true, installedVersion: '0.1.0' } } });
+
+    let calls = 0;
+    const result = await migrateBuiltInWorkers(
+      builtInModule('0.2.0', async () => { calls += 1; }),
+      await loadWorkerState(),
+    );
+
+    assert.equal(calls, 1, 'onMigrate must run for a built-in whose version moved');
+    assert.deepEqual(result.migrated, [BUILTIN_ID]);
+    assert.equal((await loadWorkerState()).workers[BUILTIN_ID]?.installedVersion, '0.2.0');
+  });
+});
+
+test('built-in onMigrate is skipped when the version is unchanged', async () => {
+  await withBuiltInState(async () => {
+    await saveWorkerState({ workers: { [BUILTIN_ID]: { builtIn: true, enabled: true, installedVersion: '0.2.0' } } });
+
+    let calls = 0;
+    const result = await migrateBuiltInWorkers(
+      builtInModule('0.2.0', async () => { calls += 1; }),
+      await loadWorkerState(),
+    );
+
+    assert.equal(calls, 0, 'an unchanged version must not re-run the migration');
+    assert.deepEqual(result.migrated, []);
+  });
+});
+
+test('built-in onMigrate runs on first sight, when no version was ever recorded', async () => {
+  await withBuiltInState(async () => {
+    // How every built-in starts today: a state record exists but installedVersion never was.
+    await saveWorkerState({ workers: { [BUILTIN_ID]: { builtIn: true, enabled: true } } });
+
+    const seen: Array<string | null> = [];
+    await migrateBuiltInWorkers(
+      builtInModule('0.2.0', async () => { seen.push(null); }),
+      await loadWorkerState(),
+    );
+
+    assert.equal(seen.length, 1, 'a built-in with no recorded version must migrate once');
+    assert.equal((await loadWorkerState()).workers[BUILTIN_ID]?.installedVersion, '0.2.0');
+  });
+});
+
+test('a throwing built-in onMigrate does not advance the version, so the next boot retries', async () => {
+  await withBuiltInState(async () => {
+    await saveWorkerState({ workers: { [BUILTIN_ID]: { builtIn: true, enabled: true, installedVersion: '0.1.0' } } });
+
+    const result = await migrateBuiltInWorkers(
+      builtInModule('0.2.0', async () => { throw new Error('migration blew up'); }),
+      await loadWorkerState(),
+    );
+
+    assert.deepEqual(result.failed, [BUILTIN_ID], 'the failure is reported, not thrown');
+    assert.equal(
+      (await loadWorkerState()).workers[BUILTIN_ID]?.installedVersion,
+      '0.1.0',
       'installedVersion must not advance when onMigrate throws',
     );
   });

@@ -15,11 +15,14 @@
 import {
   approveQueueItem,
   createQueueItem,
+  insertQueueItem,
   loadQueue,
   markQueueItemDuplicateRejected,
   markQueueItemPostFailed,
   markQueueItemPosted,
   pruneQueue,
+  queueActiveAfterIso,
+  queryQueue,
   rejectQueueItem,
   saveQueue,
   withQueueLock,
@@ -82,7 +85,13 @@ export function buildItemDraft(input: PublishItemInput): QueueItemDraft {
   };
 }
 
-/** In-process notification emitted after an item is durably stored. */
+/**
+ * Publish-time bus events. `publishItem` emits one event per stored item so the
+ * scheduler (or any other in-process observer) can react immediately instead of
+ * waiting for the next polling tick. Producers that batch-save drafts directly via
+ * `saveQueue` should call `emitItemPublished` themselves after the save; a missed
+ * emit is not fatal — the pipeline tick remains the catch-up safety net.
+ */
 export interface ItemPublishedEvent {
   itemType: ItemType;
   producerWorkerId: string;
@@ -90,14 +99,18 @@ export interface ItemPublishedEvent {
 }
 
 type ItemPublishedListener = (event: ItemPublishedEvent) => void;
+
 const itemPublishedListeners = new Set<ItemPublishedListener>();
 
+/** Subscribe to publish events. Returns an unsubscribe function. */
 export function onItemPublished(listener: ItemPublishedListener): () => void {
   itemPublishedListeners.add(listener);
-  return () => itemPublishedListeners.delete(listener);
+  return () => {
+    itemPublishedListeners.delete(listener);
+  };
 }
 
-/** Batch-saving producers may emit this after their own durable save. */
+/** Notify subscribers that an item landed on the bus. Listener errors are isolated. */
 export function emitItemPublished(event: ItemPublishedEvent): void {
   for (const listener of [...itemPublishedListeners]) {
     try {
@@ -111,21 +124,17 @@ export function emitItemPublished(event: ItemPublishedEvent): void {
 /** Persist a newly-produced item. Returns the stored item. */
 export async function publishItem(input: PublishItemInput): Promise<QueueItem> {
   const result = await withQueueLock(async () => {
-    const queue = await loadQueue();
-    if (input.id) {
-      const existing = queue.find((item) => item.id === input.id);
-      if (existing) {
-        if (existing.producerWorkerId !== input.producerWorkerId || existing.itemType !== input.itemType) {
-          throw new Error(`Item Bus id collision for ${input.id}: existing owner/type does not match the publisher.`);
-        }
-        return { item: existing, published: false };
-      }
-    }
     const stored = createQueueItem(buildItemDraft(input));
-    queue.push(stored);
-    await saveQueue(queue);
-    return { item: stored, published: true };
+    const persisted = await insertQueueItem(stored);
+    if (!persisted.inserted && (
+      persisted.item.producerWorkerId !== input.producerWorkerId
+      || persisted.item.itemType !== input.itemType
+    )) {
+      throw new Error(`Item Bus id collision for ${stored.id}: existing owner/type does not match the publisher.`);
+    }
+    return { item: persisted.item, published: persisted.inserted };
   });
+  // Emit outside the queue lock so listeners can safely re-enter withQueueLock.
   if (result.published) {
     emitItemPublished({
       itemType: input.itemType,
@@ -138,7 +147,7 @@ export async function publishItem(input: PublishItemInput): Promise<QueueItem> {
 
 /** Filter items in memory according to a consumer's subscription. */
 export function filterItemsForConsumer(
-  items: QueueItem[],
+  items: readonly QueueItem[],
   consumerWorkerId: string,
   filter: ConsumerFilter,
 ): QueueItem[] {
@@ -175,7 +184,12 @@ export async function listItemsForConsumer(
   filter: ConsumerFilter,
   nowMs = Date.now(),
 ): Promise<QueueItem[]> {
-  const queue = pruneQueue(await loadQueue(), nowMs);
+  const queue = pruneQueue(await queryQueue({
+    itemTypes: filter.itemTypes ?? (filter.itemType ? [filter.itemType] : undefined),
+    states: filter.states,
+    unhandledBy: filter.excludeAlreadyHandled ? consumerWorkerId : undefined,
+    activeAfter: queueActiveAfterIso(nowMs),
+  }), nowMs);
   return filterItemsForConsumer(queue, consumerWorkerId, filter);
 }
 

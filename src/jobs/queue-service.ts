@@ -1,6 +1,7 @@
 import {
   approveQueueItem,
   loadQueue,
+  loadQueueForRead,
   pruneQueue,
   rejectQueueItem,
   saveQueue,
@@ -36,8 +37,19 @@ export interface QueueSnapshot {
   recentItems: QueueItem[];
 }
 
-export async function loadQueueSnapshot(nowMs = Date.now()): Promise<QueueSnapshot> {
-  return buildQueueSnapshot(pruneQueue(await loadQueue(), nowMs));
+export interface QueueSnapshotOptions {
+  activeScopeId?: string | null;
+}
+
+export async function loadQueueSnapshot(
+  nowMs = Date.now(),
+  opts: QueueSnapshotOptions = {},
+): Promise<QueueSnapshot> {
+  // Read-only, and on the hot path: every `buildDashboardState()` lands here, which is most
+  // admin HTTP routes plus the dashboard's SSE-fallback poll. Share the cached queue rather
+  // than materialising a private copy per request — everything below only filters and sorts.
+  const items = pruneQueue(await loadQueueForRead(), nowMs);
+  return buildQueueSnapshot(filterItemsForScope(items, opts.activeScopeId));
 }
 
 export async function updateDashboardQueueItem(
@@ -85,6 +97,14 @@ function buildQueueSnapshot(items: QueueItem[]): QueueSnapshot {
       .slice()
       .sort((a, b) => Date.parse(b.stateChangedAt || b.addedAt) - Date.parse(a.stateChangedAt || a.addedAt)),
   };
+}
+
+function filterItemsForScope(items: QueueItem[], activeScopeId: string | null | undefined): QueueItem[] {
+  if (!activeScopeId) return items;
+  if (activeScopeId === '__global__') {
+    return items.filter((item) => typeof item.payload?.targetSiteId !== 'string');
+  }
+  return items.filter((item) => item.payload?.targetSiteId === activeScopeId);
 }
 
 function countStates(items: QueueItem[]): Record<QueueItemState, number> {

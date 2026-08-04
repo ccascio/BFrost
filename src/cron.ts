@@ -1,3 +1,6 @@
+// First import on purpose — see ./net-tuning. `npm run task` runs this entrypoint,
+// not ./index, so the tuning has to be applied here too.
+import './net-tuning';
 import { findModel, getDefaultModelAlias, availableModels } from './config';
 import { isJobName, knownJobs, runFreeformTask, runNamedJob } from './job-runner';
 import { refreshActiveLocalProviderModels } from './model-discovery';
@@ -7,12 +10,14 @@ interface CliArgs {
   modelAlias: string;
   job: string | null;
   task: string;
+  params: Record<string, string>;
 }
 
 function parseArgs(): CliArgs {
   const argv = process.argv.slice(2);
   let modelAlias = getDefaultModelAlias();
   let job: string | null = null;
+  const params: Record<string, string> = {};
   const rest: string[] = [];
 
   for (let i = 0; i < argv.length; i++) {
@@ -21,6 +26,17 @@ function parseArgs(): CliArgs {
       modelAlias = argv[++i];
     } else if ((a === '--job' || a === '-j') && i + 1 < argv.length) {
       job = argv[++i];
+    } else if (a === '--param' && i + 1 < argv.length) {
+      // Generic job-params passthrough (e.g. `--param ticker=ACME`) — deliberately
+      // job-agnostic: the core CLI has no notion of what any given job's params mean,
+      // that's entirely the job's own paramsSchema's job to validate.
+      const raw = argv[++i];
+      const eq = raw.indexOf('=');
+      if (eq === -1) {
+        console.error(`[Cron] --param must be key=value, got: ${raw}`);
+        process.exit(2);
+      }
+      params[raw.slice(0, eq)] = raw.slice(eq + 1);
     } else if (a === '--help' || a === '-h') {
       printUsage();
       process.exit(0);
@@ -42,7 +58,7 @@ function parseArgs(): CliArgs {
     console.error(`[Cron] Unknown job: ${job}. Known jobs: ${knownJobs().join(', ')}`);
     process.exit(2);
   }
-  return { modelAlias, job, task };
+  return { modelAlias, job, task, params };
 }
 
 function printUsage(): void {
@@ -50,7 +66,7 @@ function printUsage(): void {
   const jobs = knownJobs().join(', ') || '(none)';
   console.error(
     `Usage:\n` +
-    `  node dist/cron.js [--model <alias>] --job <name>\n` +
+    `  node dist/cron.js [--model <alias>] --job <name> [--param key=value ...]\n` +
     `  node dist/cron.js [--model <alias>] "<free-form task>"\n` +
     `  npm run task -- [--model <alias>] --job <name>   (note the "--" separator)\n\n` +
     `Available models:\n  ${aliases}\n\n` +
@@ -63,7 +79,7 @@ function printUsage(): void {
 
 async function main(): Promise<void> {
   await refreshActiveLocalProviderModels();
-  const { modelAlias, job, task } = parseArgs();
+  const { modelAlias, job, task, params } = parseArgs();
   const model = findModel(modelAlias);
   if (!model) {
     console.error(`[Cron] Unknown model alias: ${modelAlias}`);
@@ -76,7 +92,7 @@ async function main(): Promise<void> {
   let outcome: string;
   try {
     if (job) {
-      const result = await runNamedJob(job, modelAlias);
+      const result = await runNamedJob(job, modelAlias, Object.keys(params).length > 0 ? params : undefined);
       outcome = result.summary;
     } else {
       const result = await runFreeformTask(task, modelAlias);

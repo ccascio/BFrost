@@ -1,6 +1,4 @@
 import { execFile } from 'child_process';
-import { constants } from 'fs';
-import { access } from 'fs/promises';
 import { promisify } from 'util';
 import { config } from './config';
 import { embedText } from './embeddings';
@@ -16,6 +14,13 @@ const execFileAsync = promisify(execFile);
 export interface HealthStatus {
   ok: boolean;
   detail: string;
+  label?: string;
+  action?: {
+    label: string;
+    method: 'POST';
+    path: string;
+    successMessage: string;
+  };
 }
 
 export interface AppHealthSnapshot {
@@ -23,32 +28,45 @@ export interface AppHealthSnapshot {
   dependencies: Record<string, HealthStatus>;
 }
 
-async function fileReadable(filePath: string): Promise<boolean> {
-  try {
-    await access(filePath, constants.F_OK | constants.R_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
+// The dashboard rebuilds on every worker/config event, and these probes are the only
+// parts of a rebuild that spawn processes or hit the network. Uncached, a burst of job
+// events turns into a subprocess storm. Both caches are invalidated explicitly by
+// `invalidateHealthProbeCache()` on config changes, so staleness is bounded by intent
+// rather than by luck.
 
-async function fileExecutable(filePath: string): Promise<boolean> {
-  try {
-    await access(filePath, constants.F_OK | constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
+/** PATH lookups. A binary appearing mid-process is rare enough to need an explicit reset. */
+const commandAvailabilityCache = new Map<string, Promise<boolean>>();
+
+/** Reachability is a live network probe, so it expires on its own as well. */
+const EMBEDDING_PROBE_TTL_MS = 60_000;
+let embeddingProbe: { key: string; at: number; result: Promise<boolean> } | null = null;
+
+/**
+ * Drop memoised health probes so the next snapshot re-measures. Call after anything that
+ * could change the answer — provider/model configuration, worker install or enable.
+ */
+export function invalidateHealthProbeCache(): void {
+  commandAvailabilityCache.clear();
+  embeddingProbe = null;
 }
 
 async function commandAvailable(command: string, args: string[]): Promise<boolean> {
-  try {
-    await execFileAsync(command, args, { timeout: 5000 });
-    return true;
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    return code !== 'ENOENT';
-  }
+  const cacheKey = `${command} ${args.join(' ')}`;
+  const cached = commandAvailabilityCache.get(cacheKey);
+  if (cached) return cached;
+
+  const probe = (async () => {
+    try {
+      await execFileAsync(command, args, { timeout: 5000 });
+      return true;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      return code !== 'ENOENT';
+    }
+  })();
+  // Cache the promise, not the result, so concurrent callers share one spawn.
+  commandAvailabilityCache.set(cacheKey, probe);
+  return probe;
 }
 
 function configured(ok: boolean, readyDetail: string, missingDetail: string): HealthStatus {
@@ -59,12 +77,24 @@ function configured(ok: boolean, readyDetail: string, missingDetail: string): He
 }
 
 async function embeddingModelReachable(): Promise<boolean> {
-  try {
-    await embedText('health check');
-    return true;
-  } catch {
-    return false;
+  // Key on the config that determines the answer, so switching provider or model
+  // re-probes immediately instead of serving the previous target's verdict.
+  const key = `${config.embeddingProvider}:${config.embeddingModel}`;
+  const now = Date.now();
+  if (embeddingProbe && embeddingProbe.key === key && now - embeddingProbe.at < EMBEDDING_PROBE_TTL_MS) {
+    return embeddingProbe.result;
   }
+
+  const result = (async () => {
+    try {
+      await embedText('health check');
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  embeddingProbe = { key, at: now, result };
+  return result;
 }
 
 async function collectAdapterHealth(): Promise<Record<string, HealthStatus>> {
@@ -111,11 +141,12 @@ async function collectWorkerHealth(): Promise<Pick<AppHealthSnapshot, 'integrati
     listRegisteredHealthChecks().map(async (check) => {
       const target = check.category === 'dependencies' ? dependencies : integrations;
       try {
-        target[check.key] = await check.check();
+        target[check.key] = { ...(await check.check()), label: check.label };
       } catch (err) {
         target[check.key] = {
           ok: false,
           detail: err instanceof Error ? err.message : String(err),
+          label: check.label,
         };
       }
     }),
@@ -125,12 +156,10 @@ async function collectWorkerHealth(): Promise<Pick<AppHealthSnapshot, 'integrati
 }
 
 export async function getAppHealthSnapshot(): Promise<AppHealthSnapshot> {
-  const [adapterIntegrations, workerHealth, ffmpegOk, whisperCliOk, whisperModelOk, sqliteCliOk, embeddingModelOk] = await Promise.all([
+  const [adapterIntegrations, workerHealth, ffmpegOk, sqliteCliOk, embeddingModelOk] = await Promise.all([
     collectAdapterHealth(),
     collectWorkerHealth(),
     commandAvailable('ffmpeg', ['-version']),
-    commandAvailable('whisper-cli', ['--help']),
-    fileReadable(config.whisperModelPath),
     commandAvailable('sqlite3', ['-version']),
     embeddingModelReachable(),
   ]);
@@ -145,16 +174,6 @@ export async function getAppHealthSnapshot(): Promise<AppHealthSnapshot> {
         ffmpegOk,
         '`ffmpeg` is available in PATH.',
         '`ffmpeg` is missing from PATH. Voice transcription will fail.',
-      ),
-      whisperCli: configured(
-        whisperCliOk,
-        '`whisper-cli` is available in PATH.',
-        '`whisper-cli` is missing from PATH. Voice transcription will fail.',
-      ),
-      whisperModel: configured(
-        whisperModelOk,
-        `Whisper model found at ${config.whisperModelPath}.`,
-        `Whisper model file not found at ${config.whisperModelPath}.`,
       ),
       sqliteCli: configured(
         sqliteCliOk,

@@ -2,10 +2,20 @@ import type { AdminApiRoute } from '../admin-route';
 import type { ProviderModelOption } from '../config';
 import type { WorkerManifest } from './types';
 
+/**
+ * Context passed to `loadDashboardData`. Carries the platform's active scope id (see
+ * `WorkerManifest.scopeProvider`) so workers can slice their dashboard data to the
+ * currently-selected scope. Worker-agnostic: `activeScopeId` is an opaque string the
+ * worker itself defined as a scope option, or `null` when nothing is selected.
+ */
+export interface WorkerDashboardContext {
+  activeScopeId: string | null;
+}
+
 export interface BackendWorkerModule<TDashboardData = unknown> {
   manifest: WorkerManifest;
   apiRoutes?: AdminApiRoute[];
-  loadDashboardData?: () => Promise<TDashboardData>;
+  loadDashboardData?: (context?: WorkerDashboardContext) => Promise<TDashboardData>;
   healthChecks?: WorkerHealthCheck[];
   channelAdapters?: ChannelAdapterFactory[];
   providerAdapters?: ProviderAdapterFactory[];
@@ -29,6 +39,14 @@ export type WorkerHealthCategory = 'integrations' | 'dependencies';
 export interface WorkerHealthStatus {
   ok: boolean;
   detail: string;
+  action?: WorkerHealthAction;
+}
+
+export interface WorkerHealthAction {
+  label: string;
+  method: 'POST';
+  path: string;
+  successMessage: string;
 }
 
 export interface WorkerHealthCheck {
@@ -63,6 +81,20 @@ export interface ProviderAdapterFactory {
   create(): ProviderAdapter;
 }
 
+export interface ChatModelOptions {
+  /**
+   * Reasoning-effort level to apply to this model handle. Only ever set when the model's
+   * `reasoningLevels` metadata (declared by the provider worker) contains the value; the
+   * adapter translates it to its vendor's wire format.
+   */
+  reasoningLevel?: string;
+}
+
+export interface NativeWebSearchOptions extends ChatModelOptions {
+  searchContextSize?: 'low' | 'medium' | 'high';
+  allowedDomains?: string[];
+}
+
 /**
  * A provider adapter handles model resolution and (optionally) the lifecycle of a local
  * model runtime. Cloud providers leave the lifecycle methods undefined; local runtimes
@@ -77,7 +109,17 @@ export interface ProviderAdapter {
   /** Returns true if the provider is ready to handle requests (e.g. credentials present). */
   isConfigured(): boolean;
   /** Resolve a chat model handle the AI SDK can use. */
-  getChatModel(modelId: string): unknown;
+  getChatModel(modelId: string, options?: ChatModelOptions): unknown;
+  /**
+   * For providers whose API can search the web itself (e.g. OpenAI, Anthropic), returns
+   * the model handle plus AI SDK tool(s) to enable that for a single call. Providers with
+   * no native web search (local runtimes, generic OpenAI-compatible endpoints) omit this
+   * entirely — callers fall back to a worker-provided search tool instead.
+   */
+  getNativeWebSearch?(
+    modelId: string,
+    options?: NativeWebSearchOptions,
+  ): { model: unknown; tools: Record<string, unknown> } | undefined;
   /** List provider models that can be selected by the operator. */
   listAvailableModels?(): Promise<ProviderModelOption[]>;
   /** List models that support the embeddings endpoint (type-filtered where the provider supports it). */

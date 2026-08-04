@@ -1,6 +1,6 @@
 import { config, findModel, getDefaultModelAlias, type ModelOption } from './config';
 import { runAgent } from './agent';
-import { isModelProviderConfigured } from './llm';
+import { isModelProviderConfigured, runWithReasoningLevel } from './llm';
 import { refreshActiveLocalProviderModels } from './model-discovery';
 import {
   getActiveLocalProvider,
@@ -43,31 +43,43 @@ export interface RunModelOptions {
   keepLoaded?: boolean;
 }
 
-export async function runNamedJob(job: JobName, modelAlias?: string, params?: Record<string, unknown>): Promise<JobRunResult> {
+export async function runNamedJob(
+  job: JobName,
+  modelAlias?: string,
+  params?: Record<string, unknown>,
+  options?: { reasoningLevel?: string },
+): Promise<JobRunResult> {
   const requestedModel = await resolveRequestedModelAlias(modelAlias);
   const primaryModel = findModel(requestedModel);
   if (!primaryModel) {
     throw new Error(`Unknown model alias: ${requestedModel}`);
   }
 
-  // Local models are expensive to start and load. Give queue-backed workers a chance
-  // to report an empty input before touching the local runtime at all.
+  // For local-runtime models: check hasWork before paying the load/unload cost.
   if (isActiveLocalRuntimeModel(primaryModel)) {
     const workerJob = getWorkerJob(job);
-    if (workerJob.hasWork && !(await workerJob.hasWork(params))) {
-      return {
-        job,
-        modelAlias: primaryModel.alias,
-        modelId: primaryModel.id,
-        modelLabel: primaryModel.label,
-        summary: 'Nothing to do — skipped model load.',
-        itemCount: 0,
-      };
+    if (workerJob.hasWork) {
+      const work = await workerJob.hasWork(params);
+      if (!work) {
+        return {
+          job,
+          modelAlias: primaryModel.alias,
+          modelId: primaryModel.id,
+          modelLabel: primaryModel.label,
+          summary: 'Nothing to do — skipped model load.',
+          itemCount: 0,
+        };
+      }
     }
   }
 
   return runWithModelFailover(primaryModel, async (model) => {
-    const result = await invokeJob(job, model.id, params);
+    // The job's reasoning level rides along ambiently so worker code's own
+    // `getChatModel(model)` calls pick it up without signature changes.
+    const result = await runWithReasoningLevel(
+      { modelAlias: model.alias, reasoningLevel: options?.reasoningLevel },
+      () => invokeJob(job, model.id, params),
+    );
     return {
       job,
       modelAlias: model.alias,
@@ -90,6 +102,7 @@ export async function runNamedJob(job: JobName, modelAlias?: string, params?: Re
 export async function runChatTurn(
   modelAlias: string,
   fn: (model: ModelOption) => Promise<string>,
+  options?: { reasoningLevel?: string },
 ): Promise<{ text: string; model: ModelOption }> {
   const primaryModel = await resolveModel(modelAlias);
   if (!primaryModel) {
@@ -100,7 +113,13 @@ export async function runChatTurn(
   await getPinnedModelId();
 
   return runWithModelFailover(primaryModel, async (model) => {
-    const text = await fn(model);
+    // Same ambient hand-off as job runs: the level rides along so `getChatModel(model)`
+    // deep inside the agent picks it up. Keyed on the *resolved* alias — failover may
+    // have moved us off the requested model.
+    const text = await runWithReasoningLevel(
+      { modelAlias: model.alias, reasoningLevel: options?.reasoningLevel },
+      () => fn(model),
+    );
     return { text, model };
   });
 }
@@ -284,10 +303,9 @@ async function runWithPreparedLocalRuntimeModel<T>(
     }
     throw err;
   } finally {
-    // A model that was already resident is still unloaded after the call unless it is
-    // explicitly pinned. Otherwise an earlier call or external preload can leave a large
-    // local model resident indefinitely.
-    if (!keepRunningModel && modelPrepared && provider.unloadModel) {
+    // Unload the model we just ran, unless we want to keep it (chat with keepLoaded,
+    // or this IS the pinned model the user wants resident).
+    if (!keepRunningModel && modelPrepared && !alreadyLoadedOnlyModel && provider.unloadModel) {
       await provider.unloadModel(model.id);
     }
     // If a different model is pinned, restore it now so it stays resident across jobs.

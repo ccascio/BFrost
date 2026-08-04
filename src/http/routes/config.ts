@@ -3,8 +3,10 @@ import { type IncomingMessage, type ServerResponse } from 'http';
 import { HttpRouter } from '../router';
 import { readJsonBody, sendJson } from '../responses';
 import {
+  config,
   getDefaultModel,
   setDefaultModel,
+  setDefaultReasoningLevel,
   setEmbeddingSettings,
   setAdminPassword,
   setLocalWorkerCodeEnabled,
@@ -17,7 +19,11 @@ import { getActiveLocalProvider, getRegisteredProvider, listRegisteredChannels }
 import { updatePlatformSettings } from '../../admin-config';
 import { recordEventSafe } from '../../event-log';
 import { getSchedulerSnapshot, reloadSchedulerSchedules, triggerJobNow, updateAutomaticMissedRunRecovery, updateSchedulerJob } from '../../scheduler';
-import { dismissSkippedSchedulerRun, dismissSkippedScheduledRunsForJobs, listSkippedScheduledRuns } from '../../scheduler-runs';
+import {
+  dismissSkippedSchedulerRun,
+  dismissSkippedScheduledRunsForJobs,
+  listSkippedScheduledRuns,
+} from '../../scheduler-runs';
 import { isJobName, pinAndLoadModel, unpinAndUnloadModel } from '../../job-runner';
 import { sessions } from '../../admin-auth';
 import { BadRequestError } from '../../admin-route';
@@ -37,11 +43,23 @@ export function registerConfigRoutes(router: HttpRouter): void {
     await refreshAllProviderModels();
     const model = setDefaultModel(body.alias);
     await upsertEnvValue(path.join(process.cwd(), '.env'), 'OLLAMA_MODEL', model.id);
+    if (body.reasoningLevel !== undefined) {
+      setDefaultReasoningLevel(body.reasoningLevel);
+      await upsertEnvValue(
+        path.join(process.cwd(), '.env'),
+        'DEFAULT_REASONING_LEVEL',
+        config.defaultReasoningLevel,
+      );
+    }
     await recordEventSafe({
       category: 'admin',
       action: 'default_model_updated',
       summary: `Default model updated to ${model.alias}.`,
-      metadata: { modelAlias: model.alias, modelId: model.id },
+      metadata: {
+        modelAlias: model.alias,
+        modelId: model.id,
+        reasoningLevel: config.defaultReasoningLevel,
+      },
     });
     return sendJson(res, 200, { ok: true });
   });
@@ -91,7 +109,15 @@ export function registerConfigRoutes(router: HttpRouter): void {
 
   router.add('POST', '/api/scheduler-runs/:run/dismiss', async (_req, res, { params }) => {
     const dismissed = await dismissSkippedSchedulerRun(params.run);
-    if (!dismissed) return sendJson(res, 404, { error: 'Skipped scheduled run not found.' });
+    if (!dismissed) {
+      return sendJson(res, 404, { error: 'Skipped scheduled run not found.' });
+    }
+    await recordEventSafe({
+      category: 'scheduler',
+      action: 'skipped_run_dismissed',
+      summary: `${dismissed.label} removed from the recovery list.`,
+      metadata: { runId: dismissed.id, job: dismissed.job, scheduledAt: dismissed.startedAt },
+    });
     return sendJson(res, 200, { ok: true });
   });
 
@@ -100,11 +126,28 @@ export function registerConfigRoutes(router: HttpRouter): void {
     const jobNames = [...new Set(skipped.map((run) => run.job))].filter(isJobName);
     const queued: string[] = [];
     const unavailable: { job: string; error: string }[] = [];
+
+    // Trigger one manual run per job, even if the same job has more than one
+    // historical skipped record.
     for (const jobName of jobNames) {
-      try { await triggerJobNow(jobName); queued.push(jobName); }
-      catch (cause) { unavailable.push({ job: jobName, error: cause instanceof Error ? cause.message : String(cause) }); }
+      try {
+        await triggerJobNow(jobName);
+        queued.push(jobName);
+      } catch (cause) {
+        unavailable.push({
+          job: jobName,
+          error: cause instanceof Error ? cause.message : String(cause),
+        });
+      }
     }
     const dismissed = await dismissSkippedScheduledRunsForJobs(queued);
+
+    await recordEventSafe({
+      category: 'scheduler',
+      action: 'skipped_runs_recovery_requested',
+      summary: `Manual recovery requested for ${queued.length} skipped job${queued.length === 1 ? '' : 's'}.`,
+      metadata: { queued, unavailable, dismissedRunIds: dismissed.map((run) => run.id), retainedSkippedRunCount: skipped.length },
+    });
     return sendJson(res, 202, { ok: true, queued, unavailable, dismissedRunCount: dismissed.length });
   });
 
@@ -269,8 +312,11 @@ export function registerConfigRoutes(router: HttpRouter): void {
     }
 
     if (action === 'run') {
-      const jobState = await triggerJobNow(jobName);
-      return sendJson(res, 200, { started: true, job: jobState });
+      // A one-off params override for this run only (e.g. a ticker for a manual
+      // committee convening) — never persisted, unlike the config-update branch below.
+      const body = await readJsonBody(req, CronJobUpdateBodySchema);
+      const jobState = await triggerJobNow(jobName, { paramsOverride: body.params });
+      return sendJson(res, 202, { accepted: true, queued: jobState.queued, started: jobState.running, job: jobState });
     }
 
     const body = await readJsonBody(req, CronJobUpdateBodySchema);
@@ -281,6 +327,7 @@ export function registerConfigRoutes(router: HttpRouter): void {
       enabled: body.enabled,
       cron: body.cron,
       modelAlias: body.modelAlias,
+      reasoningLevel: body.reasoningLevel,
       approvalRequired: body.approvalRequired,
       prompt: body.prompt,
       params: body.params,

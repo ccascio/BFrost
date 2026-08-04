@@ -54,7 +54,9 @@ export function toAppError(raw: unknown): AppError {
   return { friendly: msg };
 }
 export type DashboardTab = CoreDashboardTab | `worker:${string}` | `worker-config:${string}`;
-export type QueueFilter = 'all' | QueueItem['state'] | 'retrying';
+// Core queue states + 'all'/'retrying' plus any worker-declared filter key (e.g. "pending",
+// "unclassified") — worker dashboards define their own filter semantics as opaque strings.
+export type QueueFilter = 'all' | QueueItem['state'] | 'retrying' | (string & {});
 export type CoreConfigKey = 'platform-routing' | 'embedding-model' | 'platform-security' | `worker:${string}`;
 
 export const DASHBOARD_REFRESH_INTERVAL_MS = 30000;
@@ -72,48 +74,62 @@ export interface WorkerOnboardingAction {
   description: string;
   endpoint?: string;
   runJob?: string;
+  /** When true, activating routes to the contributing worker's own dashboard tab. */
+  navigateWorkerTab?: boolean;
+  /** Worker health requirement key that marks this onboarding action complete. */
+  completedWhenHealthKey?: string;
   priority?: number;
 }
 
 export interface ChatPromptButton extends ChatPromptExample {
   id: string;
   source?: string;
+  category?: string;
 }
 
 export const CORE_CHAT_PROMPTS: ChatPromptExample[] = [
   {
-    label: 'Jobs today',
-    description: 'Review recent scheduler activity.',
-    prompt: 'What jobs ran today?',
+    label: 'Pipeline status',
+    description: 'Get a full summary of the redaction pipeline.',
+    prompt: 'Give me a summary of the content pipeline: how many items are at each stage, what needs attention, and what was published recently.',
   },
   {
-    label: 'Recent queue',
-    description: 'Inspect the newest Item Bus entries.',
-    prompt: 'Show me recent items in the queue.',
+    label: 'Jobs today',
+    description: 'Review recent scheduler activity.',
+    prompt: 'What jobs ran today, and did any fail?',
+  },
+  {
+    label: 'What needs review?',
+    description: 'See articles waiting for human approval.',
+    prompt: 'Which articles are currently waiting for reviewer approval? List them with their draft headline.',
   },
   {
     label: 'Loaded models',
-    description: 'Check active and loaded AI models.',
-    prompt: 'What models are loaded?',
-  },
-  {
-    label: 'Recent failures',
-    description: 'Find jobs or workers that need attention.',
-    prompt: 'Did any jobs fail recently?',
+    description: 'Check which AI models are active.',
+    prompt: 'What AI models are currently loaded and in use?',
   },
 ];
 
-/** Tabs that live inside the Settings modal rather than the sidebar. */
-export type SettingsTab = 'channels' | 'workers' | 'config' | 'system' | 'actions' | `worker-settings:${string}`;
+/** Configuration tabs that live in Settings, plus legacy operational route ids. */
+export type SettingsTab = 'channels' | 'workers' | 'jobs' | 'config' | 'store' | 'health' | 'system' | 'actions' | `worker-settings:${string}`;
+
+/**
+ * Ordering of the primary nav group headings. Opaque to the shell — the names are
+ * just strings; provider/worker manifests slot their tabs into these groups via
+ * `menu.group`. The shell never reasons about what "Sites" or "Content" mean.
+ */
+export const CORE_MENU_GROUP_ORDER = ['Home', 'Assistant', 'Portfolio', 'Analysis', 'Desk internals', 'Pipeline', 'Workers', 'Operations'];
 
 export const CORE_MENU_ENTRIES: Array<Omit<SidebarEntry<DashboardTab>, 'count'>> = [
-  { id: 'overview', label: 'Overview', icon: 'overview', group: 'Workspace', order: 10 },
-  { id: 'chat', label: 'Chat', icon: 'chat', group: 'Workspace', order: 15 },
-  { id: 'jobs', label: 'Jobs', icon: 'jobs', group: 'Workspace', order: 20 },
-  { id: 'workers', label: 'Workers', icon: 'workers', group: 'Workspace', order: 25 },
-  { id: 'store', label: 'Store', icon: 'store', group: 'Workspace', order: 35 },
-  { id: 'health', label: 'Health', icon: 'health', group: 'System', order: 3 },
-  // pipeline merged into Overview; channels/workers/config/actions/system → Settings modal
+  { id: 'overview', label: 'Home', icon: 'overview', group: 'Home', order: 10 },
+  { id: 'chat', label: 'Assistant', icon: 'chat', group: 'Assistant', order: 10 },
+  { id: 'health', label: 'Health', icon: 'health', group: 'Operations', order: 10 },
+  { id: 'actions', label: 'Actions', icon: 'actions', group: 'Operations', order: 20 },
+  { id: 'jobs', label: 'Jobs', icon: 'jobs', group: 'Operations', order: 30 },
+  { id: 'system', label: 'System', icon: 'system', group: 'Operations', order: 40 },
+  { id: 'channels', label: 'Channels', icon: 'channels', group: 'Operations', order: 50 },
+  { id: 'workers', label: 'Worker manager', icon: 'workers', group: 'Operations', order: 60 },
+  { id: 'store', label: 'Worker store', icon: 'store', group: 'Operations', order: 70 },
 ];
 
 export interface ModelOption {
@@ -121,6 +137,8 @@ export interface ModelOption {
   id: string;
   label: string;
   provider: string;
+  /** Vendor-declared reasoning levels, lightest first; absent when not selectable. */
+  reasoningLevels?: string[];
 }
 
 export type ActionClass = 'read-only' | 'approved-write' | 'draft' | 'trusted-automation' | 'blocked';
@@ -153,6 +171,8 @@ export interface SchedulerJobState {
   cron: string;
   nextScheduledAt: string | null;
   modelAlias: string;
+  /** Reasoning level override for this job ('' = follow the platform default). */
+  reasoningLevel: string;
   approvalRequired: boolean;
   promptEditable: boolean;
   promptHelpText?: string;
@@ -162,6 +182,8 @@ export interface SchedulerJobState {
   dashboardFields: JobDashboardField[];
   presets: JobPreset[];
   effectiveModelAlias: string;
+  /** Level the next run will actually use ('' when the effective model has no levels). */
+  effectiveReasoningLevel: string;
   queued: boolean;
   queuedAt: string | null;
   running: boolean;
@@ -203,6 +225,8 @@ export interface JobBaseField {
    * value. Falls back to `defaultValue` when the path resolves to undefined.
    */
   seedPath?: string;
+  /** Hide this field unless another field in the same form matches the given condition. */
+  visibleWhen?: JobFieldCondition;
 }
 
 export interface JobTextField extends JobBaseField {
@@ -235,6 +259,8 @@ export interface JobSelectField extends JobBaseField {
   type: 'select';
   defaultValue: string;
   options: Array<{ label: string; value: string }>;
+  /** When true, the renderer replaces `options` with `fieldSuggestions[key]` from the worker data slice. */
+  dynamicOptions?: boolean;
 }
 
 export interface JobStringListField extends JobBaseField {
@@ -286,6 +312,8 @@ export interface SchedulerRunRecord {
   error: string | null;
   itemCount: number | null;
   skipReason?: 'missed' | 'overlap' | 'no_work' | null;
+  /** Consecutive slots a missed record stands for — one record is kept per job. */
+  missedSlotCount?: number;
   attempts: SchedulerRunAttempt[];
 }
 
@@ -365,12 +393,16 @@ export interface WorkerSummary {
   tagline?: string;
   chatPrompts: ChatPromptExample[];
   onboarding?: WorkerOnboardingAction;
+  /** Optional worker-owned banner, rendered without core knowing the worker id. */
   demoNotice?: string;
   builtIn: boolean;
   /** True when the built-in worker can be soft-deleted and later restored from the store. */
   deletable?: boolean;
   kind: WorkerKind;
+  /** True when this worker can refresh externally-held portfolio data (e.g. a brokerage sync). */
+  portfolioSource?: boolean;
   section?: 'workers' | 'system';
+  menuOrder?: number;
   settingsOnly?: boolean;
   enabled: boolean;
   missing: boolean;
@@ -454,6 +486,13 @@ export interface QueueItem {
 export interface HealthStatus {
   ok: boolean;
   detail: string;
+  label?: string;
+  action?: {
+    label: string;
+    method: 'POST';
+    path: string;
+    successMessage: string;
+  };
 }
 
 export interface EventLogRecord {
@@ -533,7 +572,27 @@ export interface JobMetricsResponse {
   computedAt: string;
 }
 
-export type DashboardSectionName = 'queue' | 'cronRuns' | 'events' | 'backups' | 'workerData' | 'localRuntimeModels';
+export type DashboardSectionName = 'queue' | 'cronRuns' | 'events' | 'backups' | 'workerData' | 'localRuntimeModels' | 'pipelineStages';
+
+/**
+ * One block in the dashboard's live pipeline-stage strip. Derived generically from any
+ * registered job that declares `pendingCount` + `pipelineStageOrder` on its manifest — the
+ * frontend has no knowledge of which specific workers these are.
+ */
+export interface PipelineStageSummary {
+  jobId: string;
+  workerId: string;
+  workerDisplayName: string;
+  jobLabel: string;
+  pendingCount: number;
+  order: number;
+  /** True while this stage's job is executing — the platform's only in-flight signal. */
+  running: boolean;
+  /** True while the job is waiting for its turn on the scheduler's FIFO chain. */
+  queued: boolean;
+  /** ISO start time of the current run, when `running`. */
+  startedAt: string | null;
+}
 
 export interface RecipeInputStorage {
   type: 'worker-kv' | 'global-kv-array';
@@ -574,6 +633,8 @@ export interface DashboardState {
   };
   models: ModelOption[];
   defaultModel: ModelOption;
+  /** Platform-wide reasoning level used when a job has no per-job override. */
+  defaultReasoningLevel: string;
   localRuntime: {
     running: boolean;
     loadedModels: string[];
@@ -611,6 +672,13 @@ export interface DashboardState {
   backups: AppBackupRecord[];
   recipes: WorkerRecipe[];
   workerData: Record<string, unknown>;
+  pipelineStages: PipelineStageSummary[];
+  /**
+   * Active-scope summary (generic multisite primitive). `providerWorkerId` is whichever
+   * worker declared `scopeProvider`; `activeScopeId` is the opaque selected scope. The
+   * option list lives in that worker's `workerData` slice.
+   */
+  scope?: { providerWorkerId: string | null; activeScopeId: string | null };
   [key: string]: unknown;
 }
 

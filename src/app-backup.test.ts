@@ -10,7 +10,7 @@ import { createAppBackup, listAppBackups, scheduleRestoreOnNextBoot, applyPendin
 import { saveKvJson, closeDb } from './sqlite';
 
 test('app backups create consistent SQLite backup files', async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-backup-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-backup-'));
   const previousDbPath = config.appDbPath;
   const previousAdminDir = config.adminStoreDir;
   config.appDbPath = path.join(dir, 'app.sqlite');
@@ -21,7 +21,7 @@ test('app backups create consistent SQLite backup files', async () => {
 
     const backup = await createAppBackup('2026-04-24T08:00:00.000Z');
 
-    assert.equal(backup.file, 'bfrost-2026-04-24T08-00-00-000Z.sqlite');
+    assert.equal(backup.file, 'BFrost-2026-04-24T08-00-00-000Z.sqlite');
     assert.equal(backup.path, path.join(config.adminStoreDir, 'backups', backup.file));
     assert.ok(backup.sizeBytes > 0);
 
@@ -37,7 +37,7 @@ test('app backups create consistent SQLite backup files', async () => {
 });
 
 test('app backups list returns empty when no backup directory exists', async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-backup-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-backup-'));
   const previousAdminDir = config.adminStoreDir;
   config.adminStoreDir = path.join(dir, 'admin');
 
@@ -53,7 +53,7 @@ test('app backups list returns empty when no backup directory exists', async () 
 // ── Restore-path tests ────────────────────────────────────────────────────────
 
 test('scheduleRestoreOnNextBoot writes a restore-pending marker file', async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-restore-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-restore-'));
   const previousAdminDir = config.adminStoreDir;
   config.adminStoreDir = path.join(dir, 'admin');
 
@@ -72,7 +72,7 @@ test('scheduleRestoreOnNextBoot writes a restore-pending marker file', async () 
 });
 
 test('applyPendingRestoreIfAny is a no-op when no marker exists', async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-restore-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-restore-'));
   const previousAdminDir = config.adminStoreDir;
   const previousDbPath = config.appDbPath;
   config.adminStoreDir = path.join(dir, 'admin');
@@ -90,14 +90,14 @@ test('applyPendingRestoreIfAny is a no-op when no marker exists', async () => {
 });
 
 test('applyPendingRestoreIfAny (valid backup): swaps DB and leaves .pre-restore safety copy', async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-restore-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-restore-'));
   const previousAdminDir = config.adminStoreDir;
   const previousDbPath = config.appDbPath;
   config.adminStoreDir = path.join(dir, 'admin');
   config.appDbPath = path.join(dir, 'live.sqlite');
 
   const backupDir = path.join(config.adminStoreDir, 'backups');
-  const backupFile = 'bfrost-test-backup.sqlite';
+  const backupFile = 'BFrost-test-backup.sqlite';
   const backupPath = path.join(backupDir, backupFile);
 
   try {
@@ -105,6 +105,10 @@ test('applyPendingRestoreIfAny (valid backup): swaps DB and leaves .pre-restore 
     const liveDb = new Database(config.appDbPath);
     liveDb.exec("CREATE TABLE live_marker (v TEXT); INSERT INTO live_marker VALUES ('original')");
     liveDb.close();
+    // Reproduce a stopped WAL-mode installation whose sidecars outlive the process. They
+    // belong to the old main file and must never be applied to the restored snapshot.
+    await writeFile(config.appDbPath + '-wal', Buffer.from('stale wal from previous database'));
+    await writeFile(config.appDbPath + '-shm', Buffer.from('stale shm from previous database'));
 
     // Create a valid backup DB with different content
     await mkdir(backupDir, { recursive: true });
@@ -139,7 +143,7 @@ test('applyPendingRestoreIfAny (valid backup): swaps DB and leaves .pre-restore 
 });
 
 test('applyPendingRestoreIfAny (corrupted backup): refuses restore and leaves live DB intact', async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-restore-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-restore-'));
   const previousAdminDir = config.adminStoreDir;
   const previousDbPath = config.appDbPath;
   config.adminStoreDir = path.join(dir, 'admin');

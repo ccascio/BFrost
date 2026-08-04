@@ -58,7 +58,7 @@ export function buildWorkerTabDefinitions(
     if (!worker.enabled || worker.missing) {
       return [];
     }
-    if (worker.kind === 'channel') {
+    if (worker.kind === 'channel' || worker.kind === 'provider') {
       return [];
     }
 
@@ -83,8 +83,8 @@ export function workerTabId(workerId: string): `worker:${string}` {
   return `worker:${workerId}`;
 }
 
-export function configSurfaceKey(workerId: string, surfaceId: string): string {
-  return `${workerId}:${surfaceId}`;
+export function configSurfaceKey(workerId: string, surfaceId: string, scopeId?: string | null): string {
+  return `${workerId}:${surfaceId}:${scopeId ?? 'all'}`;
 }
 
 export function workerHealthTone(state: WorkerHealthState): 'good' | 'warning' | 'info' | 'muted' {

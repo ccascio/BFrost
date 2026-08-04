@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { config } from '../config';
-import { closeDb } from '../sqlite';
+import { closeDb, getAppDb, loadKvJson } from '../sqlite';
 import {
   applyConsumerFailure,
   applyConsumerSuccess,
@@ -21,7 +21,7 @@ import { createQueueItem, loadQueue } from './queue';
 
 function withTempStore<T>(fn: () => Promise<T>): Promise<T> {
   return (async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-bus-'));
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-bus-'));
     const previousDir = config.itemBusStoreDir;
     const previousDbPath = config.appDbPath;
     config.itemBusStoreDir = dir;
@@ -61,6 +61,7 @@ test('publishItem emits an item-published event; unsubscribe stops delivery', as
   await withTempStore(async () => {
     const received: ItemPublishedEvent[] = [];
     const unsubscribe = onItemPublished((event) => received.push(event));
+
     await publishItem({
       producerWorkerId: 'test.producer',
       itemType: 'test.signal',
@@ -69,11 +70,14 @@ test('publishItem emits an item-published event; unsubscribe stops delivery', as
       url: 'https://example.com/wake/1',
       state: 'approved',
     });
-    assert.deepEqual(received, [{
+
+    assert.equal(received.length, 1);
+    assert.deepEqual(received[0], {
       itemType: 'test.signal',
       producerWorkerId: 'test.producer',
       state: 'approved',
-    }]);
+    });
+
     unsubscribe();
     await publishItem({
       producerWorkerId: 'test.producer',
@@ -105,8 +109,12 @@ test('publishItem is idempotent for an explicit stable id', async () => {
       const replay = await publishItem(input);
       assert.equal(replay.id, first.id);
       assert.equal((await loadQueue()).filter((item) => item.id === input.id).length, 1);
-      assert.equal(received.length, 1);
-      await assert.rejects(() => publishItem({ ...input, producerWorkerId: 'different.producer' }), /id collision/i);
+      assert.equal(received.length, 1, 'an idempotent replay must not emit a second wake');
+      await assert.rejects(() => publishItem({
+        ...input,
+        producerWorkerId: 'different.producer',
+      }), /id collision/i);
+      assert.equal((await loadQueue()).filter((item) => item.id === input.id).length, 1);
     } finally {
       unsubscribe();
     }
@@ -115,7 +123,9 @@ test('publishItem is idempotent for an explicit stable id', async () => {
 
 test('emitItemPublished isolates a throwing listener from the others', () => {
   const received: string[] = [];
-  const unsubscribeBad = onItemPublished(() => { throw new Error('Listener failed on purpose.'); });
+  const unsubscribeBad = onItemPublished(() => {
+    throw new Error('Listener failed on purpose.');
+  });
   const unsubscribeGood = onItemPublished((event) => received.push(event.itemType));
   try {
     emitItemPublished({ itemType: 'test.signal', producerWorkerId: 'test.producer', state: 'queued' });
@@ -149,7 +159,7 @@ test('filterItemsForConsumer matches itemType, tags, state, and excludeAlreadyHa
       producerWorkerId: 'core.news',
       itemType: 'news.article',
       tags: ['news', 'breaking'],
-      metadata: { 'core.publisher.x': { tweetId: 't_1' } },
+      metadata: { 'core.research': { tweetId: 't_1' } },
     }),
     createQueueItem({
       title: 'C',
@@ -164,24 +174,24 @@ test('filterItemsForConsumer matches itemType, tags, state, and excludeAlreadyHa
     }),
   ];
 
-  const newsForXAll = filterItemsForConsumer(items, 'core.publisher.x', {
+  const newsForXAll = filterItemsForConsumer(items, 'core.research', {
     itemType: 'news.article',
   });
   assert.deepEqual(newsForXAll.map((i) => i.title), ['A', 'B']);
 
-  const fresh = filterItemsForConsumer(items, 'core.publisher.x', {
+  const fresh = filterItemsForConsumer(items, 'core.research', {
     itemType: 'news.article',
     excludeAlreadyHandled: true,
   });
   assert.deepEqual(fresh.map((i) => i.title), ['A']);
 
-  const queuedOnly = filterItemsForConsumer(items, 'core.publisher.x', {
+  const queuedOnly = filterItemsForConsumer(items, 'core.research', {
     itemType: 'news.article',
     states: ['queued'],
   });
   assert.deepEqual(queuedOnly.map((i) => i.title), ['A']);
 
-  const breaking = filterItemsForConsumer(items, 'core.publisher.x', {
+  const breaking = filterItemsForConsumer(items, 'core.research', {
     tags: ['breaking'],
   });
   assert.deepEqual(breaking.map((i) => i.title), ['B']);
@@ -197,11 +207,11 @@ test('setConsumerMetadata namespaces by consumer worker id', () => {
     stateChangedAt: '2026-05-01T00:00:00.000Z',
   });
 
-  setConsumerMetadata(item, 'core.publisher.x', { tweetId: 't_1' });
+  setConsumerMetadata(item, 'core.research', { tweetId: 't_1' });
   setConsumerMetadata(item, 'local.publisher.wordpress', { publishedUrl: 'https://cp.test/a' });
-  setConsumerMetadata(item, 'core.publisher.x', { tone: 'serious' });
+  setConsumerMetadata(item, 'core.research', { tone: 'serious' });
 
-  assert.deepEqual(readConsumerMetadata(item, 'core.publisher.x'), {
+  assert.deepEqual(readConsumerMetadata(item, 'core.research'), {
     tweetId: 't_1',
     tone: 'serious',
   });
@@ -220,7 +230,7 @@ test('applyConsumerSuccess posts an item and records consumer metadata', () => {
     stateChangedAt: '2026-05-01T00:00:00.000Z',
   });
 
-  applyConsumerSuccess(item, 'core.publisher.x', {
+  applyConsumerSuccess(item, 'core.research', {
     postedId: 't_9',
     postedTone: 'punchy',
     metadata: { tweetId: 't_9', tweetUrl: 'https://x.com/i/status/t_9' },
@@ -228,7 +238,7 @@ test('applyConsumerSuccess posts an item and records consumer metadata', () => {
   });
 
   assert.equal(item.state, 'posted');
-  assert.equal(readConsumerMetadata<{ tweetId: string }>(item, 'core.publisher.x')?.tweetId, 't_9');
+  assert.equal(readConsumerMetadata<{ tweetId: string }>(item, 'core.research')?.tweetId, 't_9');
 });
 
 test('applyConsumerFailure records failures with consumer metadata', () => {
@@ -241,7 +251,7 @@ test('applyConsumerFailure records failures with consumer metadata', () => {
     stateChangedAt: '2026-05-01T00:00:00.000Z',
   });
 
-  applyConsumerFailure(item, 'core.publisher.x', {
+  applyConsumerFailure(item, 'core.research', {
     errorMessage: 'rate limited',
     maxAttempts: 3,
     metadata: { lastErrorCode: 429 },
@@ -251,7 +261,7 @@ test('applyConsumerFailure records failures with consumer metadata', () => {
   assert.equal(item.state, 'failed');
   assert.equal(item.attemptCount, 1);
   assert.equal(item.lastError, 'rate limited');
-  assert.equal(readConsumerMetadata<{ lastErrorCode: number }>(item, 'core.publisher.x')?.lastErrorCode, 429);
+  assert.equal(readConsumerMetadata<{ lastErrorCode: number }>(item, 'core.research')?.lastErrorCode, 429);
 });
 
 test('listItemsForConsumer roundtrips through saveQueue/loadQueue', async () => {
@@ -272,8 +282,37 @@ test('listItemsForConsumer roundtrips through saveQueue/loadQueue', async () => 
       url: 'https://skip.test',
     });
 
-    const newsItems = await listItemsForConsumer('core.publisher.x', { itemType: 'news.article' });
+    const newsItems = await listItemsForConsumer('core.research', { itemType: 'news.article' });
     assert.equal(newsItems.length, 1);
     assert.equal(newsItems[0].title, 'Hello');
+  });
+});
+
+test('producer and consumer hot paths stay off the monolithic queue blob', async () => {
+  await withTempStore(async () => {
+    await publishItem({
+      id: 'q_target',
+      producerWorkerId: 'target.producer',
+      itemType: 'target.item',
+      title: 'Target',
+      shortDesc: 'Read selectively.',
+      url: 'https://target.test/item',
+    });
+    await publishItem({
+      id: 'q_unrelated',
+      producerWorkerId: 'other.producer',
+      itemType: 'other.item',
+      title: 'Unrelated',
+      shortDesc: 'Must not be parsed.',
+      url: 'https://other.test/item',
+      payload: { body: 'irrelevant' },
+    });
+
+    assert.equal(await loadKvJson('item-bus.queue'), null);
+    const db = await getAppDb();
+    db.prepare("UPDATE item_bus_items SET payload_json = '{invalid json' WHERE id = ?").run('q_unrelated');
+
+    const target = await listItemsForConsumer('target.consumer', { itemType: 'target.item' });
+    assert.deepEqual(target.map((item) => item.id), ['q_target']);
   });
 });

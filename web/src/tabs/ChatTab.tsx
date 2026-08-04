@@ -21,6 +21,12 @@ export interface ChatTabProps {
   setActiveProjectId: Dispatch<SetStateAction<string | null>>;
   activeConversationId: string | null;
   chatArrivingFromOverview: boolean;
+  /** Conversation model override; null follows the platform default. */
+  chatModelAlias: string | null;
+  setChatModelAlias: Dispatch<SetStateAction<string | null>>;
+  /** Conversation reasoning override; null follows the platform default. */
+  chatReasoningLevel: string | null;
+  setChatReasoningLevel: Dispatch<SetStateAction<string | null>>;
   chatQuery: string;
   setChatQuery: Dispatch<SetStateAction<string>>;
   projectComboOpen: boolean;
@@ -53,6 +59,7 @@ export function ChatTab(props: ChatTabProps) {
   const {
     dashboard, dashboardViews, busyKey, chatDraft, setChatDraft, chatTurns, chatThreads,
     chatProjects, activeProjectId, setActiveProjectId, activeConversationId, chatArrivingFromOverview,
+    chatModelAlias, setChatModelAlias, chatReasoningLevel, setChatReasoningLevel,
     chatQuery, setChatQuery, projectComboOpen, setProjectComboOpen, projectComboQuery,
     setProjectComboQuery, projectComboRef, chatLogRef, chatInputRef, createChatProject,
     renameChatProject, startNewChat, openChatThread, renameChatThread, deleteChatThread,
@@ -60,12 +67,24 @@ export function ChatTab(props: ChatTabProps) {
     artifacts, artifactPanelOpen, setArtifactPanelOpen, artifactPanelPinned, setArtifactPanelPinned,
     activeArtifactId, setActiveArtifactId, openArtifact, deleteArtifactFromConversation,
   } = props;
+  // This conversation can diverge from the platform default, so everything here that
+  // names a model reads the selection rather than `dashboard.defaultModel`.
+  const activeModel =
+    dashboard.models.find((model) => model.alias === chatModelAlias) ?? dashboard.defaultModel;
+  const reasoningLevels = activeModel.reasoningLevels ?? [];
+  // Mirrors the backend's `resolveReasoningLevel`: explicit choice, then the platform
+  // default, then the vendor's medium/first level.
+  const activeReasoningLevel =
+    reasoningLevels.find((level) => level === chatReasoningLevel)
+    ?? reasoningLevels.find((level) => level === dashboard.defaultReasoningLevel)
+    ?? reasoningLevels.find((level) => level === 'medium')
+    ?? reasoningLevels[0];
   return (
         <section className={`panel tab-page chat-page${chatArrivingFromOverview ? ' chat-page-arriving' : ''}`}>
           <div className="panel-head">
             <div>
               <p className="panel-kicker">Assistant</p>
-              <h2>Dashboard chat <HelpTip>Type naturally to ask about your queue, schedules, or workers — or give plain-language commands. The assistant uses the same AI model you have configured in Settings. All messages stay on your machine.</HelpTip></h2>
+              <h2>Dashboard chat <HelpTip>Type naturally to ask about your queue, schedules, or workers — or give plain-language commands. Pick the model and reasoning level right in the composer: the choice sticks to this conversation from the next message on, and leaves the platform default your scheduled jobs use untouched. All messages stay on your machine.</HelpTip></h2>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               {artifacts.length > 0 && (
@@ -80,10 +99,10 @@ export function ChatTab(props: ChatTabProps) {
               )}
               <StatusPill tone={
                 dashboard.workers.find(
-                  (w) => w.kind === 'provider' && w.id.endsWith(`.${dashboard.defaultModel.provider}`)
+                  (w) => w.kind === 'provider' && w.id.endsWith(`.${activeModel.provider}`)
                 )?.healthState === 'healthy' ? 'good' : 'warning'
               }>
-                {dashboard.defaultModel.alias}
+                {activeModel.alias}
               </StatusPill>
             </div>
           </div>
@@ -327,20 +346,60 @@ export function ChatTab(props: ChatTabProps) {
               }
             }}
           >
-            <textarea
-              ref={chatInputRef}
-              className="chat-composer-input"
-              placeholder="Send a message — ⌘/Ctrl + Enter to send"
-              value={chatDraft}
-              onChange={(event) => setChatDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && busyKey !== 'dashboard-chat') {
-                  event.preventDefault();
-                  void sendDashboardChat();
-                }
-              }}
-              rows={2}
-            />
+            <div className="chat-composer-body">
+              <textarea
+                ref={chatInputRef}
+                className="chat-composer-input"
+                placeholder="Send a message — ⌘/Ctrl + Enter to send"
+                value={chatDraft}
+                onChange={(event) => setChatDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && busyKey !== 'dashboard-chat') {
+                    event.preventDefault();
+                    void sendDashboardChat();
+                  }
+                }}
+                rows={2}
+              />
+              <div className="chat-composer-controls">
+                <select
+                  className="chat-composer-select"
+                  value={activeModel.alias}
+                  aria-label="Model for this conversation"
+                  title="Model used for this conversation — the platform default is left unchanged"
+                  onChange={(event) => {
+                    setChatModelAlias(event.target.value);
+                    // Levels are vendor-specific; let the new model resolve its own.
+                    setChatReasoningLevel(null);
+                  }}
+                >
+                  {dashboard.models.length > 0 ? (
+                    dashboard.models.map((model) => (
+                      <option key={model.alias} value={model.alias}>
+                        {model.label}
+                      </option>
+                    ))
+                  ) : (
+                    <option value={activeModel.alias}>{activeModel.label}</option>
+                  )}
+                </select>
+                {reasoningLevels.length > 0 && activeReasoningLevel ? (
+                  <select
+                    className="chat-composer-select"
+                    value={activeReasoningLevel}
+                    aria-label="Reasoning level for this conversation"
+                    title="Reasoning effort for this conversation"
+                    onChange={(event) => setChatReasoningLevel(event.target.value)}
+                  >
+                    {reasoningLevels.map((level) => (
+                      <option key={level} value={level}>
+                        {level} reasoning
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+              </div>
+            </div>
             <button
               className="primary chat-composer-send"
               type="submit"

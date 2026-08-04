@@ -4,23 +4,36 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { config } from './config';
-import { closeDb } from './sqlite';
+import { closeDb, getAppDb } from './sqlite';
 import {
   approveQueueItem,
   createQueueItem,
+  deleteQueueItems,
+  insertQueueItem,
   loadQueue,
   markQueueItemDuplicateRejected,
   markQueueItemPostFailed,
   markQueueItemPosted,
   pruneQueue,
+  queryQueue,
   queuePath,
+  reapExpiredQueueItems,
   rejectQueueItem,
   saveQueue,
+  upsertQueueItems,
+  withQueueLock,
 } from './jobs/queue';
 import { loadKvJson, saveKvJson } from './sqlite';
 
+async function assertNormalizedBusRows(expected: number): Promise<void> {
+  const db = await getAppDb();
+  const row = db.prepare('SELECT count(*) AS count FROM item_bus_items').get() as { count: number };
+  assert.equal(row.count, expected);
+  assert.equal(await loadKvJson('item-bus.queue'), null, 'the monolithic legacy blob must be removed');
+}
+
 test('loadQueue normalizes legacy queued items', async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-queue-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-queue-'));
   const previousDir = config.itemBusStoreDir;
   const previousDbPath = config.appDbPath;
   config.itemBusStoreDir = dir;
@@ -54,7 +67,7 @@ test('loadQueue normalizes legacy queued items', async () => {
 });
 
 test('loadQueue migrates a legacy KV queue into the Item Bus store', async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-queue-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-queue-'));
   const previousDir = config.itemBusStoreDir;
   const previousDbPath = config.appDbPath;
   config.itemBusStoreDir = path.join(dir, 'item-bus');
@@ -75,7 +88,71 @@ test('loadQueue migrates a legacy KV queue into the Item Bus store', async () =>
     assert.equal(queue.length, 1);
     assert.equal(queue[0].title, 'From legacy KV');
     assert.equal(queue[0].state, 'queued');
-    assert.equal((await loadKvJson<unknown[]>('item-bus.queue'))?.length, 1);
+    await assertNormalizedBusRows(1);
+  } finally {
+    config.itemBusStoreDir = previousDir;
+    config.appDbPath = previousDbPath;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('loadQueue atomically normalizes the former item-bus.queue blob', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-queue-'));
+  const previousDir = config.itemBusStoreDir;
+  const previousDbPath = config.appDbPath;
+  config.itemBusStoreDir = path.join(dir, 'item-bus');
+  config.appDbPath = path.join(dir, 'app.sqlite');
+
+  try {
+    await saveKvJson('item-bus.queue', [
+      {
+        id: 'q_normalize_me',
+        title: 'Normalize me',
+        shortDesc: 'Stored as one large JSON blob by the previous release.',
+        url: 'https://example.com/normalize-me',
+        addedAt: '2026-04-24T08:00:00.000Z',
+        state: 'approved',
+        stateChangedAt: '2026-04-24T08:00:00.000Z',
+        producerWorkerId: 'test.producer',
+        itemType: 'test.large',
+        payload: { body: 'large payload' },
+      },
+    ]);
+
+    const queue = await loadQueue();
+
+    assert.deepEqual(queue.map((item) => item.id), ['q_normalize_me']);
+    await assertNormalizedBusRows(1);
+  } finally {
+    config.itemBusStoreDir = previousDir;
+    config.appDbPath = previousDbPath;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('queryQueue treats explicit empty filters as matching no items', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-queue-'));
+  const previousDir = config.itemBusStoreDir;
+  const previousDbPath = config.appDbPath;
+  config.itemBusStoreDir = path.join(dir, 'item-bus');
+  config.appDbPath = path.join(dir, 'app.sqlite');
+
+  try {
+    await saveQueue([createQueueItem({
+      id: 'q_present',
+      title: 'Present',
+      shortDesc: 'Must not leak through an empty filter.',
+      url: 'https://example.com/present',
+      addedAt: '2026-04-24T08:00:00.000Z',
+      state: 'queued',
+      stateChangedAt: '2026-04-24T08:00:00.000Z',
+    })]);
+
+    assert.deepEqual(await queryQueue({ ids: [] }), []);
+    assert.deepEqual(await queryQueue({ itemTypes: [] }), []);
+    assert.deepEqual(await queryQueue({ states: [] }), []);
   } finally {
     config.itemBusStoreDir = previousDir;
     config.appDbPath = previousDbPath;
@@ -85,7 +162,7 @@ test('loadQueue migrates a legacy KV queue into the Item Bus store', async () =>
 });
 
 test('loadQueue migrates a legacy sibling queue file into the Item Bus store', async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-queue-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-queue-'));
   const previousDir = config.itemBusStoreDir;
   const previousDbPath = config.appDbPath;
   config.itemBusStoreDir = path.join(dir, 'item-bus');
@@ -112,7 +189,7 @@ test('loadQueue migrates a legacy sibling queue file into the Item Bus store', a
     assert.equal(queue.length, 1);
     assert.equal(queue[0].title, 'From legacy file');
     assert.equal(queue[0].state, 'queued');
-    assert.equal((await loadKvJson<unknown[]>('item-bus.queue'))?.length, 1);
+    await assertNormalizedBusRows(1);
   } finally {
     config.itemBusStoreDir = previousDir;
     config.appDbPath = previousDbPath;
@@ -277,7 +354,7 @@ test('queue transition helpers mark retryable and permanent post failures', () =
 });
 
 test('saveQueue creates the configured queue directory', async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-queue-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-queue-'));
   const previousDir = config.itemBusStoreDir;
   const previousDbPath = config.appDbPath;
   config.itemBusStoreDir = path.join(dir, 'nested', 'news');
@@ -295,7 +372,7 @@ test('saveQueue creates the configured queue directory', async () => {
 });
 
 test('loadQueue surfaces invalid queue files instead of returning an empty queue', async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-queue-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-queue-'));
   const previousDir = config.itemBusStoreDir;
   const previousDbPath = config.appDbPath;
   config.itemBusStoreDir = dir;
@@ -308,6 +385,153 @@ test('loadQueue surfaces invalid queue files instead of returning an empty queue
     config.itemBusStoreDir = previousDir;
     config.appDbPath = previousDbPath;
     closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('concurrent in-process queue-lock holders serialise instead of failing', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-queue-lock-'));
+  const previousDir = config.itemBusStoreDir;
+  const previousDbPath = config.appDbPath;
+  config.itemBusStoreDir = dir;
+  config.appDbPath = path.join(dir, 'app.sqlite');
+
+  try {
+    // Jobs run concurrently now, so several holders contend for the one queue file. The
+    // old fail-fast lock rejected every loser outright ("another job may be running"),
+    // which surfaced as spurious worker failures rather than as waiting.
+    let concurrent = 0;
+    let maxConcurrent = 0;
+    const order: number[] = [];
+    await Promise.all(
+      [0, 1, 2, 3, 4].map((i) =>
+        withQueueLock(async () => {
+          concurrent += 1;
+          maxConcurrent = Math.max(maxConcurrent, concurrent);
+          order.push(i);
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          concurrent -= 1;
+        }),
+      ),
+    );
+
+    assert.equal(maxConcurrent, 1, 'the lock must grant exclusive access');
+    assert.deepEqual(order, [0, 1, 2, 3, 4], 'admission is FIFO, so no caller is starved');
+  } finally {
+    closeDb();
+    config.itemBusStoreDir = previousDir;
+    config.appDbPath = previousDbPath;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a failing queue-lock body still releases the lock for the next waiter', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-queue-lock-fail-'));
+  const previousDir = config.itemBusStoreDir;
+  const previousDbPath = config.appDbPath;
+  config.itemBusStoreDir = dir;
+  config.appDbPath = path.join(dir, 'app.sqlite');
+
+  try {
+    const failing = withQueueLock(async () => { throw new Error('body exploded'); });
+    const follower = withQueueLock(async () => 'ran');
+    await assert.rejects(() => failing, /body exploded/);
+    assert.equal(await follower, 'ran', 'one bad body must not wedge the queue');
+  } finally {
+    closeDb();
+    config.itemBusStoreDir = previousDir;
+    config.appDbPath = previousDbPath;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a re-entrant queue-lock call passes through instead of deadlocking', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-queue-lock-reentrant-'));
+  const previousDir = config.itemBusStoreDir;
+  const previousDbPath = config.appDbPath;
+  config.itemBusStoreDir = dir;
+  config.appDbPath = path.join(dir, 'app.sqlite');
+
+  try {
+    // Nesting is a bug, but now that the lock waits it would hang rather than throw.
+    // The caller already holds exclusive access, so the inner body simply runs.
+    const result = await withQueueLock(async () => withQueueLock(async () => 'inner ran'));
+    assert.equal(result, 'inner ran');
+  } finally {
+    closeDb();
+    config.itemBusStoreDir = previousDir;
+    config.appDbPath = previousDbPath;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('raw row writers reject calls outside withQueueLock', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-queue-writer-guard-'));
+  const previousDir = config.itemBusStoreDir;
+  const previousDbPath = config.appDbPath;
+  config.itemBusStoreDir = dir;
+  config.appDbPath = path.join(dir, 'app.sqlite');
+
+  try {
+    await saveQueue([]);
+    const item = createQueueItem({
+      id: 'q_guarded_writer',
+      title: 'Guarded writer',
+      shortDesc: 'Raw row writes require exclusive queue ownership.',
+      url: 'https://example.com/guarded-writer',
+      addedAt: '2026-07-25T00:00:00.000Z',
+      state: 'approved',
+      stateChangedAt: '2026-07-25T00:00:00.000Z',
+    });
+
+    await assert.rejects(() => insertQueueItem(item), /requires withQueueLock/);
+    await assert.rejects(() => upsertQueueItems([item]), /requires withQueueLock/);
+    await assert.rejects(() => deleteQueueItems([item.id]), /requires withQueueLock/);
+
+    await withQueueLock(async () => {
+      assert.equal((await insertQueueItem(item)).inserted, true);
+      item.stateReason = 'Safely updated while holding the lock.';
+      await upsertQueueItems([item]);
+      assert.equal(await deleteQueueItems([item.id]), 1);
+    });
+  } finally {
+    closeDb();
+    config.itemBusStoreDir = previousDir;
+    config.appDbPath = previousDbPath;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('reapExpiredQueueItems physically deletes stale rows without touching active rows', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-queue-reaper-'));
+  const previousDir = config.itemBusStoreDir;
+  const previousDbPath = config.appDbPath;
+  config.itemBusStoreDir = dir;
+  config.appDbPath = path.join(dir, 'app.sqlite');
+
+  try {
+    const make = (id: string, stateChangedAt: string) => createQueueItem({
+      id,
+      title: id,
+      shortDesc: `${id} lifecycle`,
+      url: `https://example.com/${id}`,
+      addedAt: stateChangedAt,
+      state: 'approved',
+      stateChangedAt,
+      payload: { body: 'The reaper does not need to parse this payload.' },
+    });
+    await saveQueue([
+      make('q_stale', '2026-07-17T00:00:00.000Z'),
+      make('q_active', '2026-07-20T00:00:00.001Z'),
+      make('q_invalid_anchor', 'not-a-date'),
+    ]);
+
+    assert.equal(await reapExpiredQueueItems(Date.parse('2026-07-27T00:00:00.000Z')), 2);
+    assert.deepEqual((await loadQueue()).map((item) => item.id), ['q_active']);
+  } finally {
+    closeDb();
+    config.itemBusStoreDir = previousDir;
+    config.appDbPath = previousDbPath;
     await rm(dir, { recursive: true, force: true });
   }
 });

@@ -7,6 +7,8 @@ export const AdminLoginBodySchema = z.object({
 
 export const DefaultModelBodySchema = z.object({
   alias: z.string().min(1),
+  /** Platform default reasoning level; empty string resets to 'medium'. */
+  reasoningLevel: z.string().max(32).optional(),
 }).strict();
 
 export const PlatformSettingsBodySchema = z.object({
@@ -71,6 +73,8 @@ export const CronJobUpdateBodySchema = z.object({
   enabled: z.boolean().optional(),
   cron: z.string().optional(),
   modelAlias: z.string().optional(),
+  /** Per-job reasoning level override; empty string means follow the platform default. */
+  reasoningLevel: z.string().max(32).optional(),
   approvalRequired: z.boolean().optional(),
   prompt: z.string().optional(),
   params: z.record(z.unknown()).optional(),
@@ -98,6 +102,10 @@ export const ChatMessageBodySchema = z.object({
   message: z.string().min(1).max(8000),
   conversationId: z.string().min(1).max(120).optional(),
   projectId: z.string().min(1).max(120).nullable().optional(),
+  /** Model the composer switched to for this thread; sticky for later turns. */
+  modelAlias: z.string().min(1).max(120).optional(),
+  /** Reasoning level the composer switched to for this thread; sticky for later turns. */
+  reasoningLevel: z.string().min(1).max(40).optional(),
 }).strict();
 
 export const GenerateWorkerBodySchema = z.object({
@@ -129,9 +137,13 @@ export const ModelOptionSchema = z.object({
   id: z.string(),
   label: z.string(),
   provider: z.string(),
+  /** Vendor-declared reasoning levels; absent when the model has no selectable level. */
+  reasoningLevels: z.array(z.string()).optional(),
 }).strict();
 
 export const RunStatusSchema = z.enum(['idle', 'success', 'error', 'skipped']);
+
+const FieldConditionSchema = z.object({ field: z.string(), equals: z.string() }).strict();
 
 export const JobDashboardFieldSchema = z.discriminatedUnion('type', [
   z.object({
@@ -143,6 +155,7 @@ export const JobDashboardFieldSchema = z.discriminatedUnion('type', [
     placeholder: z.string().optional(),
     helpText: z.string().optional(),
     seedPath: z.string().optional(),
+    visibleWhen: FieldConditionSchema.optional(),
   }).strict(),
   z.object({
     key: z.string(),
@@ -154,6 +167,7 @@ export const JobDashboardFieldSchema = z.discriminatedUnion('type', [
     placeholder: z.string().optional(),
     helpText: z.string().optional(),
     seedPath: z.string().optional(),
+    visibleWhen: FieldConditionSchema.optional(),
   }).strict(),
   z.object({
     key: z.string(),
@@ -166,6 +180,7 @@ export const JobDashboardFieldSchema = z.discriminatedUnion('type', [
     step: z.number().optional(),
     helpText: z.string().optional(),
     seedPath: z.string().optional(),
+    visibleWhen: FieldConditionSchema.optional(),
   }).strict(),
   z.object({
     key: z.string(),
@@ -175,6 +190,7 @@ export const JobDashboardFieldSchema = z.discriminatedUnion('type', [
     group: z.string().optional(),
     helpText: z.string().optional(),
     seedPath: z.string().optional(),
+    visibleWhen: FieldConditionSchema.optional(),
   }).strict(),
   z.object({
     key: z.string(),
@@ -186,8 +202,10 @@ export const JobDashboardFieldSchema = z.discriminatedUnion('type', [
       label: z.string(),
       value: z.string(),
     }).strict()),
+    dynamicOptions: z.boolean().optional(),
     helpText: z.string().optional(),
     seedPath: z.string().optional(),
+    visibleWhen: FieldConditionSchema.optional(),
   }).strict(),
   z.object({
     key: z.string(),
@@ -200,6 +218,7 @@ export const JobDashboardFieldSchema = z.discriminatedUnion('type', [
     placeholder: z.string().optional(),
     helpText: z.string().optional(),
     seedPath: z.string().optional(),
+    visibleWhen: FieldConditionSchema.optional(),
   }).strict(),
   z.object({
     key: z.string(),
@@ -210,6 +229,7 @@ export const JobDashboardFieldSchema = z.discriminatedUnion('type', [
     placeholder: z.string().optional(),
     helpText: z.string().optional(),
     seedPath: z.string().optional(),
+    visibleWhen: FieldConditionSchema.optional(),
   }).strict(),
   z.object({
     key: z.string(),
@@ -220,6 +240,7 @@ export const JobDashboardFieldSchema = z.discriminatedUnion('type', [
     group: z.string().optional(),
     helpText: z.string().optional(),
     seedPath: z.string().optional(),
+    visibleWhen: FieldConditionSchema.optional(),
   }).strict(),
   z.object({
     key: z.string(),
@@ -230,14 +251,12 @@ export const JobDashboardFieldSchema = z.discriminatedUnion('type', [
     method: z.enum(['POST', 'GET']).optional(),
     buttonLabel: z.string().optional(),
     openInPopup: z.boolean().optional(),
-    enabledWhen: z.object({
-      field: z.string(),
-      equals: z.string(),
-    }).strict().optional(),
+    enabledWhen: FieldConditionSchema.optional(),
     disabled: z.boolean().optional(),
     disabledReason: z.string().optional(),
     helpText: z.string().optional(),
     seedPath: z.string().optional(),
+    visibleWhen: FieldConditionSchema.optional(),
   }).strict(),
 ]);
 
@@ -254,6 +273,7 @@ export const SchedulerJobStateSchema = z.object({
   cron: z.string(),
   nextScheduledAt: z.string().nullable(),
   modelAlias: z.string(),
+  reasoningLevel: z.string().default(''),
   approvalRequired: z.boolean(),
   promptEditable: z.boolean(),
   promptHelpText: z.string().optional(),
@@ -273,8 +293,9 @@ export const SchedulerJobStateSchema = z.object({
     }).strict(),
   ),
   effectiveModelAlias: z.string(),
-  queued: z.boolean(),
-  queuedAt: z.string().nullable(),
+  effectiveReasoningLevel: z.string().default(''),
+  queued: z.boolean().default(false),
+  queuedAt: z.string().nullable().default(null),
   running: z.boolean(),
   lastStartedAt: z.string().nullable(),
   lastFinishedAt: z.string().nullable(),
@@ -303,6 +324,7 @@ export const SchedulerRunRecordSchema = z.object({
   error: z.string().nullable(),
   itemCount: z.number().nullable(),
   skipReason: z.enum(['missed', 'overlap', 'no_work']).nullable().optional(),
+  missedSlotCount: z.number().int().min(1).optional(),
   attempts: z.array(z.object({
     attempt: z.number().int().min(1),
     startedAt: z.string(),
@@ -394,6 +416,8 @@ export const WorkerOnboardingActionSchema = z.object({
   description: z.string(),
   endpoint: z.string().optional(),
   runJob: z.string().optional(),
+  navigateWorkerTab: z.boolean().optional(),
+  completedWhenHealthKey: z.string().optional(),
   priority: z.number().optional(),
 }).strict();
 
@@ -447,13 +471,14 @@ export const WorkerSummarySchema = z.object({
   tagline: z.string().optional(),
   chatPrompts: z.array(WorkerChatPromptExampleSchema),
   onboarding: WorkerOnboardingActionSchema.optional(),
-  demoNotice: z.string().optional(),
-  bfrostEngineRange: z.string().optional(),
+  BFrostEngineRange: z.string().optional(),
   builtIn: z.boolean(),
   /** True when the built-in worker can be soft-deleted and restored from the store. */
   deletable: z.boolean().optional(),
   kind: z.enum(['feature', 'channel', 'provider']),
+  portfolioSource: z.boolean().optional(),
   section: z.enum(['workers', 'system']).optional(),
+  menuOrder: z.number().optional(),
   settingsOnly: z.boolean().optional(),
   enabled: z.boolean(),
   missing: z.boolean(),
@@ -512,6 +537,13 @@ export const QueueDashboardSchema = z.object({
 export const HealthStatusSchema = z.object({
   ok: z.boolean(),
   detail: z.string(),
+  label: z.string().optional(),
+  action: z.object({
+    label: z.string(),
+    method: z.literal('POST'),
+    path: z.string().startsWith('/'),
+    successMessage: z.string(),
+  }).strict().optional(),
 }).strict();
 
 export const EventLogRecordSchema = z.object({
@@ -564,6 +596,45 @@ export type FactoryResetBody = z.infer<typeof FactoryResetBodySchema>;
 // models, worker-owned slices, source rules) are fetched lazily by per-tab endpoints. The
 // shell response below carries everything needed to render the tab bar + overview at
 // console open time; tabs request their slice when the user navigates to them.
+// The platform's active-scope summary. Worker-agnostic: `providerWorkerId` names whichever
+// worker declared `scopeProvider`, and `activeScopeId` is the opaque selected scope. The
+// option list lives in that worker's `workerData` slice (a `scopes` array), not here.
+export const DashboardScopeSchema = z.object({
+  providerWorkerId: z.string().nullable(),
+  activeScopeId: z.string().nullable(),
+}).strict();
+
+// Request body for PUT /api/active-scope.
+export const ActiveScopeBodySchema = z.object({
+  scopeId: z.string().min(1).nullable(),
+}).strict();
+export type ActiveScopeBody = z.infer<typeof ActiveScopeBodySchema>;
+
+// One block in the dashboard's live pipeline-stage strip. Derived generically from any
+// registered job that declares `pendingCount` + `pipelineStageOrder` on its manifest — see
+// `WorkerJobManifest` in `workers/types.ts`. Core has no knowledge of which specific workers
+// these are.
+export const PipelineStageSummarySchema = z.object({
+  jobId: z.string(),
+  workerId: z.string(),
+  workerDisplayName: z.string(),
+  jobLabel: z.string(),
+  pendingCount: z.number(),
+  order: z.number(),
+  // Live execution state for this stage's job, joined from the scheduler snapshot.
+  // `pendingCount` alone only says work is waiting — these say whether it is moving.
+  // Defaulted so older payloads and fixtures parse unchanged.
+  running: z.boolean().default(false),
+  queued: z.boolean().default(false),
+  /** ISO timestamp the current run started, when `running`. Drives the elapsed readout. */
+  startedAt: z.string().nullable().default(null),
+}).strict();
+export const PipelineStagesSectionSchema = z.object({
+  pipelineStages: z.array(PipelineStageSummarySchema),
+}).strict();
+export type PipelineStageSummary = z.infer<typeof PipelineStageSummarySchema>;
+export type PipelineStagesSection = z.infer<typeof PipelineStagesSectionSchema>;
+
 export const DashboardStateSchema = z.object({
   app: z.object({
     name: z.string(),
@@ -574,6 +645,8 @@ export const DashboardStateSchema = z.object({
   }).strict(),
   models: z.array(ModelOptionSchema),
   defaultModel: ModelOptionSchema,
+  /** Platform-wide reasoning level applied when a job has no per-job override. */
+  defaultReasoningLevel: z.string().default('medium'),
   localRuntime: z.object({
     running: z.boolean(),
     loadedModels: z.array(z.string()).optional(),
@@ -597,6 +670,8 @@ export const DashboardStateSchema = z.object({
   backups: z.array(AppBackupRecordSchema).optional(),
   workerData: z.record(z.unknown()).default({}),
   recipes: z.array(WorkerRecipeSchema).default([]),
+  scope: DashboardScopeSchema.default({ providerWorkerId: null, activeScopeId: null }),
+  pipelineStages: z.array(PipelineStageSummarySchema).default([]),
 }).passthrough();
 
 // Per-section schemas. Each section endpoint returns one of these so the frontend can
@@ -607,6 +682,7 @@ export const QueueSectionSchema = z.object({
 
 export const CronRunsSectionSchema = z.object({
   runs: z.array(SchedulerRunRecordSchema),
+  jobs: z.array(SchedulerJobStateSchema).optional(),
 }).strict();
 
 export const EventsSectionSchema = z.object({

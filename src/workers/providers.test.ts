@@ -208,13 +208,13 @@ test('OpenAI provider exposes API/subscription settings and can generate through
 
     const adapter = createOpenAIProviderAdapter();
     assert.equal(adapter.isConfigured(), true);
-    assert.deepEqual(await adapter.listAvailableModels?.(), [
-      {
-        id: 'gpt-subscription-test',
-        alias: 'openai-subscription-gpt-subscription-test',
-        label: 'ChatGPT subscription (gpt-subscription-test)',
-      },
-    ]);
+    const subModels = await adapter.listAvailableModels?.();
+    assert.ok(Array.isArray(subModels) && subModels.length > 1, 'subscription mode returns multiple models');
+    assert.deepEqual(subModels?.[0], {
+      id: 'gpt-subscription-test',
+      alias: 'openai-subscription-gpt-subscription-test',
+      label: 'ChatGPT subscription (gpt-subscription-test)',
+    });
     const model = adapter.getChatModel('gpt-subscription-test') as LanguageModelV3;
     const result = await model.doGenerate(callOptions('hello from bfrost'));
     assert.equal(result.content.find((part) => part.type === 'text')?.text, 'openai subscription reply');

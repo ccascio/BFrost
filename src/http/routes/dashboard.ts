@@ -11,6 +11,7 @@ import {
   buildLocalRuntimeModelsSection,
   buildLocalEmbeddingModelsSection,
   buildJobMetricsSection,
+  buildPipelineStagesSection,
 } from '../../admin-dashboard-state';
 import { subscribeToEventLog, type EventLogRecord } from '../../event-log';
 
@@ -20,6 +21,9 @@ export function registerDashboardRoutes(router: HttpRouter): void {
   });
   router.add('GET', '/api/dashboard/queue', async (_req, res) => {
     return sendJson(res, 200, await buildQueueSection());
+  });
+  router.add('GET', '/api/dashboard/pipeline-stages', async (_req, res) => {
+    return sendJson(res, 200, await buildPipelineStagesSection());
   });
   router.add('GET', '/api/dashboard/cron-runs', async (_req, res) => {
     return sendJson(res, 200, await buildCronRunsSection());

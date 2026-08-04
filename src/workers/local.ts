@@ -167,6 +167,8 @@ const LocalWorkerManifestSchema = z.object({
   chatPrompts: z.array(ChatPromptSchema).optional(),
   owner: z.string().optional(),
   kind: z.enum(['feature', 'channel', 'provider']).optional(),
+  /** Opaque capability marker for workers that can source external portfolio state. */
+  portfolioSource: z.boolean().optional(),
   /** Language the backend is authored in. Defaults to "javascript". */
   language: z.enum(['javascript', 'typescript']).optional(),
   /** Path to the compiled JS entrypoint, relative to worker.json. Required when backend code is present. */

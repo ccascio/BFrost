@@ -7,6 +7,7 @@ import {
   findModel,
   getDefaultModelAlias,
   replaceDiscoveredProviderModels,
+  resolveReasoningLevel,
 } from './config';
 import { seedDeclaredProviderModels } from './model-discovery';
 
@@ -48,5 +49,18 @@ test('model catalog includes discovered provider models without duplicating buil
     assert.equal(availableModels.filter((model) => model.id === 'gpt-5.5').length, 1);
   } finally {
     clearDiscoveredProviderModels('lmstudio');
+  }
+});
+
+test('reasoning resolution falls back to a supported vendor level instead of silently sending none', () => {
+  const previous = config.defaultReasoningLevel;
+  config.defaultReasoningLevel = 'medium';
+  try {
+    assert.equal(resolveReasoningLevel({ reasoningLevels: ['low', 'high'] }), 'low');
+    assert.equal(resolveReasoningLevel({ reasoningLevels: ['low', 'medium', 'high'] }), 'medium');
+    assert.equal(resolveReasoningLevel({ reasoningLevels: ['low', 'high'] }, 'high'), 'high');
+    assert.equal(resolveReasoningLevel({ reasoningLevels: [] }, 'high'), undefined);
+  } finally {
+    config.defaultReasoningLevel = previous;
   }
 });

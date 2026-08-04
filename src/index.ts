@@ -1,3 +1,6 @@
+// First import on purpose: tunes outbound TCP connect behaviour before any module
+// can issue a fetch. See ./net-tuning for why the default breaks on slow links.
+import './net-tuning';
 import { catchUpMissedRunsOnStartup, startScheduler, stopScheduler } from './scheduler';
 import { startAdminServer, stopAdminServer } from './admin-server';
 import { applyPendingRestoreIfAny, startAutoBackup, stopAutoBackup } from './app-backup';
@@ -10,10 +13,10 @@ import {
   listRegisteredChannels,
   setHiddenBuiltInIds,
 } from './workers/registry';
-import { bootstrapLocalWorkers } from './workers/bootstrap';
+import { bootstrapLocalWorkers, migrateBuiltInWorkers } from './workers/bootstrap';
 import { startLocalWorkerWatcher, type LocalWorkerWatcher } from './workers/watch';
 import { loadWorkerState } from './workers/state';
-import { builtInWorkers } from './workers/builtin';
+import { builtInWorkers, builtInWorkerModules } from './workers/builtin';
 import { applyPlatformSettingsToConfig, loadAdminSettings } from './admin-config';
 import { releaseStaleQueueLockOnBoot } from './jobs/queue';
 import { registerBfrostRuntimeModule } from './sdk-runtime';
@@ -56,6 +59,10 @@ async function cleanupForExit(scope: string): Promise<void> {
 async function main(): Promise<void> {
   // Apply any pending restore before the DB is opened for the first time.
   await applyPendingRestoreIfAny();
+  // Claim the shared SQLite runtime before hydration or queue-lock cleanup can
+  // mutate state. A competing backend must be rejected before either process can
+  // touch the other's live Item Bus lock.
+  await acquireRuntimeLock();
 
   const health = await getAppHealthSnapshot();
   // No local-runtime dependency is a hard requirement: local runtimes are optional
@@ -67,8 +74,7 @@ async function main(): Promise<void> {
   await hydrateProjects();
   await releaseStaleQueueLockOnBoot();
   await ensureActionTable();
-  await acquireRuntimeLock();
-  // Make `import { ... } from 'bfrost'` resolvable inside local worker bundles.
+  // Make `import { ... } from 'WFrost'` resolvable inside local worker bundles.
   // Must happen before bootstrapLocalWorkers so the first require() inside a worker
   // entrypoint sees the synthetic module.
   registerBfrostRuntimeModule();
@@ -87,8 +93,14 @@ async function main(): Promise<void> {
     setHiddenBuiltInIds(bootHiddenIds);
   }
 
+  // Built-ins get their `onMigrate` here: they are statically imported, so they never pass
+  // through the local-worker activation path that runs the lifecycle hooks. Before the
+  // scheduler starts, so a worker migrating its own storage is not racing its own jobs.
+  await migrateBuiltInWorkers(builtInWorkerModules, bootState);
+
   const localWorkers = await bootstrapLocalWorkers();
-  await refreshActiveLocalProviderModels();
+  // Local discovery can wake a desktop runtime. Delay it until after we know whether the
+  // selected default model actually needs that runtime; cloud discovery is safe here.
   // Best-effort: cloud providers self-skip when their key is missing, so it's safe to run
   // unconditionally. Network failures here just leave the discovered list empty.
   await refreshCloudProviderModels();
@@ -139,6 +151,7 @@ async function main(): Promise<void> {
           startedRuntimes.push(activeLocalAdapter);
         }
         console.log(`[BFrost] Provider ${activeLocalAdapter.providerId} ready.`);
+        await refreshActiveLocalProviderModels();
       } catch (err) {
         console.warn(
           `[BFrost] Provider ${activeLocalAdapter.providerId} could not start its local runtime; ` +
@@ -147,8 +160,6 @@ async function main(): Promise<void> {
       }
     }
   }
-  await refreshActiveLocalProviderModels();
-
   await startAdminServer();
   await startScheduler();
   await startAutoBackup();

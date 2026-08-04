@@ -20,7 +20,7 @@ export interface WorkerManifest {
    * requires. Used by the store's compatibility badge and the host's install
    * guard. Example: `">=0.2.0"`. When absent, any version is assumed compatible.
    */
-  bfrostEngineRange?: string;
+  BFrostEngineRange?: string;
   id: string;
   name: string;
   /**
@@ -52,12 +52,7 @@ export interface WorkerManifest {
    * worker's own jobs and shows the result inline.
    */
   onboarding?: WorkerOnboardingAction;
-  /**
-   * Optional persistent banner shown at the top of the dashboard while this worker is
-   * enabled. Worker-agnostic: the core renders whatever enabled workers expose, naming none —
-   * disabling or deleting the worker removes its banner. Use it for "you're in a special mode"
-   * notices, e.g. a demo worker telling the operator how to turn the demo off.
-   */
+  /** Optional persistent banner shown while this worker is enabled. */
   demoNotice?: string;
   owner?: string;
   builtIn: boolean;
@@ -75,6 +70,11 @@ export interface WorkerManifest {
    */
   section?: 'workers' | 'system';
   /**
+   * Relative sort position for this worker in ordered lists such as the Jobs tab.
+   * Lower numbers sort first. Workers without a value sort after all numbered workers.
+   */
+  menuOrder?: number;
+  /**
    * When true, this worker's config surface is surfaced inside the Settings modal
    * (Config tab) rather than as a standalone sidebar entry. Has no effect on workers
    * that also declare a dashboard view tab (those keep their sidebar slot).
@@ -86,6 +86,25 @@ export interface WorkerManifest {
   requiredDependencies?: WorkerHealthRequirement[];
   optionalDependencies?: WorkerHealthRequirement[];
   ownedSettings?: WorkerOwnedSetting[];
+  /**
+   * When `true`, this worker supplies the platform's selectable "scopes" — an opaque,
+   * worker-agnostic notion the core renders as a top-bar switcher (e.g. the active
+   * WordPress site, a workspace, an account). Core never learns what a scope *is*: it
+   * reads the option list from this worker's `loadDashboardData()` slice under a `scopes`
+   * array (`{ id, label, health? }`) and tracks only the active scope id. Exactly one
+   * enabled worker should declare this; removing that worker removes the switcher.
+   */
+  scopeProvider?: boolean;
+  /**
+   * When `true`, this worker can refresh externally-held portfolio data (a brokerage
+   * sync, e.g. eToro) — an opaque, worker-agnostic capability the core and other
+   * workers can query without knowing which platform is behind it. A worker declaring
+   * this owns its own credentials/auth dashboard and produces `portfolio.sync` Item
+   * Bus items in response to `portfolio.sync.request`. Any number of workers may
+   * declare this — one per brokerage platform, discovered generically (e.g. by
+   * `desk.portfolio`'s Refresh button) rather than named individually.
+   */
+  portfolioSource?: boolean;
   dashboard?: WorkerDashboardManifest;
   jobs: WorkerJobManifest[];
   channels?: WorkerChannelManifest[];
@@ -107,7 +126,7 @@ export interface WorkerManifest {
    *   `shell:<command-name>`      — allow running a specific command via requestShell
    *   `shell:*`                   — allow running any command
    *
-   * Example: `["file:read:/home/user/docs", "file:write:/tmp/bfrost-output", "shell:ffmpeg"]`
+   * Example: `["file:read:/home/user/docs", "file:write:/tmp/BFrost-output", "shell:ffmpeg"]`
    */
   permissions?: string[];
   /**
@@ -126,10 +145,7 @@ export interface WorkerManifest {
    * Core collects all recipes via the registry and applies them generically — no worker IDs
    * appear in core code, only in the manifest where they are declared.
    */
-  /**
-   * Optional sample items published by `/api/admin/seed-sample-data` on first boot.
-   * Core iterates all workers' sample items generically — no worker ids appear in core code.
-   */
+  /** Optional sample items published by `/api/admin/seed-sample-data` on first boot. */
   sampleItems?: WorkerSampleItem[];
   recipes?: WorkerRecipe[];
 }
@@ -227,6 +243,19 @@ export interface WorkerOnboardingAction {
   endpoint?: string;
   /** Name of a job belonging to this worker to trigger when the CTA is activated. */
   runJob?: string;
+  /**
+   * When `true`, activating the CTA navigates to this worker's own dashboard tab instead
+   * of running an endpoint/job. Use for setup-style actions whose next step is a form the
+   * worker renders (e.g. "connect your first site"). The core does the routing generically —
+   * it only knows "open the contributing worker's tab", never which worker.
+   */
+  navigateWorkerTab?: boolean;
+  /**
+   * Optional worker health requirement key that marks this onboarding action complete.
+   * This lets setup-style CTAs disappear once their worker-owned prerequisite is satisfied
+   * without the shell learning worker-specific concepts.
+   */
+  completedWhenHealthKey?: string;
   /** Lower sorts first across all workers' actions. Defaults to 100 when unset. */
   priority?: number;
 }
@@ -279,6 +308,11 @@ export interface WorkerToolManifest {
   permissions?: string[];
   /** True when the tool is enabled by default for agents that don't opt-in explicitly. */
   defaultEnabled?: boolean;
+  /**
+   * Generic capability tag (e.g. `'web-search'`). Lets core suppress this tool in favor of
+   * a provider's native equivalent without core knowing this specific worker or tool id.
+   */
+  capability?: string;
   /** Executes the tool. Receives validated input and returns a string for the model. */
   execute: (input: any) => Promise<string>;
 }
@@ -369,17 +403,34 @@ export interface WorkerJobManifest {
    */
   presets?: WorkerJobPreset[];
   /**
-   * Optional lightweight eligibility check used by the scheduler before it prepares
-   * a model runtime. Producers can omit this and keep cron as their external beat;
-   * consumers can return true when their input queue has work ready.
+   * Optional fast check called BEFORE the model is loaded. Return false to skip the run
+   * entirely (no LLM load, no unload, no memory purge). Use for jobs whose LLM cost is
+   * only worthwhile when items are actually waiting — e.g. Writer, Reviewer, Researcher,
+   * SEO. Leave undefined to always load the model (correct for jobs that always produce
+   * output regardless of queue state, e.g. Scout).
    */
-  hasWork?: (params?: Record<string, unknown>) => boolean | Promise<boolean>;
+  hasWork?: (params?: Record<string, unknown>) => Promise<boolean>;
   /**
-   * Item types that wake this job immediately after publication. Wakes are debounced
-   * and still pass through enabled/running/hasWork guards; the periodic pipeline tick
-   * remains the recovery path for missed in-process events.
+   * Item types that wake this job the moment one is published to the Item Bus, instead
+   * of waiting for the next pipeline tick. Wakes are debounced and pass through the same
+   * guards as any non-manual trigger (job enabled, worker enabled, not already running,
+   * `hasWork` when defined) — a wake is a hint, not a command. The periodic pipeline
+   * tick remains the catch-up safety net for missed events, so consumers should declare
+   * `wakeOn` *in addition to* `hasWork`, not instead of it.
    */
   wakeOn?: string[];
+  /**
+   * Optional count of items currently waiting for this job to process. Mirrors `hasWork`'s
+   * eligibility filter but returns the count instead of a boolean — used to render live
+   * pipeline-stage blocks on the dashboard. Return 0 when nothing is pending.
+   */
+  pendingCount?: (params?: Record<string, unknown>) => Promise<number>;
+  /**
+   * Optional left-to-right position for this job's block in the dashboard's live
+   * pipeline-stage strip. Jobs without `pendingCount` are never shown regardless of this
+   * value. Lower numbers render first.
+   */
+  pipelineStageOrder?: number;
   run: (modelId: string, params?: Record<string, unknown>) => Promise<WorkerJobRunResult>;
 }
 
@@ -437,6 +488,8 @@ interface WorkerJobBaseField {
    * current `core.news.sourceRules.minScore`) instead of the static `defaultValue`.
    */
   seedPath?: string;
+  /** Hide this field unless another field in the same form matches the given condition. */
+  visibleWhen?: WorkerDashboardFieldCondition;
 }
 
 export interface WorkerJobTextField extends WorkerJobBaseField {
@@ -469,6 +522,8 @@ export interface WorkerJobSelectField extends WorkerJobBaseField {
   type: 'select';
   defaultValue: string;
   options: Array<{ label: string; value: string }>;
+  /** When true, the renderer replaces `options` with `fieldSuggestions[key]` from the worker data slice. */
+  dynamicOptions?: boolean;
 }
 
 export interface WorkerJobStringListField extends WorkerJobBaseField {

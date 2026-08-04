@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
-import type { DashboardState, QueueItem, WorkerSummary } from '../app-types';
+import { useEffect, useRef, useState } from 'react';
+import type { DashboardState, PipelineStageSummary, QueueItem, WorkerSummary } from '../app-types';
 
 const LEGACY_PRODUCER_ID = 'legacy.producer';
 
@@ -62,6 +63,98 @@ export function buildPipelineTopology(items: QueueItem[], workers: WorkerSummary
     totalItems: items.length,
     unconsumedCount,
   };
+}
+
+/**
+ * Live pipeline-stage strip: one animated block per registered job that opted in via
+ * `pendingCount` + `pipelineStageOrder` on its manifest (see `WorkerJobManifest`). This
+ * component has no knowledge of which specific workers those are — it just renders
+ * whatever `dashboard.pipelineStages` reports, already sorted by `order`.
+ */
+export function PipelineStageBlocks({ stages }: { stages: PipelineStageSummary[] }): ReactNode {
+  const previousCounts = useRef<Record<string, number>>({});
+  const [bumpedIds, setBumpedIds] = useState<Set<string>>(new Set());
+  const bumpTimers = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    const prev = previousCounts.current;
+    const changed: string[] = [];
+    for (const stage of stages) {
+      if (prev[stage.jobId] !== undefined && prev[stage.jobId] !== stage.pendingCount) {
+        changed.push(stage.jobId);
+      }
+      prev[stage.jobId] = stage.pendingCount;
+    }
+    if (changed.length === 0) return;
+
+    setBumpedIds((current) => new Set([...current, ...changed]));
+    for (const jobId of changed) {
+      if (bumpTimers.current[jobId]) window.clearTimeout(bumpTimers.current[jobId]);
+      bumpTimers.current[jobId] = window.setTimeout(() => {
+        setBumpedIds((current) => {
+          const next = new Set(current);
+          next.delete(jobId);
+          return next;
+        });
+      }, 600);
+    }
+  }, [stages]);
+
+  useEffect(() => {
+    return () => {
+      for (const timer of Object.values(bumpTimers.current)) window.clearTimeout(timer);
+    };
+  }, []);
+
+  if (stages.length === 0) {
+    return (
+      <div className="empty-state">
+        <p>No pipeline stages registered yet.</p>
+        <p className="footnote">
+          Enable a worker that declares a pipeline stage (a job with a pending-item count) to
+          see live blocks here.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pipeline-stage-strip">
+      {stages.map((stage, index) => (
+        <div key={stage.jobId} style={{ display: 'contents' }}>
+          <div
+            className={
+              'pipeline-stage-block' +
+              (stage.pendingCount > 0 ? ' pipeline-stage-active' : '') +
+              (stage.running ? ' pipeline-stage-running' : '') +
+              (bumpedIds.has(stage.jobId) ? ' pipeline-stage-bump' : '')
+            }
+          >
+            <strong className="pipeline-stage-count">{stage.pendingCount}</strong>
+            <span className="pipeline-stage-name">{stage.workerDisplayName}</span>
+            <span className="pipeline-stage-job footnote">{stage.jobLabel}</span>
+            {/* The counts say what is waiting; this says what is actually moving. */}
+            {stage.running ? (
+              <span className="pipeline-stage-state running">
+                <span className="pipeline-stage-spinner" aria-hidden />
+                Running
+              </span>
+            ) : stage.queued ? (
+              <span className="pipeline-stage-state queued">Queued</span>
+            ) : null}
+          </div>
+          {index < stages.length - 1 ? (
+            <div className="pipeline-lane pipeline-stage-lane" aria-hidden>
+              <div className="pipeline-lane-track">
+                <span className="pipeline-dot" style={{ '--dot-delay': '0s' } as CSSProperties} />
+                <span className="pipeline-dot" style={{ '--dot-delay': '0.6s' } as CSSProperties} />
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function renderPipelineTab(dashboard: DashboardState, onRunDemo: () => void): ReactNode {

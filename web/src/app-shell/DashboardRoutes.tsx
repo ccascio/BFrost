@@ -15,6 +15,7 @@ import { JobOperationsPanel } from '../tabs/JobOperationsPanel';
 import { PlatformRoutingPanel, PlatformSecurityPanel } from '../tabs/PlatformConfigPanels';
 import { WorkerConfigPage } from '../tabs/WorkerConfigPage';
 import type { SettingsWorkerEntry } from '../tabs/ConfigTab';
+import { OperationalRoutes } from './OperationalRoutes';
 
 export function DashboardRoutes(props: any) {
   const {
@@ -82,6 +83,22 @@ export function DashboardRoutes(props: any) {
     store,
   } = props;
 
+  // Persists a per-job model override; empty alias falls back to the platform default.
+  // An empty reasoningLevel likewise falls back to the platform default level.
+  function saveJobModel(job: any, modelAlias: string, reasoningLevel?: string) {
+    return mutate(
+      `job-model-${job.name}`,
+      `/api/cron-jobs/${encodeURIComponent(job.name)}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(
+          reasoningLevel === undefined ? { modelAlias } : { modelAlias, reasoningLevel },
+        ),
+      },
+      `${job.label} model updated.`,
+    );
+  }
+
   return (
     <>
       {activeTab === 'overview' ? (
@@ -92,7 +109,6 @@ export function DashboardRoutes(props: any) {
           setError={setError}
           setDashboard={setDashboard}
           setActiveTab={setActiveTab}
-          onboardingRan={overview.onboardingRan}
           runDemoAction={overview.runDemoAction}
           fetchDashboard={fetchDashboard}
           firstResultJob={overview.firstResultJob}
@@ -102,10 +118,11 @@ export function DashboardRoutes(props: any) {
           setLmAdoptDismissed={overview.setLmAdoptDismissed}
           lmAdopting={overview.lmAdopting}
           setLmAdopting={overview.setLmAdopting}
+          setWizardOpen={setWizardOpen}
+          onboardingRan={overview.onboardingRan}
           demoNarration={overview.demoNarration}
           demoRecap={overview.demoRecap}
           setDemoRecap={overview.setDemoRecap}
-          setWizardOpen={setWizardOpen}
           starAsk={overview.starAsk}
           dismissStarAsk={overview.dismissStarAsk}
           wizardCompleted={wizardCompleted}
@@ -150,6 +167,10 @@ export function DashboardRoutes(props: any) {
           setActiveProjectId={chat.setActiveProjectId}
           activeConversationId={chat.activeConversationId}
           chatArrivingFromOverview={chat.chatArrivingFromOverview}
+          chatModelAlias={chat.chatModelAlias}
+          setChatModelAlias={chat.setChatModelAlias}
+          chatReasoningLevel={chat.chatReasoningLevel}
+          setChatReasoningLevel={chat.setChatReasoningLevel}
           chatQuery={chat.chatQuery}
           setChatQuery={chat.setChatQuery}
           projectComboOpen={chat.projectComboOpen}
@@ -179,22 +200,7 @@ export function DashboardRoutes(props: any) {
         />
       ) : null}
 
-      {activeTab === 'workers' ? (
-        <WorkersTab
-          dashboard={dashboard}
-          busyKey={busyKey}
-          workerDescription={operations.workers.workerDescription}
-          setWorkerDescription={operations.workers.setWorkerDescription}
-          generatedWorker={operations.workers.generatedWorker}
-          workerUploadFile={operations.workers.workerUploadFile}
-          setWorkerUploadFile={operations.workers.setWorkerUploadFile}
-          storeUpdates={store.storeUpdates}
-          generateWorkerFromDescription={operations.workers.generateWorkerFromDescription}
-          uploadWorkerZip={operations.workers.uploadWorkerZip}
-          deleteWorker={operations.workers.deleteWorker}
-          mutate={mutate}
-        />
-      ) : null}
+      <OperationalRoutes {...props} />
 
       <SettingsModal
         isOpen={settingsOpen}
@@ -220,6 +226,7 @@ export function DashboardRoutes(props: any) {
                 busyKey={busyKey}
                 fetchDashboard={fetchDashboard}
                 saveWorkerConfigurationSurface={saveWorkerConfigurationSurface}
+                saveJobModel={saveJobModel}
               />
             );
           }
@@ -266,6 +273,7 @@ export function DashboardRoutes(props: any) {
                     busyKey={busyKey}
                     fetchDashboard={fetchDashboard}
                     saveWorkerConfigurationSurface={saveWorkerConfigurationSurface}
+                    saveJobModel={saveJobModel}
                   />
                 ),
               }));
@@ -326,6 +334,72 @@ export function DashboardRoutes(props: any) {
               setActiveTab={operations.system.setActiveTab}
             />
           );
+          if (tab === 'jobs') return (
+            <JobsTab
+              dashboard={dashboard}
+              jobsByWorker={jobsByWorker}
+              selectedJob={selectedJob}
+              selectedJobRuns={selectedJobRuns}
+              setSelectedJobName={setSelectedJobName}
+              renderJobOperations={(job, runs) => (
+                <JobOperationsPanel
+                  dashboard={dashboard}
+                  job={job}
+                  runs={runs}
+                  busyKey={busyKey}
+                  jobDrafts={jobDrafts}
+                  setJobDrafts={setJobDrafts}
+                  confirmSaveJobName={confirmSaveJobName}
+                  setConfirmSaveJobName={setConfirmSaveJobName}
+                  openPromptEditors={openPromptEditors}
+                  setOpenPromptEditors={setOpenPromptEditors}
+                  customListItemDrafts={customListItemDrafts}
+                  setCustomListItemDrafts={setCustomListItemDrafts}
+                  mutate={mutate}
+                  triggerRun={triggerRun}
+                />
+              )}
+            />
+          );
+          if (tab === 'store') return (
+            <StoreTab
+              dashboard={dashboard}
+              storeWorkers={store.storeWorkers}
+              storeLoading={store.storeLoading}
+              storeError={store.storeError}
+              storeQuery={store.storeQuery}
+              setStoreQuery={store.setStoreQuery}
+              storeQueryInput={store.storeQueryInput}
+              setStoreQueryInput={store.setStoreQueryInput}
+              storeCategoryFilter={store.storeCategoryFilter}
+              setStoreCategoryFilter={store.setStoreCategoryFilter}
+              storeSelectedId={store.storeSelectedId}
+              setStoreSelectedId={store.setStoreSelectedId}
+              storeDetail={store.storeDetail}
+              setStoreDetail={store.setStoreDetail}
+              storeDetailLoading={store.storeDetailLoading}
+              sideloadFile={store.sideloadFile}
+              setSideloadFile={store.setSideloadFile}
+              setConsentTarget={store.setConsentTarget}
+              busyKey={busyKey}
+              fetchStoreCatalog={store.fetchStoreCatalog}
+              fetchStoreDetail={store.fetchStoreDetail}
+              installFromStore={store.installFromStore}
+              sideloadWorkerZip={store.sideloadWorkerZip}
+              mutate={store.mutate}
+            />
+          );
+          if (tab === 'health') return (
+            <HealthTab
+              jobMetrics={operations.health.jobMetrics}
+              jobMetricsLoading={operations.health.jobMetricsLoading}
+              jobMetricsError={operations.health.jobMetricsError}
+              fetchJobMetrics={operations.health.fetchJobMetrics}
+              expandedWorkerIds={operations.health.expandedWorkerIds}
+              setExpandedWorkerIds={operations.health.setExpandedWorkerIds}
+              setActiveTab={operations.health.setActiveTab}
+            />
+          );
           if (tab === 'actions') return (
             <ActionsTab
               pendingActions={operations.actions.pendingActions}
@@ -342,40 +416,13 @@ export function DashboardRoutes(props: any) {
         }}
       />
 
-      {activeTab === 'jobs' ? (
-        <JobsTab
-          dashboard={dashboard}
-          jobsByWorker={jobsByWorker}
-          selectedJob={selectedJob}
-          selectedJobRuns={selectedJobRuns}
-          setSelectedJobName={setSelectedJobName}
-          renderJobOperations={(job, runs) => (
-            <JobOperationsPanel
-              dashboard={dashboard}
-              job={job}
-              runs={runs}
-              busyKey={busyKey}
-              jobDrafts={jobDrafts}
-              setJobDrafts={setJobDrafts}
-              confirmSaveJobName={confirmSaveJobName}
-              setConfirmSaveJobName={setConfirmSaveJobName}
-              openPromptEditors={openPromptEditors}
-              setOpenPromptEditors={setOpenPromptEditors}
-              customListItemDrafts={customListItemDrafts}
-              setCustomListItemDrafts={setCustomListItemDrafts}
-              mutate={mutate}
-              triggerRun={triggerRun}
-            />
-          )}
-        />
-      ) : null}
-
       {activeWorkerTab ? renderWorkerDashboardView(activeWorkerTab, workerViewContext) : null}
 
       {activeTab.startsWith('worker-config:') ? (
         <WorkerConfigRoute
           activeTab={activeTab}
           configGroupsByWorker={configGroupsByWorker}
+          saveJobModel={saveJobModel}
           dashboard={dashboard}
           dashboardViews={dashboardViews}
           surfaceDrafts={surfaceDrafts}
@@ -389,54 +436,17 @@ export function DashboardRoutes(props: any) {
       ) : null}
 
 
-      {activeTab === 'store' ? (
-        <StoreTab
-          dashboard={dashboard}
-          storeWorkers={store.storeWorkers}
-          storeLoading={store.storeLoading}
-          storeError={store.storeError}
-          storeQuery={store.storeQuery}
-          setStoreQuery={store.setStoreQuery}
-          storeQueryInput={store.storeQueryInput}
-          setStoreQueryInput={store.setStoreQueryInput}
-          storeCategoryFilter={store.storeCategoryFilter}
-          setStoreCategoryFilter={store.setStoreCategoryFilter}
-          storeSelectedId={store.storeSelectedId}
-          setStoreSelectedId={store.setStoreSelectedId}
-          storeDetail={store.storeDetail}
-          setStoreDetail={store.setStoreDetail}
-          storeDetailLoading={store.storeDetailLoading}
-          sideloadFile={store.sideloadFile}
-          setSideloadFile={store.setSideloadFile}
-          setConsentTarget={store.setConsentTarget}
-          busyKey={busyKey}
-          fetchStoreCatalog={store.fetchStoreCatalog}
-          fetchStoreDetail={store.fetchStoreDetail}
-          installFromStore={store.installFromStore}
-          sideloadWorkerZip={store.sideloadWorkerZip}
-          mutate={store.mutate}
-        />
-      ) : null}
-
-      {activeTab === 'health' ? (
-        <HealthTab
-          jobMetrics={operations.health.jobMetrics}
-          jobMetricsLoading={operations.health.jobMetricsLoading}
-          jobMetricsError={operations.health.jobMetricsError}
-          fetchJobMetrics={operations.health.fetchJobMetrics}
-          expandedWorkerIds={operations.health.expandedWorkerIds}
-          setExpandedWorkerIds={operations.health.setExpandedWorkerIds}
-          setActiveTab={operations.health.setActiveTab}
-        />
-      ) : null}
-
     </>
   );
 }
 
+// Deliberately settings-only: job schedules, params, and run history live in the
+// Jobs page. Duplicating the schedule editor here made the same cron editable from
+// two places at once.
 function WorkerConfigRoute(props: {
   activeTab: DashboardTab;
   configGroupsByWorker: any[];
+  saveJobModel: (job: any, modelAlias: string, reasoningLevel?: string) => Promise<void>;
   dashboard: any;
   dashboardViews: any;
   surfaceDrafts: any;
@@ -448,13 +458,23 @@ function WorkerConfigRoute(props: {
   saveWorkerConfigurationSurface: any;
 }) {
   const workerId = props.activeTab.slice('worker-config:'.length);
-  const group = props.configGroupsByWorker.find((entry) => entry.worker.id === workerId);
-  if (!group) return null;
+  // Workers without manifest config surfaces still get a Config page when they own
+  // jobs — the page then shows only the generic per-job model panel.
+  const group =
+    props.configGroupsByWorker.find((entry) => entry.worker.id === workerId) ??
+    (props.dashboard.cron.jobs.some((job: any) => job.workerId === workerId)
+      ? {
+          worker: props.dashboard.workers.find((worker: any) => worker.id === workerId),
+          surfaces: [],
+        }
+      : null);
+  if (!group?.worker) return null;
 
   return (
     <WorkerConfigPage
       worker={group.worker}
       surfaces={group.surfaces}
+      saveJobModel={props.saveJobModel}
       dashboard={props.dashboard}
       dashboardViews={props.dashboardViews}
       surfaceDrafts={props.surfaceDrafts}

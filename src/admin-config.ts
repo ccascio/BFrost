@@ -4,6 +4,7 @@ import cron from 'node-cron';
 import { config, findModel, setActiveLocalProviderId, setPrimaryChannelId } from './config';
 import { JobName, knownJobs } from './job-runner';
 import { getWorkerJob, jobLabels as registryJobLabels } from './workers/registry';
+import { invalidateHealthProbeCache } from './health';
 import { loadKvJson, saveKvJson } from './sqlite';
 
 const ADMIN_SETTINGS_STORE_KEY = 'admin.settings';
@@ -12,6 +13,8 @@ export interface CronJobSettings {
   enabled: boolean;
   cron: string;
   modelAlias: string;
+  /** Reasoning level override for this job ('' = follow the platform default). */
+  reasoningLevel: string;
   approvalRequired: boolean;
   prompt: string;
   params?: Record<string, unknown>;
@@ -22,7 +25,7 @@ export interface PlatformSettings {
   activeLocalProviderId: string;
   /** Worker-channel id selected as the primary recipient for operator notifications. */
   primaryChannelId: string;
-  /** Whether recent schedules missed while offline/asleep should run automatically. */
+  /** Whether a missed cron slot may be recovered automatically after sleep or restart. */
   automaticMissedRunRecovery: boolean;
 }
 
@@ -42,6 +45,7 @@ export interface CronJobUpdate {
   enabled?: boolean;
   cron?: string;
   modelAlias?: string;
+  reasoningLevel?: string;
   approvalRequired?: boolean;
   prompt?: string;
   params?: Record<string, unknown>;
@@ -90,6 +94,7 @@ export async function updateAdminJob(name: JobName, patch: CronJobUpdate): Promi
     enabled: patch.enabled ?? current.enabled,
     cron: patch.cron?.trim() ?? current.cron,
     modelAlias: patch.modelAlias?.trim() ?? current.modelAlias,
+    reasoningLevel: normalizeReasoningLevelSetting(patch.reasoningLevel) ?? current.reasoningLevel,
     approvalRequired: patch.approvalRequired ?? current.approvalRequired,
     prompt: patch.prompt ?? current.prompt,
     params: patch.params !== undefined ? patch.params : current.params,
@@ -117,6 +122,8 @@ function normalizeSettings(input: Partial<AdminSettings>): AdminSettings {
       modelAlias: normalizeModelAlias(
         typeof candidate?.modelAlias === 'string' ? candidate.modelAlias : manifest.defaultModelAlias,
       ),
+      reasoningLevel:
+        typeof candidate?.reasoningLevel === 'string' ? candidate.reasoningLevel.trim().toLowerCase() : '',
       approvalRequired:
         typeof candidate?.approvalRequired === 'boolean'
           ? candidate.approvalRequired
@@ -160,10 +167,17 @@ function normalizeSettings(input: Partial<AdminSettings>): AdminSettings {
       typeof input.platform?.primaryChannelId === 'string' && input.platform.primaryChannelId.trim()
         ? input.platform.primaryChannelId.trim()
         : config.primaryChannelId,
+    // Recovery can cause real work to run as soon as BFrost starts. Keep it opt-in
+    // for installations that have no explicit persisted preference yet.
     automaticMissedRunRecovery: input.platform?.automaticMissedRunRecovery === true,
   };
 
   return { timezone, jobs, platform };
+}
+
+function normalizeReasoningLevelSetting(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return value.trim().toLowerCase();
 }
 
 function normalizeModelAlias(value: string | undefined): string {
@@ -187,11 +201,15 @@ export async function updatePlatformSettings(patch: PlatformSettingsUpdate): Pro
   const next: PlatformSettings = {
     activeLocalProviderId: patch.activeLocalProviderId?.trim() || settings.platform.activeLocalProviderId,
     primaryChannelId: patch.primaryChannelId?.trim() || settings.platform.primaryChannelId,
-    automaticMissedRunRecovery: patch.automaticMissedRunRecovery ?? settings.platform.automaticMissedRunRecovery,
+    automaticMissedRunRecovery:
+      patch.automaticMissedRunRecovery ?? settings.platform.automaticMissedRunRecovery,
   };
   settings.platform = next;
   await saveAdminSettings(settings);
   applyPlatformSettingsToConfig(next);
+  // Switching the active local provider changes what the embedding probe is talking to,
+  // so drop the memoised health answers rather than serving the old runtime's verdict.
+  invalidateHealthProbeCache();
   return settings;
 }
 
@@ -222,6 +240,8 @@ function normalizeUnknownJobSettings(name: string, value: unknown): CronJobSetti
     enabled: false,
     cron: cronValue,
     modelAlias: normalizeModelAlias(candidate.modelAlias),
+    reasoningLevel:
+      typeof candidate.reasoningLevel === 'string' ? candidate.reasoningLevel.trim().toLowerCase() : '',
     approvalRequired: typeof candidate.approvalRequired === 'boolean' ? candidate.approvalRequired : false,
     prompt: typeof candidate.prompt === 'string' ? candidate.prompt.slice(0, 12000) : '',
     params: candidate.params && typeof candidate.params === 'object'

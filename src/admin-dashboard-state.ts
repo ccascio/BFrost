@@ -19,7 +19,6 @@ import {
   setAdminSessionTtlHours,
   setJobLlmTimeoutMs,
 } from './config';
-import { refreshAllProviderModels } from './model-discovery';
 import { upsertEnvValue } from './env-file';
 import {
   collectRecipes,
@@ -28,6 +27,7 @@ import {
   listRegisteredApiRoutes,
   listRegisteredChannels,
   listRegisteredProviders,
+  listWorkerJobs,
 } from './workers/registry';
 import { updatePlatformSettings } from './admin-config';
 import { HttpRouter } from './http/router';
@@ -94,6 +94,7 @@ import {
   ActionDecisionBodySchema,
   JobMetricsResponseSchema,
   RecipeApplyBodySchema,
+  PipelineStagesSectionSchema,
   type BackupsSection,
   type CronRunsSection,
   type DashboardState,
@@ -102,6 +103,7 @@ import {
   type WorkerDataSection,
   type QueueSection,
   type JobMetricsResponse,
+  type PipelineStagesSection,
 } from './admin-api';
 import {
   listPendingActionRequests,
@@ -110,7 +112,7 @@ import {
   rejectActionRequest,
 } from './actions';
 import { BadRequestError } from './admin-route';
-import { listSchedulerRuns } from './scheduler-runs';
+import { listSchedulerRuns, SCHEDULER_RUN_RETENTION } from './scheduler-runs';
 import {
   createAppBackup,
   getAutoBackupSettings,
@@ -140,6 +142,7 @@ import {
 import { createHash } from 'crypto';
 import { loadKvJson, saveKvJson } from './sqlite';
 import { openWorkerKv } from './workers/storage';
+import { getActiveScopeId, getScopeProviderWorkerId } from './active-scope';
 import { generateText } from 'ai';
 import { getChatModel } from './llm';
 import { publishItem } from './jobs/item-bus';
@@ -153,17 +156,23 @@ export async function buildDashboardState(): Promise<DashboardState> {
   await syncHiddenBuiltIns();
 
   const localProvider = getActiveLocalProvider();
-  const [scheduler, recentSchedulerRuns, localRuntimeRunning, loadedCount, health, localResult, pinnedModelId] = await Promise.all([
-    getSchedulerSnapshot(),
-    listSchedulerRuns(200),
+  // The pipeline-stage join needs the scheduler snapshot, so chain it off that promise
+  // rather than letting `buildPipelineStagesSection` fetch a second copy of its own.
+  const schedulerPromise = getSchedulerSnapshot();
+  const [scheduler, recentSchedulerRuns, localRuntimeRunning, loadedCount, health, localResult, pinnedModelId, pipelineStagesSection] = await Promise.all([
+    schedulerPromise,
+    // The recovery controls act on the full retained scheduler history, so expose
+    // the same window and never recover records that were hidden from the operator.
+    listSchedulerRuns(SCHEDULER_RUN_RETENTION),
     localProvider?.getRuntimeStatus ? localProvider.getRuntimeStatus() : Promise.resolve(false),
     countLoadedModels(localProvider),
     getAppHealthSnapshot(),
     discoverLocalWorkerResult(),
     getPinnedModelId(),
+    schedulerPromise.then((snapshot) => buildPipelineStagesSection(snapshot)),
   ]);
-  await refreshAllProviderModels();
-
+  // Provider discovery is refreshed at boot and after configuration changes. Keep this
+  // read path side-effect free: an unavailable optional runtime must never stall the UI.
   const defaultModel = getDefaultModel();
   const localWorkers = localResult.workers;
   const workerState = await rememberSeenWorkers([
@@ -187,6 +196,7 @@ export async function buildDashboardState(): Promise<DashboardState> {
     },
     models: availableModels,
     defaultModel,
+    defaultReasoningLevel: config.defaultReasoningLevel,
     localRuntime: {
       running: localRuntimeRunning,
       loadedCount,
@@ -195,6 +205,7 @@ export async function buildDashboardState(): Promise<DashboardState> {
     cron: { timezone: scheduler.timezone, jobs: scheduler.jobs, runs: recentSchedulerRuns },
     workers: workerSummaries,
     workerIssues: localResult.issues,
+    pipelineStages: pipelineStagesSection.pipelineStages,
     platform: {
       activeLocalProviderId: config.activeLocalProviderId,
       primaryChannelId: config.primaryChannelId,
@@ -226,6 +237,10 @@ export async function buildDashboardState(): Promise<DashboardState> {
     dependencies: health.dependencies,
     workerData: {},
     recipes: collectRecipes(),
+    scope: {
+      providerWorkerId: getScopeProviderWorkerId(),
+      activeScopeId: await getActiveScopeId(),
+    },
   });
 }
 
@@ -240,13 +255,109 @@ export async function countLoadedModels(localProvider: ProviderAdapter | null | 
 }
 
 export async function buildQueueSection(): Promise<QueueSection> {
-  const queue = await loadQueueSnapshot();
+  const queue = await loadQueueSnapshot(Date.now(), { activeScopeId: await getActiveScopeId() });
   return QueueSectionSchema.parse({ queue });
 }
 
+// Generic live pipeline-stage strip: any registered job that declares both `pendingCount`
+// and `pipelineStageOrder` on its manifest opts into a block here. Core has no knowledge of
+// which specific workers these are — see `WorkerJobManifest` in `workers/types.ts`.
+/**
+ * The two halves of a pipeline stage have very different costs and very different
+ * freshness requirements:
+ *
+ *  - Execution state (running/queued) comes from the scheduler snapshot — a few ms — and
+ *    must be immediate, because it is what the header's live indicator renders.
+ *  - `pendingCount` is a worker-owned query per stage. Measured on this desk that is
+ *    ~85-350ms each, well over a second in total.
+ *
+ * The strip refreshes on every job event, so recomputing the counts each time would make
+ * the live indicator cost a second of DB work per event. Instead the counts are memoised
+ * briefly while execution state is always read fresh. A count that lags a couple of
+ * seconds is invisible; a stalled running indicator is the whole complaint.
+ */
+const PENDING_COUNT_TTL_MS = 3_000;
+let pendingCountCache: { at: number; key: string; counts: Promise<Map<string, number>> } | null = null;
+
+/** Drop memoised pending counts so the next strip re-queries. */
+export function invalidatePipelineStageCounts(): void {
+  pendingCountCache = null;
+}
+
+function readStagePendingCounts(
+  stageJobs: ReturnType<typeof listWorkerJobs>,
+): Promise<Map<string, number>> {
+  // Key on the stage set itself, so enabling or disabling a worker re-queries at once
+  // instead of serving counts for a pipeline that no longer exists.
+  const key = stageJobs.map((job) => job.id).join('|');
+  const now = Date.now();
+  if (pendingCountCache && pendingCountCache.key === key && now - pendingCountCache.at < PENDING_COUNT_TTL_MS) {
+    return pendingCountCache.counts;
+  }
+
+  // Cache the promise so a burst of concurrent events shares one round of queries.
+  const counts = Promise.all(
+    stageJobs.map(async (job): Promise<[string, number]> => {
+      try {
+        return [job.id, await job.pendingCount!()];
+      } catch (err) {
+        console.warn(`[Dashboard] pendingCount failed for job ${job.id}:`, err);
+        return [job.id, 0];
+      }
+    }),
+  ).then((entries) => new Map(entries));
+
+  pendingCountCache = { at: now, key, counts };
+  return counts;
+}
+
+export async function buildPipelineStagesSection(
+  schedulerSnapshot?: Awaited<ReturnType<typeof getSchedulerSnapshot>>,
+): Promise<PipelineStagesSection> {
+  const workers = listWorkers();
+  const stageJobs = listWorkerJobs().filter(
+    (job) => job.pendingCount && job.pipelineStageOrder !== undefined,
+  );
+
+  // Scheduler job states key on the same `job.id` namespace the registry hands out
+  // (`knownJobs()`), so this join is exact. It carries the only in-flight signal the
+  // platform has — the Item Bus itself has no "processing" item state.
+  // Callers that already hold a snapshot pass it in rather than paying for a second one.
+  const [scheduler, pendingCounts] = await Promise.all([
+    schedulerSnapshot ? Promise.resolve(schedulerSnapshot) : getSchedulerSnapshot(),
+    readStagePendingCounts(stageJobs),
+  ]);
+  const jobStates = new Map(scheduler.jobs.map((job) => [job.name, job]));
+
+  const pipelineStages = stageJobs.map((job) => {
+    const worker = workers.find((w) => w.id === job.workerId);
+    const state = jobStates.get(job.id);
+    return {
+      jobId: job.id,
+      workerId: job.workerId,
+      workerDisplayName: worker?.displayName ?? worker?.name ?? job.workerId,
+      jobLabel: job.label,
+      pendingCount: pendingCounts.get(job.id) ?? 0,
+      order: job.pipelineStageOrder!,
+      running: state?.running ?? false,
+      queued: state?.queued ?? false,
+      startedAt: state?.running ? state.lastStartedAt ?? null : null,
+    };
+  });
+
+  pipelineStages.sort((a, b) => a.order - b.order);
+  return PipelineStagesSectionSchema.parse({ pipelineStages });
+}
+
 export async function buildCronRunsSection(): Promise<CronRunsSection> {
-  const runs = await listSchedulerRuns(100);
-  return CronRunsSectionSchema.parse({ runs });
+  const [runs, scheduler] = await Promise.all([
+    // This section overwrites `cron.runs` from the full dashboard payload once loaded,
+    // so it must use the same window: a narrower slice hides recoverable jobs from the
+    // operator that "Recover all" would still act on.
+    listSchedulerRuns(SCHEDULER_RUN_RETENTION),
+    getSchedulerSnapshot(),
+  ]);
+  return CronRunsSectionSchema.parse({ runs, jobs: scheduler.jobs });
 }
 
 export async function buildEventsSection(): Promise<EventsSection> {
@@ -260,7 +371,8 @@ export async function buildBackupsSection(): Promise<BackupsSection> {
 }
 
 export async function buildWorkerDataSection(): Promise<WorkerDataSection> {
-  const workerDashboardData = await loadRegisteredWorkerDashboardData();
+  const activeScopeId = await getActiveScopeId();
+  const workerDashboardData = await loadRegisteredWorkerDashboardData({ activeScopeId });
   return WorkerDataSectionSchema.parse({ workerData: workerDashboardData });
 }
 
@@ -588,12 +700,13 @@ export function listWorkerSummaries(
       tagline: worker.tagline,
       chatPrompts: worker.chatPrompts ?? [],
       onboarding: worker.onboarding,
-      demoNotice: worker.demoNotice,
-      bfrostEngineRange: worker.bfrostEngineRange,
+      BFrostEngineRange: worker.BFrostEngineRange,
       builtIn: worker.builtIn,
       deletable: worker.deletable ?? false,
       kind: deriveWorkerKind(worker),
+      portfolioSource: worker.portfolioSource,
       section: worker.section,
+      menuOrder: worker.menuOrder,
       settingsOnly: worker.settingsOnly,
       enabled,
       missing,

@@ -22,11 +22,58 @@ import {
   setWorkerInstalledVersion,
   type WorkerStateStore,
 } from './state';
+import type { WorkerLifecycleHooks } from './module';
 
 export interface BootstrapLocalWorkersResult {
   loaded: string[];
   skipped: string[];
   issues: LocalWorkerLoadIssue[];
+}
+
+/**
+ * Run `onMigrate` for built-in workers whose manifest version moved since the last boot.
+ *
+ * `module.ts` documents the lifecycle hooks as a platform-wide contract, but the invocation
+ * lived only in `activateLocalWorker` — built-ins are statically imported and never pass
+ * through it, so a built-in could declare `onMigrate` and silently never have it called.
+ * `worker.state` already carries a record per built-in; only `installedVersion` was never
+ * written for them. This closes that gap.
+ *
+ * Deliberately runs `onMigrate` only, not the other hooks. `onEnable` in particular has never
+ * fired for built-ins, so invoking it here would start executing hooks that have never run —
+ * a behaviour change well beyond migrating state.
+ *
+ * Same failure contract as the local path: a throwing migration is logged, not rethrown, and
+ * leaves `installedVersion` unchanged so the next boot retries it. A worker that cannot
+ * migrate must not stop BFrost from starting.
+ */
+export async function migrateBuiltInWorkers(
+  modules: Array<{ manifest: { id: string; version: string }; lifecycle?: WorkerLifecycleHooks }>,
+  state: WorkerStateStore,
+): Promise<{ migrated: string[]; failed: string[] }> {
+  const migrated: string[] = [];
+  const failed: string[] = [];
+
+  for (const module of modules) {
+    const onMigrate = module.lifecycle?.onMigrate;
+    if (!onMigrate) continue;
+
+    const workerId = module.manifest.id;
+    const fromVersion = state.workers[workerId]?.installedVersion ?? null;
+    const toVersion = module.manifest.version;
+    if (fromVersion === toVersion) continue;
+
+    try {
+      await onMigrate({ workerId, fromVersion, toVersion });
+      await setWorkerInstalledVersion(workerId, toVersion);
+      migrated.push(workerId);
+    } catch (err) {
+      console.warn(`[Workers] onMigrate for ${workerId} failed:`, err);
+      failed.push(workerId);
+    }
+  }
+
+  return { migrated, failed };
 }
 
 /**
@@ -42,7 +89,7 @@ export class LocalWorkerCodeDisabledError extends Error {
   constructor(public readonly workerId: string) {
     super(
       `Local worker "${workerId}" ships executable code, but local worker code execution is disabled. ` +
-        `Enable "Allow local worker code" in Platform & Security (or set BFROST_ENABLE_LOCAL_WORKER_CODE=true) to load it.`,
+        `Enable "Allow local worker code" in Platform & Security (or set BFrost_ENABLE_LOCAL_WORKER_CODE=true) to load it.`,
     );
     this.name = 'LocalWorkerCodeDisabledError';
   }
