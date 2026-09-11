@@ -1,4 +1,4 @@
-# Dev-Agent Worker + Developer Mode Toggle — Implementation Roadmap
+# Dev-Agent Worker + Developer Mode Toggle — Implementation Roadmap 
 
 **Goal:** Let JARVIS scaffold and edit BFrost workers from chat, gated behind a
 "Developer mode" toggle in the chat UI. No external dependencies; no changes to
