@@ -89,7 +89,7 @@ export class LocalWorkerCodeDisabledError extends Error {
   constructor(public readonly workerId: string) {
     super(
       `Local worker "${workerId}" ships executable code, but local worker code execution is disabled. ` +
-        `Enable "Allow local worker code" in Platform & Security (or set BFrost_ENABLE_LOCAL_WORKER_CODE=true) to load it.`,
+        `Enable "Allow local worker code" in Platform & Security (or set BFROST_ENABLE_LOCAL_WORKER_CODE=true) to load it.`,
     );
     this.name = 'LocalWorkerCodeDisabledError';
   }

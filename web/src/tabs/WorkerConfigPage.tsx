@@ -298,7 +298,8 @@ function WorkerConfigurationSurface({
 
   const key = configSurfaceKey(worker.id, surface.id, dashboard.scope?.activeScopeId ?? null);
   const fields = surface.fields ?? [];
-  const draft = surfaceDrafts[key] ?? buildSurfaceDraft(surface, dashboard.workerData, dashboard.cron.jobs);
+  // Drafts hold only the fields the operator edited; every other field keeps its seeded value.
+  const draft = { ...buildSurfaceDraft(surface, dashboard.workerData, dashboard.cron.jobs), ...surfaceDrafts[key] };
   const canPersistSurface = Boolean(surface.path && !surface.path.includes('#'));
   const canPersistJobModels = fields.some((field) => field.type === 'model-alias' && field.targetJob);
   const canPersist = canPersistSurface || canPersistJobModels;

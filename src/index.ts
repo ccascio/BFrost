@@ -4,7 +4,7 @@ import './net-tuning';
 import { catchUpMissedRunsOnStartup, startScheduler, stopScheduler } from './scheduler';
 import { startAdminServer, stopAdminServer } from './admin-server';
 import { applyPendingRestoreIfAny, startAutoBackup, stopAutoBackup } from './app-backup';
-import { getAppHealthSnapshot, logStartupHealthSummary } from './health';
+import { getAppHealthSnapshot, invalidateHealthProbeCache, logStartupHealthSummary } from './health';
 import { hydrateConversations, flushConversations } from './conversation';
 import { hydrateThreads, flushThreads } from './chat-threads';
 import { hydrateProjects, flushProjects } from './projects';
@@ -121,14 +121,14 @@ async function main(): Promise<void> {
   }
 
   // Boot only the active local-runtime provider, and only when the user's default
-  // model actually needs it. Skipped when the default model resolves to a cloud
-  // provider so the selected local runtime is not
-  // loaded into memory unnecessarily.
+  // model or the embedding model actually needs it. Skipped when both resolve to cloud
+  // providers so the selected local runtime is not loaded into memory unnecessarily.
   //
   // Decision table for config.ollamaModel:
   //   resolves to cloud model  → skip (user switched to cloud)
   //   resolves to local model  → start (user explicitly chose local)
   //   does not resolve at all  → start (model is likely local, server just isn't up yet)
+  // Embeddings served by the local runtime start it regardless of the default model.
   const startedRuntimes: ProviderAdapter[] = [];
   const activeLocalAdapter = getActiveLocalProvider();
   if (!activeLocalAdapter) {
@@ -139,7 +139,9 @@ async function main(): Promise<void> {
     const resolvedDefault = findModel(config.ollamaModel);
     const defaultUsesLocalRuntime =
       !resolvedDefault || resolvedDefault.provider === activeLocalAdapter.providerId;
-    if (!defaultUsesLocalRuntime) {
+    const embeddingsUseLocalRuntime =
+      config.embeddingProvider === 'local' || config.embeddingProvider === activeLocalAdapter.providerId;
+    if (!defaultUsesLocalRuntime && !embeddingsUseLocalRuntime) {
       console.log(
         `[BFrost] Provider ${activeLocalAdapter.providerId} configured but default model` +
         ` uses '${resolvedDefault!.provider}' — skipping runtime start.`,
@@ -154,6 +156,8 @@ async function main(): Promise<void> {
           startedRuntimes.push(activeLocalAdapter);
         }
         console.log(`[BFrost] Provider ${activeLocalAdapter.providerId} ready.`);
+        // The startup health snapshot probed before the runtime was up.
+        invalidateHealthProbeCache();
         await refreshActiveLocalProviderModels();
       } catch (err) {
         console.warn(

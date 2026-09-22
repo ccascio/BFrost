@@ -170,7 +170,8 @@ export function StepWebSearch({
     if (!surface.path) return;
     const key = `${worker.id}:${surface.id}`;
     const fields = (surface.fields ?? []) as JobDashboardField[];
-    const draft = drafts[key] ?? buildSurfaceDraft(surface, dashboard.workerData, dashboard.cron.jobs);
+    // Drafts hold only the fields the operator edited; every other field keeps its seeded value.
+    const draft = { ...buildSurfaceDraft(surface, dashboard.workerData, dashboard.cron.jobs), ...drafts[key] };
     setBusy(key);
     setMessage(null);
     try {
@@ -223,7 +224,7 @@ export function StepWebSearch({
           const surface = webSearchSurface(worker);
           const key = surface ? `${worker.id}:${surface.id}` : worker.id;
           const fields = ((surface?.fields ?? []) as JobDashboardField[]);
-          const draft = surface ? drafts[key] ?? buildSurfaceDraft(surface, dashboard.workerData, dashboard.cron.jobs) : {};
+          const draft = surface ? { ...buildSurfaceDraft(surface, dashboard.workerData, dashboard.cron.jobs), ...drafts[key] } : {};
           const healthy = worker.healthState === 'healthy';
           return (
             <div key={worker.id} className={`wizard-worker-item${healthy ? ' enabled' : ''}`}>

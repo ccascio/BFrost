@@ -34,12 +34,22 @@ function EmbeddingConfigPanel({ ctx }: { ctx: Record<string, any> }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null);
 
-  const providerValue = providerDraft || platform?.embeddingProvider || 'local';
-  const modelValue = modelDraft || platform?.embeddingModel || '';
+  const savedProvider = platform?.embeddingProvider || 'local';
+  const savedModel = platform?.embeddingModel || '';
+  const providerValue = providerDraft || savedProvider;
+  const providerChanged = providerValue !== savedProvider;
+  // A model saved for another provider is meaningless here, so switching provider starts empty.
+  const modelValue = modelDraft || (providerChanged ? '' : savedModel);
 
-  const dirty =
-    (providerDraft && providerDraft !== platform?.embeddingProvider) ||
-    (modelDraft.trim() && modelDraft.trim() !== platform?.embeddingModel);
+  const dirty = Boolean(modelValue.trim()) && (providerChanged || modelValue.trim() !== savedModel);
+
+  const modelOptions = providerValue === 'openai'
+    ? OPENAI_EMBEDDING_MODELS.map((id) => ({ id, label: id }))
+    : (localModels ?? []);
+  // A controlled <select> whose value is not among its options displays the first option
+  // without selecting it, and choosing that option then fires no change event. Always render
+  // the current value (or an empty placeholder) as an explicit option.
+  const currentMissing = !modelOptions.some((m) => m.id === modelValue);
 
   async function fetchLocalModels() {
     if (loadingLocal) return;
@@ -66,10 +76,7 @@ function EmbeddingConfigPanel({ ctx }: { ctx: Record<string, any> }) {
     setBusy(true);
     setNotice(null);
     try {
-      const body: Record<string, string> = {};
-      if (providerDraft && providerDraft !== platform?.embeddingProvider) body.provider = providerDraft;
-      if (modelDraft.trim() && modelDraft.trim() !== platform?.embeddingModel) body.model = modelDraft.trim();
-      if (!body.provider && !body.model) return;
+      const body = { provider: providerValue, model: modelValue.trim() };
       const res = await fetch('/api/embedding-settings', {
         method: 'POST',
         credentials: 'include',
@@ -125,13 +132,21 @@ function EmbeddingConfigPanel({ ctx }: { ctx: Record<string, any> }) {
         <label className="field">
           <span>Embedding model</span>
           {providerValue === 'openai' ? (
-            <select value={modelValue} onChange={(event) => setModelDraft(event.target.value)}>
-              {OPENAI_EMBEDDING_MODELS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
+            <>
+              <select value={modelValue} onChange={(event) => setModelDraft(event.target.value)}>
+                {currentMissing ? (
+                  <option value={modelValue}>{modelValue ? `${modelValue} (current)` : 'Select a model…'}</option>
+                ) : null}
+                {modelOptions.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+              <span className="footnote">
+                Needs an OpenAI API key (OPENAI_API_KEY). A ChatGPT subscription login does not include the embeddings API.
+              </span>
+            </>
           ) : (
             <>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -145,6 +160,8 @@ function EmbeddingConfigPanel({ ctx }: { ctx: Record<string, any> }) {
                     <option value="">Loading…</option>
                   ) : !localModels || localModels.length === 0 ? (
                     <option value={modelValue}>{modelValue || '(no embedding models found)'}</option>
+                  ) : currentMissing ? (
+                    <option value={modelValue}>{modelValue ? `${modelValue} (current)` : 'Select a model…'}</option>
                   ) : null}
                   {!loadingLocal &&
                     localModels?.map((m) => (

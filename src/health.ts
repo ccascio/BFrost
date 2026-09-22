@@ -39,7 +39,8 @@ const commandAvailabilityCache = new Map<string, Promise<boolean>>();
 
 /** Reachability is a live network probe, so it expires on its own as well. */
 const EMBEDDING_PROBE_TTL_MS = 60_000;
-let embeddingProbe: { key: string; at: number; result: Promise<boolean> } | null = null;
+/** `null` when the probe succeeded, otherwise the reason it failed. */
+let embeddingProbe: { key: string; at: number; result: Promise<string | null> } | null = null;
 
 /**
  * Drop memoised health probes so the next snapshot re-measures. Call after anything that
@@ -76,7 +77,7 @@ function configured(ok: boolean, readyDetail: string, missingDetail: string): He
   };
 }
 
-async function embeddingModelReachable(): Promise<boolean> {
+async function embeddingProbeError(): Promise<string | null> {
   // Key on the config that determines the answer, so switching provider or model
   // re-probes immediately instead of serving the previous target's verdict.
   const key = `${config.embeddingProvider}:${config.embeddingModel}`;
@@ -88,9 +89,9 @@ async function embeddingModelReachable(): Promise<boolean> {
   const result = (async () => {
     try {
       await embedText('health check');
-      return true;
-    } catch {
-      return false;
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
     }
   })();
   embeddingProbe = { key, at: now, result };
@@ -156,12 +157,12 @@ async function collectWorkerHealth(): Promise<Pick<AppHealthSnapshot, 'integrati
 }
 
 export async function getAppHealthSnapshot(): Promise<AppHealthSnapshot> {
-  const [adapterIntegrations, workerHealth, ffmpegOk, sqliteCliOk, embeddingModelOk] = await Promise.all([
+  const [adapterIntegrations, workerHealth, ffmpegOk, sqliteCliOk, embeddingError] = await Promise.all([
     collectAdapterHealth(),
     collectWorkerHealth(),
     commandAvailable('ffmpeg', ['-version']),
     commandAvailable('sqlite3', ['-version']),
-    embeddingModelReachable(),
+    embeddingProbeError(),
   ]);
 
   return {
@@ -181,9 +182,9 @@ export async function getAppHealthSnapshot(): Promise<AppHealthSnapshot> {
         '`sqlite3` is missing from PATH. Durable event history will fail.',
       ),
       embeddingModelReachable: configured(
-        embeddingModelOk,
+        embeddingError === null,
         `Embedding model ${config.embeddingModel} is reachable via ${config.embeddingProvider}.`,
-        `Embedding model ${config.embeddingModel} is not reachable via ${config.embeddingProvider}. Configure an embedding-capable provider and model.`,
+        `Embedding model ${config.embeddingModel} is not reachable via ${config.embeddingProvider}: ${embeddingError}`,
       ),
       ...workerHealth.dependencies,
     },

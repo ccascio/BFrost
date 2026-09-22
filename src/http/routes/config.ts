@@ -15,6 +15,7 @@ import {
 } from '../../config';
 import { refreshActiveLocalProviderModels, refreshAllProviderModels } from '../../model-discovery';
 import { upsertEnvValue } from '../../env-file';
+import { invalidateHealthProbeCache } from '../../health';
 import { getActiveLocalProvider, getRegisteredProvider, listRegisteredChannels } from '../../workers/registry';
 import { updatePlatformSettings } from '../../admin-config';
 import { recordEventSafe } from '../../event-log';
@@ -234,6 +235,25 @@ export function registerConfigRoutes(router: HttpRouter): void {
       await upsertEnvValue(path.join(process.cwd(), '.env'), 'EMBEDDING_MODEL', updates.model);
     }
     setEmbeddingSettings(updates);
+    // Boot only starts the local runtime when something needs it, so switching embeddings to
+    // the local runtime at run time must start it too. Best-effort: the health probe reports
+    // the failure if the runtime cannot start.
+    const localAdapter = getActiveLocalProvider();
+    if (
+      localAdapter?.startRuntime &&
+      (config.embeddingProvider === 'local' || config.embeddingProvider === localAdapter.providerId)
+    ) {
+      try {
+        const running = (await localAdapter.getRuntimeStatus?.()) ?? false;
+        if (!running) await localAdapter.startRuntime();
+      } catch (err) {
+        console.warn(
+          `[Embeddings] Could not start local runtime ${localAdapter.providerId}: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    invalidateHealthProbeCache();
     await recordEventSafe({
       category: 'admin',
       action: 'embedding_settings_updated',

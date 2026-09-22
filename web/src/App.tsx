@@ -273,7 +273,8 @@ export default function App() {
   async function saveWorkerConfigurationSurface(worker: WorkerSummary, surface: WorkerDashboardSurface) {
     const key = configSurfaceKey(worker.id, surface.id, dashboard?.scope?.activeScopeId ?? null);
     const fields = surface.fields ?? [];
-    const draft = surfaceDrafts[key] ?? buildSurfaceDraft(surface, dashboard?.workerData, dashboard?.cron.jobs ?? []);
+    // Drafts hold only the fields the operator edited; every other field keeps its seeded value.
+    const draft = { ...buildSurfaceDraft(surface, dashboard?.workerData, dashboard?.cron.jobs ?? []), ...surfaceDrafts[key] };
     const surfacePayload = serializeDashboardFields(fields, draft);
 
     if (surface.path && !surface.path.includes('#') && Object.keys(surfacePayload).length > 0) {

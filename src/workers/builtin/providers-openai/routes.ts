@@ -201,7 +201,7 @@ async function startOpenAIOAuthFlow(): Promise<string> {
         }
         const credentials = await exchangeOAuthCode(code, flow.verifier);
         await persistOpenAICodexSubscriptionCredentials(credentials);
-        await upsertEnvValue(path.join(process.cwd(), '.env'), 'BFrost_OPENAI_AUTH_MODE', 'subscription');
+        await upsertEnvValue(path.join(process.cwd(), '.env'), 'BFROST_OPENAI_AUTH_MODE', 'subscription');
         setOpenAIAuthMode('subscription');
         await refreshCloudProviderModels();
         await recordEventSafe({
@@ -250,11 +250,11 @@ export const openaiProviderApiRoutes: AdminApiRoute[] = [
         throw new BadRequestError('apiKey must not be empty when provided.');
       }
 
-      await upsertEnvValue(path.join(process.cwd(), '.env'), 'BFrost_OPENAI_AUTH_MODE', mode);
+      await upsertEnvValue(path.join(process.cwd(), '.env'), 'BFROST_OPENAI_AUTH_MODE', mode);
       setOpenAIAuthMode(mode);
       if (body.codexCliModel !== undefined) {
         const cliModel = body.codexCliModel.trim() || 'gpt-5.4-mini';
-        await upsertEnvValue(path.join(process.cwd(), '.env'), 'BFrost_OPENAI_CODEX_MODEL', cliModel);
+        await upsertEnvValue(path.join(process.cwd(), '.env'), 'BFROST_OPENAI_CODEX_MODEL', cliModel);
         setOpenAICodexCliModel(cliModel);
       }
       if (key) {
