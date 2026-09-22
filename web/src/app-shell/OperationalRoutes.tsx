@@ -24,14 +24,9 @@ export function OperationalRoutes(props: any) {
   );
   if (activeTab === 'workers') return (
     <WorkersTab dashboard={dashboard} busyKey={busyKey}
-      workerDescription={operations.workers.workerDescription}
-      setWorkerDescription={operations.workers.setWorkerDescription}
-      generatedWorker={operations.workers.generatedWorker}
       workerUploadFile={operations.workers.workerUploadFile}
       setWorkerUploadFile={operations.workers.setWorkerUploadFile}
-      storeUpdates={store.storeUpdates}
-      generateWorkerFromDescription={operations.workers.generateWorkerFromDescription}
-      uploadWorkerZip={operations.workers.uploadWorkerZip}
+      storeUpdates={store.storeUpdates} uploadWorkerZip={operations.workers.uploadWorkerZip}
       deleteWorker={operations.workers.deleteWorker} mutate={mutate} />
   );
   if (activeTab === 'jobs') return (

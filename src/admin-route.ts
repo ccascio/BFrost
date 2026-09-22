@@ -20,7 +20,7 @@ export interface AdminJsonResponse {
 export interface AdminRouteContext {
   req: IncomingMessage;
   url: URL;
-  activeScopeId?: string | null;
+  activeScopeId: string | null;
   readJsonBody: <TSchema extends z.ZodTypeAny>(
     req: IncomingMessage,
     schema: TSchema,

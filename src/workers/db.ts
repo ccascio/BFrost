@@ -2,8 +2,8 @@
  * Per-worker namespaced SQLite tables.
  *
  * Every worker gets its own table namespace inside the shared `APP_DB_PATH`: tables are
- * created as `worker_<safeWorkerId>_<localName>` and indexes as
- * `idx_worker_<safeWorkerId>_<localName>_<indexName>`. Two workers cannot collide on a
+ * created as `worker_<safeWorkerId>_<safeScopeId>_<localName>` and indexes as
+ * `idx_worker_<safeWorkerId>_<safeScopeId>_<localName>_<indexName>`. Two workers cannot collide on a
  * table name, and the dashboard backup carries every worker's schema + data along with
  * the rest of the app database.
  *
@@ -24,10 +24,13 @@
  * Workstream 5.
  */
 import type Database from 'better-sqlite3';
-import { getAppDb } from '../sqlite';
+import { getAppDb, getAppDbSync } from '../sqlite';
+import { GLOBAL_WORKER_SCOPE_ID } from './storage';
+import { withDebugTiming, withDebugTimingAsync } from '../debug';
 
 const IDENT_RE = /^[a-z][a-z0-9_]*$/;
 const WORKER_ID_RE = /^[a-z0-9][a-z0-9._-]*$/;
+const SCOPE_ID_RE = /^[a-z0-9_][a-z0-9._-]*$/i;
 
 export type WorkerColumnType = 'TEXT' | 'INTEGER' | 'REAL' | 'BLOB';
 
@@ -85,6 +88,7 @@ export interface WorkerTableHandle<TRow extends Record<string, unknown>> {
 
 export interface WorkerDb {
   workerId: string;
+  scopeId: string;
   defineTable<TRow extends Record<string, unknown>>(
     localName: string,
     schema: WorkerTableSchema,
@@ -99,6 +103,16 @@ function validateWorkerId(workerId: string): void {
   }
 }
 
+function normalizeScopeId(scopeId: string | null | undefined): string {
+  return scopeId && scopeId.trim() ? scopeId.trim() : GLOBAL_WORKER_SCOPE_ID;
+}
+
+function validateScopeId(scopeId: string): void {
+  if (!SCOPE_ID_RE.test(scopeId)) {
+    throw new Error(`Invalid worker scope id for table namespace: ${scopeId}`);
+  }
+}
+
 function validateIdent(value: string, kind: 'table' | 'column' | 'index'): void {
   if (!IDENT_RE.test(value)) {
     throw new Error(`Invalid ${kind} name "${value}": must match ${IDENT_RE.source}`);
@@ -110,8 +124,8 @@ function validateIdent(value: string, kind: 'table' | 'column' | 'index'): void 
  * identifier suffix. Dots and dashes both map to underscores, which means
  * `core.news` and `core-news` would collide — defineTable() detects that and throws.
  */
-function safeNamespace(workerId: string): string {
-  return workerId.replace(/[.\-]/g, '_');
+function safeNamespace(id: string): string {
+  return id.replace(/[.\-]/g, '_');
 }
 
 function quoteDefault(value: WorkerColumnDef['default']): string {
@@ -159,18 +173,42 @@ interface ExistingColumn {
 }
 
 function listExistingColumns(db: Database.Database, fullName: string): ExistingColumn[] {
-  return db.prepare(`PRAGMA table_info(${fullName})`).all() as ExistingColumn[];
+  return withDebugTiming('sqlite.worker.table-info', () =>
+    db.prepare(`PRAGMA table_info(${fullName})`).all() as ExistingColumn[],
+  );
 }
 
 function applyIndexes(db: Database.Database, fullName: string, prefix: string, indexes: WorkerIndexDef[] | undefined): void {
   if (!indexes) return;
-  for (const index of indexes) {
-    validateIdent(index.name, 'index');
-    for (const col of index.columns) validateIdent(col, 'column');
-    const indexName = `idx_${prefix}_${index.name}`;
-    const sql = `CREATE ${index.unique ? 'UNIQUE ' : ''}INDEX IF NOT EXISTS ${indexName} ON ${fullName} (${index.columns.join(', ')})`;
-    db.exec(sql);
+  withDebugTiming('sqlite.worker.indexes', () => {
+    for (const index of indexes) {
+      validateIdent(index.name, 'index');
+      for (const col of index.columns) validateIdent(col, 'column');
+      const indexName = `idx_${prefix}_${index.name}`;
+      const sql = `CREATE ${index.unique ? 'UNIQUE ' : ''}INDEX IF NOT EXISTS ${indexName} ON ${fullName} (${index.columns.join(', ')})`;
+      db.exec(sql);
+    }
+  });
+}
+
+function ensureTableSchema(
+  db: Database.Database,
+  fullName: string,
+  tablePrefix: string,
+  schema: WorkerTableSchema,
+): void {
+  const existing = listExistingColumns(db, fullName);
+  if (existing.length === 0) {
+    db.exec(buildCreateTableSql(fullName, schema));
+  } else {
+    const existingNames = new Set(existing.map((col) => col.name));
+    for (const col of schema.columns) {
+      if (!existingNames.has(col.name)) {
+        db.exec(buildColumnAddSql(fullName, col));
+      }
+    }
   }
+  applyIndexes(db, fullName, tablePrefix, schema.indexes);
 }
 
 function buildWhereClause(where: Record<string, unknown> | undefined): { sql: string; params: unknown[] } {
@@ -186,112 +224,138 @@ function makeTableHandle<TRow extends Record<string, unknown>>(
   db: Database.Database,
   workerId: string,
   fullName: string,
+  tablePrefix: string,
+  schema: WorkerTableSchema,
 ): WorkerTableHandle<TRow> {
+  let activeDb = db;
+  const getLiveDb = (): Database.Database => {
+    const next = getAppDbSync();
+    if (next !== activeDb) {
+      // A cached table handle can outlive restore/test path swaps. Re-opened handles must
+      // re-establish their own schema before the first CRUD statement on the new connection.
+      ensureTableSchema(next, fullName, tablePrefix, schema);
+      activeDb = next;
+    }
+    return activeDb;
+  };
+
   return {
     workerId,
     fullName,
     insert(row) {
-      const keys = Object.keys(row);
-      for (const key of keys) validateIdent(key, 'column');
-      const placeholders = keys.map(() => '?').join(', ');
-      db.prepare(`INSERT INTO ${fullName} (${keys.join(', ')}) VALUES (${placeholders})`)
-        .run(...keys.map((key) => (row as any)[key]));
+      withDebugTiming('sqlite.worker.insert', () => {
+        const keys = Object.keys(row);
+        for (const key of keys) validateIdent(key, 'column');
+        const placeholders = keys.map(() => '?').join(', ');
+        getLiveDb().prepare(`INSERT INTO ${fullName} (${keys.join(', ')}) VALUES (${placeholders})`)
+          .run(...keys.map((key) => (row as any)[key]));
+      });
     },
     upsert(row, conflictKeys) {
-      const keys = Object.keys(row);
-      for (const key of keys) validateIdent(key, 'column');
-      for (const key of conflictKeys) validateIdent(key, 'column');
-      const placeholders = keys.map(() => '?').join(', ');
-      const setFragments = keys
-        .filter((key) => !conflictKeys.includes(key))
-        .map((key) => `${key} = excluded.${key}`);
-      const conflictClause = setFragments.length === 0
-        ? `ON CONFLICT(${conflictKeys.join(', ')}) DO NOTHING`
-        : `ON CONFLICT(${conflictKeys.join(', ')}) DO UPDATE SET ${setFragments.join(', ')}`;
-      db.prepare(`INSERT INTO ${fullName} (${keys.join(', ')}) VALUES (${placeholders}) ${conflictClause}`)
-        .run(...keys.map((key) => (row as any)[key]));
+      withDebugTiming('sqlite.worker.upsert', () => {
+        const keys = Object.keys(row);
+        for (const key of keys) validateIdent(key, 'column');
+        for (const key of conflictKeys) validateIdent(key, 'column');
+        const placeholders = keys.map(() => '?').join(', ');
+        const setFragments = keys
+          .filter((key) => !conflictKeys.includes(key))
+          .map((key) => `${key} = excluded.${key}`);
+        const conflictClause = setFragments.length === 0
+          ? `ON CONFLICT(${conflictKeys.join(', ')}) DO NOTHING`
+          : `ON CONFLICT(${conflictKeys.join(', ')}) DO UPDATE SET ${setFragments.join(', ')}`;
+        getLiveDb().prepare(`INSERT INTO ${fullName} (${keys.join(', ')}) VALUES (${placeholders}) ${conflictClause}`)
+          .run(...keys.map((key) => (row as any)[key]));
+      });
     },
     update(where, patch) {
-      const patchKeys = Object.keys(patch);
-      if (patchKeys.length === 0) return 0;
-      for (const key of patchKeys) validateIdent(key, 'column');
-      const setClause = patchKeys.map((key) => `${key} = ?`).join(', ');
-      const whereClause = buildWhereClause(where as Record<string, unknown>);
-      const stmt = db.prepare(`UPDATE ${fullName} SET ${setClause}${whereClause.sql}`);
-      const result = stmt.run(...patchKeys.map((key) => (patch as any)[key]), ...whereClause.params);
-      return result.changes;
+      return withDebugTiming('sqlite.worker.update', () => {
+        const patchKeys = Object.keys(patch);
+        if (patchKeys.length === 0) return 0;
+        for (const key of patchKeys) validateIdent(key, 'column');
+        const setClause = patchKeys.map((key) => `${key} = ?`).join(', ');
+        const whereClause = buildWhereClause(where as Record<string, unknown>);
+        const stmt = getLiveDb().prepare(`UPDATE ${fullName} SET ${setClause}${whereClause.sql}`);
+        const result = stmt.run(...patchKeys.map((key) => (patch as any)[key]), ...whereClause.params);
+        return result.changes;
+      });
     },
     delete(where) {
-      const whereClause = buildWhereClause(where as Record<string, unknown>);
-      const stmt = db.prepare(`DELETE FROM ${fullName}${whereClause.sql}`);
-      const result = stmt.run(...whereClause.params);
-      return result.changes;
+      return withDebugTiming('sqlite.worker.delete', () => {
+        const whereClause = buildWhereClause(where as Record<string, unknown>);
+        const stmt = getLiveDb().prepare(`DELETE FROM ${fullName}${whereClause.sql}`);
+        const result = stmt.run(...whereClause.params);
+        return result.changes;
+      });
     },
     findOne(where) {
-      const whereClause = buildWhereClause(where as Record<string, unknown>);
-      const stmt = db.prepare(`SELECT * FROM ${fullName}${whereClause.sql} LIMIT 1`);
-      return stmt.get(...whereClause.params) as TRow | undefined;
+      return withDebugTiming('sqlite.worker.find-one', () => {
+        const whereClause = buildWhereClause(where as Record<string, unknown>);
+        const stmt = getLiveDb().prepare(`SELECT * FROM ${fullName}${whereClause.sql} LIMIT 1`);
+        return stmt.get(...whereClause.params) as TRow | undefined;
+      });
     },
     findAll(opts) {
-      const whereClause = buildWhereClause(opts?.where as Record<string, unknown> | undefined);
-      let sql = `SELECT * FROM ${fullName}${whereClause.sql}`;
-      if (opts?.orderBy) {
-        // Workers are trusted to write a valid ORDER BY clause referring to columns
-        // they defined. We don't parse it — but we forbid semicolons to block trivial
-        // chained statements.
-        if (opts.orderBy.includes(';')) throw new Error('orderBy must not contain semicolons.');
-        sql += ` ORDER BY ${opts.orderBy}`;
-      }
-      if (typeof opts?.limit === 'number') sql += ` LIMIT ${Math.floor(opts.limit)}`;
-      if (typeof opts?.offset === 'number') sql += ` OFFSET ${Math.floor(opts.offset)}`;
-      return db.prepare(sql).all(...whereClause.params) as TRow[];
+      return withDebugTiming('sqlite.worker.find-all', () => {
+        const whereClause = buildWhereClause(opts?.where as Record<string, unknown> | undefined);
+        let sql = `SELECT * FROM ${fullName}${whereClause.sql}`;
+        if (opts?.orderBy) {
+          // Workers are trusted to write a valid ORDER BY clause referring to columns
+          // they defined. We don't parse it — but we forbid semicolons to block trivial
+          // chained statements.
+          if (opts.orderBy.includes(';')) throw new Error('orderBy must not contain semicolons.');
+          sql += ` ORDER BY ${opts.orderBy}`;
+        }
+        if (typeof opts?.limit === 'number') sql += ` LIMIT ${Math.floor(opts.limit)}`;
+        if (typeof opts?.offset === 'number') sql += ` OFFSET ${Math.floor(opts.offset)}`;
+        return getLiveDb().prepare(sql).all(...whereClause.params) as TRow[];
+      });
     },
     count(where) {
-      const whereClause = buildWhereClause(where as Record<string, unknown> | undefined);
-      const row = db.prepare(`SELECT COUNT(*) AS count FROM ${fullName}${whereClause.sql}`)
-        .get(...whereClause.params) as { count: number };
-      return row.count;
+      return withDebugTiming('sqlite.worker.count', () => {
+        const whereClause = buildWhereClause(where as Record<string, unknown> | undefined);
+        const row = getLiveDb().prepare(`SELECT COUNT(*) AS count FROM ${fullName}${whereClause.sql}`)
+          .get(...whereClause.params) as { count: number };
+        return row.count;
+      });
     },
     raw<R = unknown>(sql: string, params: unknown[] = []) {
-      const substituted = sql.replace(/\$\{table\}/g, fullName);
-      return db.prepare(substituted).all(...params) as R[];
+      return withDebugTiming('sqlite.worker.raw', () => {
+        const substituted = sql.replace(/\$\{table\}/g, fullName);
+        return getLiveDb().prepare(substituted).all(...params) as R[];
+      });
     },
   };
 }
 
-export async function openWorkerDb(workerId: string): Promise<WorkerDb> {
+export async function openWorkerDb(workerId: string, scopeId?: string | null): Promise<WorkerDb> {
   validateWorkerId(workerId);
-  const prefix = `worker_${safeNamespace(workerId)}`;
-  const db = await getAppDb();
+  const normalizedScopeId = normalizeScopeId(scopeId);
+  validateScopeId(normalizedScopeId);
+  const prefix = `worker_${safeNamespace(workerId)}_${safeNamespace(normalizedScopeId)}`;
+  await getAppDb();
 
   return {
     workerId,
+    scopeId: normalizedScopeId,
     async defineTable<TRow extends Record<string, unknown>>(localName: string, schema: WorkerTableSchema) {
-      validateIdent(localName, 'table');
-      if (!schema.columns || schema.columns.length === 0) {
-        throw new Error('defineTable requires at least one column.');
-      }
-      const fullName = `${prefix}_${localName}`;
-
-      const existing = listExistingColumns(db, fullName);
-      if (existing.length === 0) {
-        db.exec(buildCreateTableSql(fullName, schema));
-      } else {
-        const existingNames = new Set(existing.map((col) => col.name));
-        for (const col of schema.columns) {
-          if (!existingNames.has(col.name)) {
-            db.exec(buildColumnAddSql(fullName, col));
-          }
+      return withDebugTimingAsync('sqlite.worker.define-table', async () => {
+        validateIdent(localName, 'table');
+        if (!schema.columns || schema.columns.length === 0) {
+          throw new Error('defineTable requires at least one column.');
         }
-      }
-      applyIndexes(db, fullName, `${prefix}_${localName}`, schema.indexes);
-      return makeTableHandle<TRow>(db, workerId, fullName);
+        const fullName = `${prefix}_${localName}`;
+        const currentDb = getAppDbSync();
+        ensureTableSchema(currentDb, fullName, `${prefix}_${localName}`, schema);
+        return makeTableHandle<TRow>(currentDb, workerId, fullName, `${prefix}_${localName}`, schema);
+      });
     },
     async listTables() {
-      const rows = db
-        .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE ? ORDER BY name`)
-        .all(`${prefix}_%`) as Array<{ name: string }>;
-      return rows.map((row) => row.name);
+      return withDebugTimingAsync('sqlite.worker.list-tables', async () => {
+        const rows = getAppDbSync()
+          .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE ? ORDER BY name`)
+          .all(`${prefix}_%`) as Array<{ name: string }>;
+        return rows.map((row) => row.name);
+      });
     },
   };
 }

@@ -37,9 +37,9 @@ test('defineTable creates a prefixed table with the requested columns', async ()
         { name: 'created_at', type: 'TEXT', notNull: true },
       ],
     });
-    assert.equal(memos.fullName, 'worker_core_example_memos');
+    assert.equal(memos.fullName, 'worker_core_example___global___memos');
     const tables = await worker.listTables();
-    assert.deepEqual(tables, ['worker_core_example_memos']);
+    assert.deepEqual(tables, ['worker_core_example___global___memos']);
   });
 });
 
@@ -73,10 +73,28 @@ test('CRUD roundtrip writes and reads rows via prepared statements', async () =>
   });
 });
 
+test('cached table handles recover after the shared database is closed and reopened', async () => {
+  await withTempDb(async () => {
+    const worker = await openWorkerDb('core.example');
+    const memos = await worker.defineTable<MemoRow>('memos', {
+      columns: [
+        { name: 'id', type: 'TEXT', primaryKey: true },
+        { name: 'content', type: 'TEXT', notNull: true },
+        { name: 'created_at', type: 'TEXT', notNull: true },
+      ],
+    });
+    memos.insert({ id: 'a', content: 'hello', created_at: '2026-05-14T00:00:00.000Z' });
+
+    closeDb();
+
+    assert.equal(memos.findOne({ id: 'a' })?.content, 'hello');
+  });
+});
+
 test('two workers cannot see each others tables', async () => {
   await withTempDb(async () => {
     const news = await openWorkerDb('core.news');
-    const publisher = await openWorkerDb('core.publisher.x');
+    const publisher = await openWorkerDb('core.research');
     const newsItems = await news.defineTable<{ id: string }>('items', {
       columns: [{ name: 'id', type: 'TEXT', primaryKey: true }],
     });
@@ -88,8 +106,8 @@ test('two workers cannot see each others tables', async () => {
 
     assert.notEqual(newsItems.fullName, publisherItems.fullName);
     assert.equal(news.listTables.toString().length > 0, true);
-    assert.equal((await news.listTables()).every((name) => name.startsWith('worker_core_news_')), true);
-    assert.equal((await publisher.listTables()).every((name) => name.startsWith('worker_core_publisher_x_')), true);
+    assert.equal((await news.listTables()).every((name) => name.startsWith('worker_core_news___global___')), true);
+    assert.equal((await publisher.listTables()).every((name) => name.startsWith('worker_core_research___global___')), true);
     assert.equal(newsItems.findOne({ id: 'p1' }), undefined);
     assert.equal(publisherItems.findOne({ id: 'n1' }), undefined);
   });
@@ -188,6 +206,24 @@ test('listTables returns only this worker tables', async () => {
       columns: [{ name: 'id', type: 'TEXT', primaryKey: true }],
     });
     const tables = await worker.listTables();
-    assert.deepEqual(tables.sort(), ['worker_core_example_alpha', 'worker_core_example_beta']);
+    assert.deepEqual(tables.sort(), ['worker_core_example___global___alpha', 'worker_core_example___global___beta']);
+  });
+});
+
+test('scoped worker DB tables do not collide with global tables', async () => {
+  await withTempDb(async () => {
+    const global = await openWorkerDb('core.example');
+    const site = await openWorkerDb('core.example', 'site-a');
+    const globalRows = await global.defineTable<{ id: string }>('items', {
+      columns: [{ name: 'id', type: 'TEXT', primaryKey: true }],
+    });
+    const siteRows = await site.defineTable<{ id: string }>('items', {
+      columns: [{ name: 'id', type: 'TEXT', primaryKey: true }],
+    });
+    globalRows.insert({ id: 'global' });
+    siteRows.insert({ id: 'site' });
+    assert.notEqual(globalRows.fullName, siteRows.fullName);
+    assert.equal(globalRows.findOne({ id: 'site' }), undefined);
+    assert.equal(siteRows.findOne({ id: 'global' }), undefined);
   });
 });

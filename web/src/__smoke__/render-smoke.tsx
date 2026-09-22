@@ -64,8 +64,8 @@ const mockDashboard = {
 
 const overviewDashboard = {
   app: {
-    name: 'WFrost',
-    adminUrl: 'http://127.0.0.1:3032',
+    name: 'bfrost',
+    adminUrl: 'http://127.0.0.1:3030',
     timezone: 'UTC',
     now: new Date().toISOString(),
     pid: 123,
@@ -102,7 +102,7 @@ const overviewDashboard = {
     adminSessionTtlHours: 24,
     jobLlmTimeoutMs: 120000,
     adminHost: '127.0.0.1',
-    adminPort: 3032,
+    adminPort: 3030,
   },
   availableLocalProviders: [],
   availableChannels: [],
@@ -155,10 +155,6 @@ const overviewSetupProps = {
   setLmAdoptDismissed: noop,
   lmAdopting: false,
   setLmAdopting: noop,
-  onboardingRan: false,
-  demoNarration: null,
-  demoRecap: null,
-  setDemoRecap: noop,
   setWizardOpen: noop,
   starAsk: false,
   dismissStarAsk: noop,
@@ -498,7 +494,7 @@ const cases: SmokeCase[] = [
         },
         backups: [],
         events: [],
-        app: { adminUrl: 'http://127.0.0.1:3032' },
+        app: { adminUrl: 'http://127.0.0.1:3030' },
       } as unknown as DashboardState,
       whatsNew: null,
       autoBackupSettings: null,
@@ -521,13 +517,9 @@ const cases: SmokeCase[] = [
     el: createElement(WorkersTab, {
       dashboard: mockDashboard,
       busyKey: null,
-      workerDescription: '',
-      setWorkerDescription: noop,
-      generatedWorker: null,
       workerUploadFile: null,
       setWorkerUploadFile: () => {},
       storeUpdates: new Map<string, string>(),
-      generateWorkerFromDescription: noopAsync,
       uploadWorkerZip: () => {},
       deleteWorker: () => {},
       mutate: () => {},
@@ -570,10 +562,27 @@ const cases: SmokeCase[] = [
       openChatFromOverview: noop,
       dashboardViews: [],
       workerViewContext: {},
+      // Sections already settled — this case renders the loaded surface. The pending
+      // counterpart is the next case.
+      isSectionPending: () => false,
       selectedModelAlias: 'demo',
       setSelectedModelAlias: noop,
       saveDefaultModel: noop,
-      setNotice: noop,
+    }),
+  },
+  {
+    // The pre-section paint: every lazily-fetched slice is still in flight, so the tab
+    // takes its placeholder branches instead of the loaded ones above.
+    name: 'OverviewTab (sections pending)',
+    el: createElement(OverviewTab, {
+      ...overviewSetupProps,
+      openChatFromOverview: noop,
+      dashboardViews: [],
+      workerViewContext: {},
+      isSectionPending: () => true,
+      selectedModelAlias: 'demo',
+      setSelectedModelAlias: noop,
+      saveDefaultModel: noop,
     }),
   },
 ];

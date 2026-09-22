@@ -11,6 +11,7 @@ import {
   setSelectedReasoningLevel,
 } from './conversation';
 import { runWithChatContext, getActiveChatContext } from './chat-context';
+import { withDebugTimingAsync } from './debug';
 import { listRegisteredTools } from './workers/registry';
 import { buildJobToolCatalog } from './workers/job-tools';
 import type { WorkerToolManifest } from './workers/types';
@@ -133,14 +134,14 @@ export async function runAgent(messages: ModelMessage[], modelId: string): Promi
     ...(nativeWebSearch?.tools ?? {}),
   };
 
-  const result = await generateText({
+  const result = await withDebugTimingAsync('llm.generate-text', () => generateText({
     model,
     system,
     tools,
     stopWhen: stepCountIs(8),
     timeout: 600000,
     messages,
-  });
+  }));
   // Local models (Qwen3 extended-thinking) sometimes emit an empty text when the
   // summary lands in the reasoning block. Fall back through steps to find the last
   // non-empty text; if none exists, emit a neutral confirmation.

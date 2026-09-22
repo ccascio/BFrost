@@ -1,29 +1,25 @@
 /**
- * Run the BFrost backend in the foreground while writing bounded rotating logs.
+ * Run the backend in the foreground while writing bounded rotating logs.
  *
  * This is the process launched by npm-start's daemon wrapper and by installed
  * OS services. The backend still writes to stdout/stderr; this wrapper keeps
- * bfrost.log capped.
+ * the project log capped.
  */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_MAX_LOG_BYTES,
   DEFAULT_LOG_ROTATIONS,
   RotatingLogWriter,
-  defaultLogFile,
   parseLogLimit,
   parseLogRotations,
 } from './logging.mjs';
+import { envWithSystemCa } from './node-options.mjs';
+import { service } from './service-config.mjs';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const ENTRY = path.join(ROOT, 'dist', 'index.js');
-const REGISTRY = path.join(ROOT, 'dist', 'workers', 'registry.js');
-const LOG_FILE = defaultLogFile(ROOT);
-const MAX_LOG_BYTES = parseLogLimit(process.env.BFROST_MAX_LOG_BYTES, DEFAULT_MAX_LOG_BYTES);
-const LOG_ROTATIONS = parseLogRotations(process.env.BFROST_LOG_ROTATIONS, DEFAULT_LOG_ROTATIONS);
+const { ROOT, ENTRY, REGISTRY, LOG_FILE, DISPLAY } = service;
+const MAX_LOG_BYTES = parseLogLimit(process.env.BFROST_MAX_LOG_BYTES ?? process.env.BFROST_MAX_LOG_BYTES, DEFAULT_MAX_LOG_BYTES);
+const LOG_ROTATIONS = parseLogRotations(process.env.BFROST_LOG_ROTATIONS ?? process.env.BFROST_LOG_ROTATIONS, DEFAULT_LOG_ROTATIONS);
 
 if (!existsSync(ENTRY) || !existsSync(REGISTRY)) {
   console.error('Error: build is missing or incomplete. Run: npm run build');
@@ -36,14 +32,14 @@ const log = new RotatingLogWriter(LOG_FILE, {
 });
 
 function writeLauncherLine(message) {
-  log.write(`[BFrost launcher] ${new Date().toISOString()} ${message}\n`);
+  log.write(`[${DISPLAY} launcher] ${new Date().toISOString()} ${message}\n`);
 }
 
 writeLauncherLine(`Starting backend with log limit ${MAX_LOG_BYTES} bytes and ${LOG_ROTATIONS} rotation(s).`);
 
 const child = spawn(process.execPath, [ENTRY], {
   cwd: ROOT,
-  env: process.env,
+  env: envWithSystemCa(process.env),
   stdio: ['ignore', 'pipe', 'pipe'],
   windowsHide: true,
 });

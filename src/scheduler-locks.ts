@@ -1,4 +1,5 @@
 import { getAppDb } from './sqlite';
+import { withDebugTimingAsync } from './debug';
 
 const LOCK_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -8,6 +9,7 @@ export interface SchedulerExecutionLockInput {
 }
 
 export async function acquireSchedulerExecutionLock(input: SchedulerExecutionLockInput): Promise<boolean> {
+  return withDebugTimingAsync('sqlite.scheduler-lock.acquire', async () => {
   const db = await getAppDb();
   ensureSchedulerExecutionLocksTable(db);
 
@@ -24,6 +26,7 @@ export async function acquireSchedulerExecutionLock(input: SchedulerExecutionLoc
     .run(lockKey, input.commandKey, input.scheduledAt, nowIso, process.pid);
 
   return result.changes === 1;
+  });
 }
 
 export function schedulerExecutionLockKey(commandKey: string, scheduledAt: string): string {

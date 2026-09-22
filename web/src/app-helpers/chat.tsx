@@ -4,6 +4,13 @@ import { CORE_CHAT_PROMPTS } from '../app-types';
 import { Dialog } from '../ui';
 
 const TEMPLATES_STORAGE_KEY = 'bfrost:chat-templates';
+const CORE_PROMPT_CATEGORY = 'System maintenance';
+const PROMPT_CATEGORY_ORDER = [
+  CORE_PROMPT_CATEGORY,
+  'Worker tasks',
+  'Channels',
+  'Model providers',
+];
 
 export interface PromptTemplate {
   id: string;
@@ -199,6 +206,7 @@ export function buildChatPromptButtons(dashboard: DashboardState): ChatPromptBut
   const core = CORE_CHAT_PROMPTS.map((prompt) => ({
     ...prompt,
     id: `core:${prompt.label}`,
+    category: CORE_PROMPT_CATEGORY,
   }));
   const workerPrompts = dashboard.workers
     .filter((worker) => worker.enabled && !worker.missing)
@@ -207,9 +215,34 @@ export function buildChatPromptButtons(dashboard: DashboardState): ChatPromptBut
         ...prompt,
         id: `${worker.id}:${prompt.label}`,
         source: worker.displayName ?? worker.name,
+        category: promptCategoryForWorkerKind(worker.kind),
       })),
     );
   return [...core, ...workerPrompts];
+}
+
+function promptCategoryForWorkerKind(kind: DashboardState['workers'][number]['kind']): string {
+  if (kind === 'channel') return 'Channels';
+  if (kind === 'provider') return 'Model providers';
+  return 'Worker tasks';
+}
+
+function groupedPromptButtons(prompts: ChatPromptButton[]): Array<{ category: string; prompts: ChatPromptButton[] }> {
+  const grouped = new Map<string, ChatPromptButton[]>();
+  for (const prompt of prompts) {
+    const category = prompt.category ?? 'Other workers';
+    grouped.set(category, [...(grouped.get(category) ?? []), prompt]);
+  }
+  return [...grouped.entries()]
+    .map(([category, categoryPrompts]) => ({ category, prompts: categoryPrompts }))
+    .sort((a, b) => {
+      const orderA = PROMPT_CATEGORY_ORDER.indexOf(a.category);
+      const orderB = PROMPT_CATEGORY_ORDER.indexOf(b.category);
+      if (orderA !== -1 || orderB !== -1) {
+        return (orderA === -1 ? Number.MAX_SAFE_INTEGER : orderA) - (orderB === -1 ? Number.MAX_SAFE_INTEGER : orderB);
+      }
+      return a.category.localeCompare(b.category);
+    });
 }
 
 export function ChatWelcome({
@@ -227,10 +260,12 @@ export function ChatWelcome({
           example.label,
           example.description,
           example.source ?? '',
+          example.category ?? '',
           example.prompt,
         ].some((value) => value.toLowerCase().includes(normalizedQuery)),
       )
     : prompts;
+  const promptGroups = groupedPromptButtons(filteredPrompts);
 
   return (
     <div className="chat-empty" role="note">
@@ -253,19 +288,29 @@ export function ChatWelcome({
         />
         <span>{filteredPrompts.length} shown</span>
       </div>
-      <div className="chat-empty-prompts">
-        {filteredPrompts.map((example, index) => (
-          <button
-            key={example.id}
-            type="button"
-            className="chat-empty-prompt"
-            title={example.prompt}
-            style={{ animationDelay: `${Math.min(index, 18) * 32}ms` }}
-            onClick={() => onSelect(example.prompt)}
-          >
-            <span>{example.label}</span>
-            <small>{example.source ? `${example.source}: ${example.description}` : example.description}</small>
-          </button>
+      <div className="chat-prompt-groups">
+        {promptGroups.map((group) => (
+          <details className="chat-prompt-group" key={group.category} {...(normalizedQuery ? { open: true } : {})}>
+            <summary>
+              <span>{group.category}</span>
+              <small>{group.prompts.length} prompt{group.prompts.length === 1 ? '' : 's'}</small>
+            </summary>
+            <div className="chat-empty-prompts">
+              {group.prompts.map((example, index) => (
+                <button
+                  key={example.id}
+                  type="button"
+                  className="chat-empty-prompt"
+                  title={example.prompt}
+                  style={{ animationDelay: `${Math.min(index, 18) * 32}ms` }}
+                  onClick={() => onSelect(example.prompt)}
+                >
+                  <span>{example.label}</span>
+                  <small>{example.source ? `${example.source}: ${example.description}` : example.description}</small>
+                </button>
+              ))}
+            </div>
+          </details>
         ))}
         {filteredPrompts.length === 0 ? (
           <p className="empty-state chat-prompt-empty">No matching example requests.</p>

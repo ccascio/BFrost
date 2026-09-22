@@ -370,9 +370,9 @@ export async function buildBackupsSection(): Promise<BackupsSection> {
   return BackupsSectionSchema.parse({ backups });
 }
 
-export async function buildWorkerDataSection(): Promise<WorkerDataSection> {
+export async function buildWorkerDataSection(workerIds?: readonly string[]): Promise<WorkerDataSection> {
   const activeScopeId = await getActiveScopeId();
-  const workerDashboardData = await loadRegisteredWorkerDashboardData({ activeScopeId });
+  const workerDashboardData = await loadRegisteredWorkerDashboardData({ activeScopeId }, workerIds);
   return WorkerDataSectionSchema.parse({ workerData: workerDashboardData });
 }
 

@@ -1,5 +1,6 @@
 import os from 'os';
 import { getAppDb } from './sqlite';
+import { withDebugTimingAsync } from './debug';
 
 const RUNTIME_LOCK_KEY = 'bfrost-runtime';
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -18,6 +19,7 @@ interface RuntimeLockRow {
 }
 
 export async function acquireRuntimeLock(): Promise<void> {
+  return withDebugTimingAsync('sqlite.runtime-lock.acquire', async () => {
   const db = await getAppDb();
   ensureRuntimeLocksTable(db);
 
@@ -56,6 +58,7 @@ export async function acquireRuntimeLock(): Promise<void> {
 
   ownsRuntimeLock = true;
   startRuntimeHeartbeat();
+  });
 }
 
 function tryInsertRuntimeLock(db: Awaited<ReturnType<typeof getAppDb>>): boolean {
@@ -77,6 +80,7 @@ function tryInsertRuntimeLock(db: Awaited<ReturnType<typeof getAppDb>>): boolean
 }
 
 export async function releaseRuntimeLock(): Promise<void> {
+  return withDebugTimingAsync('sqlite.runtime-lock.release', async () => {
   stopRuntimeHeartbeat();
   if (!ownsRuntimeLock) return;
 
@@ -88,6 +92,7 @@ export async function releaseRuntimeLock(): Promise<void> {
   } finally {
     ownsRuntimeLock = false;
   }
+  });
 }
 
 function startRuntimeHeartbeat(): void {
@@ -107,6 +112,8 @@ function stopRuntimeHeartbeat(): void {
 }
 
 async function updateRuntimeHeartbeat(): Promise<void> {
+  // Deliberately omit debug timing here: this routine heartbeat runs every 30 seconds and
+  // its paired START/END records add noise without helping diagnose user-facing latency.
   if (!ownsRuntimeLock) return;
   const db = await getAppDb();
   ensureRuntimeLocksTable(db);

@@ -164,7 +164,7 @@ test('dashboard response schema accepts the control-room payload shape', () => {
   const payload = {
     app: {
       name: 'BFrost Control Room',
-      adminUrl: 'http://127.0.0.1:3032',
+      adminUrl: 'http://127.0.0.1:3030',
       timezone: 'UTC',
       now: '2026-04-24T12:00:00.000Z',
       pid: 123,
@@ -366,7 +366,7 @@ test('dashboard response schema accepts the control-room payload shape', () => {
       jobLlmTimeoutMs: 600000,
       automaticMissedRunRecovery: false,
       adminHost: '127.0.0.1',
-      adminPort: 3032,
+      adminPort: 3030,
     },
     availableLocalProviders: [
       { id: 'lmstudio', label: 'LM Studio', workerId: 'core.providers.lmstudio', workerName: 'LM Studio Provider' },

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -84,4 +84,15 @@ test('runtime lock rejects another live owner pid', async () => {
     config.appDbPath = previousDbPath;
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('startup acquires exclusivity after restore but before hydration and stale queue-lock cleanup', async () => {
+  const source = await readFile(path.join(process.cwd(), 'src', 'index.ts'), 'utf8');
+  const restore = source.indexOf('await applyPendingRestoreIfAny()');
+  const acquire = source.indexOf('await acquireRuntimeLock()');
+  const hydrate = source.indexOf('await hydrateConversations()');
+  const releaseQueue = source.indexOf('await releaseStaleQueueLockOnBoot()');
+  assert.ok(restore >= 0 && acquire > restore, 'restore must complete before opening/locking the live DB');
+  assert.ok(hydrate > acquire, 'hydration must not mutate shared state before the runtime lock');
+  assert.ok(releaseQueue > acquire, 'a second process must not remove a live queue lock before being rejected');
 });

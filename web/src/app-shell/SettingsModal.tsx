@@ -4,9 +4,6 @@ import type { SettingsTab } from '../app-types';
 
 const CORE_TABS: Array<{ id: SettingsTab; label: string; icon: string; order: number }> = [
   { id: 'config', label: 'Config', icon: 'config', order: 10 },
-  { id: 'channels', label: 'Channels', icon: 'channels', order: 30 },
-  { id: 'system', label: 'System', icon: 'system', order: 40 },
-  { id: 'actions', label: 'Actions', icon: 'actions', order: 50 },
 ];
 
 export interface ExtraSettingsTab {

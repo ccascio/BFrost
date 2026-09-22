@@ -23,6 +23,25 @@ const FALLBACK_EXPIRY_MS = 60 * 60 * 1000;
 const FINISH_STOP: LanguageModelV3FinishReason = { unified: 'stop', raw: 'stop' };
 const FINISH_TOOL_CALLS: LanguageModelV3FinishReason = { unified: 'tool-calls', raw: 'tool-calls' };
 
+// ChatGPT's backend intermittently answers with `server_error` (mid-stream or as
+// HTTP 5xx) and explicitly invites a retry. Retry those — and only those — a
+// couple of times before surfacing the failure to the job.
+const TRANSIENT_RETRY_DELAYS_MS = [2_000, 8_000];
+const TRANSIENT_ERROR_MARKERS = ['server_error', 'rate_limit', 'overloaded', 'timeout'];
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+class CodexTransientError extends Error {}
+
+function describeFetchFailure(err: unknown): string {
+  const error = err instanceof Error ? err : new Error(String(err));
+  const cause = (error as Error & { cause?: unknown }).cause;
+  if (cause instanceof Error) return `${error.message} (${cause.message})`;
+  if (cause && typeof cause === 'object' && 'code' in cause) return `${error.message} (${String((cause as { code?: unknown }).code)})`;
+  if (typeof cause === 'string') return `${error.message} (${cause})`;
+  return error.message;
+}
+
 interface CodexCredential {
   access: string;
   refresh: string;
@@ -134,16 +153,21 @@ export async function persistOpenAICodexSubscriptionCredentials(credentials: Cod
 }
 
 async function refreshCodexCredentials(refreshToken: string, signal?: AbortSignal): Promise<CodexCredential> {
-  const response = await fetch(OAUTH_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: refreshToken,
-      client_id: OAUTH_CLIENT_ID,
-    }),
-    signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(OAUTH_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: OAUTH_CLIENT_ID,
+      }),
+      signal,
+    });
+  } catch (err) {
+    throw new Error(`OpenAI Codex token refresh failed: ${describeFetchFailure(err)}`);
+  }
   if (!response.ok) {
     const text = await response.text().catch(() => '');
     throw new Error(`OpenAI Codex token refresh failed (${response.status}): ${text || response.statusText}`);
@@ -224,7 +248,7 @@ function promptToText(options: LanguageModelV3CallOptions): string {
   const instructions = [
     'You are being called by BFrost as a language model provider.',
     options.tools && options.tools.length > 0
-      ? 'Use the provided function tools when they are needed to answer accurately.'
+      ? 'Use the provided tools when they are needed to answer accurately.'
       : 'Return only the final answer text. Do not edit files.',
   ];
   if (options.responseFormat?.type === 'json') {
@@ -234,19 +258,47 @@ function promptToText(options: LanguageModelV3CallOptions): string {
 }
 
 function buildResponsesTools(tools: LanguageModelV3CallOptions['tools']): Array<Record<string, unknown>> {
-  return (tools ?? [])
-    .filter((tool): tool is LanguageModelV3FunctionTool => tool.type === 'function')
-    .map((tool) => ({
-      type: 'function',
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.inputSchema,
-      strict: tool.strict ?? false,
-    }));
+  const responsesTools: Array<Record<string, unknown>> = [];
+  for (const tool of tools ?? []) {
+    if (tool.type === 'function') {
+      const functionTool = tool as LanguageModelV3FunctionTool;
+      responsesTools.push({
+        type: 'function',
+        name: functionTool.name,
+        description: functionTool.description,
+        parameters: functionTool.inputSchema,
+        strict: functionTool.strict ?? false,
+      });
+      continue;
+    }
+    if (tool.type !== 'provider' || tool.id !== 'openai.web_search') continue;
+    const searchContextSize = ['low', 'medium', 'high'].includes(String(tool.args.searchContextSize))
+      ? tool.args.searchContextSize
+      : undefined;
+    const filters = tool.args.filters && typeof tool.args.filters === 'object'
+      ? tool.args.filters as { allowedDomains?: unknown }
+      : null;
+    const allowedDomains = Array.isArray(filters?.allowedDomains)
+      ? filters.allowedDomains.filter((domain): domain is string => typeof domain === 'string' && domain.trim().length > 0)
+      : [];
+    responsesTools.push({
+      type: 'web_search',
+      search_context_size: searchContextSize,
+      external_web_access: typeof tool.args.externalWebAccess === 'boolean'
+        ? tool.args.externalWebAccess
+        : undefined,
+      filters: allowedDomains.length > 0 ? { allowed_domains: allowedDomains } : undefined,
+      user_location: tool.args.userLocation && typeof tool.args.userLocation === 'object'
+        ? tool.args.userLocation
+        : undefined,
+    });
+  }
+  return responsesTools;
 }
 
 function buildRequestBody(modelId: string, options: LanguageModelV3CallOptions): Record<string, unknown> {
   const tools = buildResponsesTools(options.tools);
+  const hasWebSearch = tools.some((tool) => tool.type === 'web_search');
   const body: Record<string, unknown> = {
     model: modelId,
     store: false,
@@ -259,11 +311,24 @@ function buildRequestBody(modelId: string, options: LanguageModelV3CallOptions):
       },
     ],
     text: { verbosity: 'low' },
-    include: ['reasoning.encrypted_content'],
+    include: [
+      'reasoning.encrypted_content',
+      ...(hasWebSearch ? ['web_search_call.action.sources'] : []),
+    ],
   };
+  // Injected by the adapter's reasoning-level middleware when the operator selected one.
+  const reasoningEffort = (options.providerOptions?.openai as { reasoningEffort?: unknown } | undefined)
+    ?.reasoningEffort;
+  if (typeof reasoningEffort === 'string' && reasoningEffort) {
+    body.reasoning = { effort: reasoningEffort };
+  }
   if (tools.length > 0) {
     body.tools = tools;
-    body.tool_choice = 'auto';
+    body.tool_choice = options.toolChoice?.type === 'required'
+      ? 'required'
+      : options.toolChoice?.type === 'none'
+        ? 'none'
+        : 'auto';
     body.parallel_tool_calls = true;
   }
   return body;
@@ -277,6 +342,34 @@ function extractText(value: unknown): string {
   if (typeof record.text === 'string') return record.text;
   if (typeof record.content === 'string') return record.content;
   return Object.values(record).map(extractText).filter(Boolean).join('');
+}
+
+function streamErrorRecordOf(event: Record<string, unknown>): Record<string, unknown> | null {
+  if (event.error && typeof event.error === 'object') return event.error as Record<string, unknown>;
+  const response = event.response;
+  if (response && typeof response === 'object') {
+    const nested = (response as Record<string, unknown>).error;
+    if (nested && typeof nested === 'object') return nested as Record<string, unknown>;
+  }
+  return null;
+}
+
+/**
+ * Builds a readable error for a mid-stream `error` / `response.failed` event.
+ * Prefers the error's `message` (with its code prefixed once) over blindly
+ * concatenating every field, and marks retryable codes as transient.
+ */
+function buildStreamError(event: Record<string, unknown>): Error {
+  const record = streamErrorRecordOf(event);
+  const code = record && typeof record.code === 'string'
+    ? record.code
+    : record && typeof record.type === 'string' ? record.type : '';
+  const message = record && typeof record.message === 'string' && record.message.trim()
+    ? record.message.trim()
+    : extractText(event.error) || extractText(event.response) || 'OpenAI Codex response failed.';
+  const text = code && !message.startsWith(code) ? `${code}: ${message}` : message;
+  const transient = TRANSIENT_ERROR_MARKERS.some((marker) => code.includes(marker));
+  return transient ? new CodexTransientError(text) : new Error(text);
 }
 
 function readSseDataLines(buffer: string): { events: string[]; rest: string } {
@@ -415,8 +508,7 @@ async function parseResponsesSse(response: Response): Promise<ParsedCodexRespons
       } else if (event.type === 'response.completed') {
         completed = collectCompletedResponse(event.response);
       } else if (event.type === 'error' || event.type === 'response.failed') {
-        const message = extractText(event.error) || extractText(event.response) || 'OpenAI Codex response failed.';
-        throw new Error(message);
+        throw buildStreamError(event);
       }
     }
   }
@@ -446,28 +538,57 @@ async function generateWithCodex(modelId: string, options: LanguageModelV3CallOp
   const signal = options.abortSignal
     ? AbortSignal.any([options.abortSignal, timeoutSignal])
     : timeoutSignal;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await attemptCodexGeneration(modelId, options, signal);
+    } catch (err) {
+      if (!(err instanceof CodexTransientError) || attempt >= TRANSIENT_RETRY_DELAYS_MS.length || signal.aborted) {
+        throw err;
+      }
+      const delayMs = TRANSIENT_RETRY_DELAYS_MS[attempt];
+      console.warn(`[OpenAI] Transient Codex failure (${err.message.slice(0, 140)}); retrying in ${Math.round(delayMs / 1000)}s.`);
+      await sleep(delayMs);
+    }
+  }
+}
+
+async function attemptCodexGeneration(
+  modelId: string,
+  options: LanguageModelV3CallOptions,
+  signal: AbortSignal,
+): Promise<ParsedCodexResponse> {
   const credentials = await getFreshCodexCredentials(signal);
   const accountId = credentials.accountId || decodeJwtAccountId(credentials.access);
   if (!accountId) {
     throw new Error('Codex OAuth token did not include a ChatGPT account id.');
   }
-  const response = await fetch(CODEX_RESPONSES_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${credentials.access}`,
-      'chatgpt-account-id': accountId,
-      originator: 'bfrost',
-      'OpenAI-Beta': 'responses=experimental',
-      accept: 'text/event-stream',
-      'content-type': 'application/json',
-      'User-Agent': `bfrost (${os.platform()} ${os.release()}; ${os.arch()})`,
-    },
-    body: JSON.stringify(buildRequestBody(modelId, options)),
-    signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(CODEX_RESPONSES_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${credentials.access}`,
+        'chatgpt-account-id': accountId,
+        originator: 'WFrost',
+        'OpenAI-Beta': 'responses=experimental',
+        accept: 'text/event-stream',
+        'content-type': 'application/json',
+        'User-Agent': `BFrost (${os.platform()} ${os.release()}; ${os.arch()})`,
+      },
+      body: JSON.stringify(buildRequestBody(modelId, options)),
+      signal,
+    });
+  } catch (err) {
+    // Network-level failures (DNS, reset connections) are worth one more try too —
+    // unless we were deliberately aborted by the caller or the job timeout.
+    if (signal.aborted) throw new Error(`OpenAI Codex Responses request failed: ${describeFetchFailure(err)}`);
+    throw new CodexTransientError(`OpenAI Codex Responses request failed: ${describeFetchFailure(err)}`);
+  }
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new Error(`OpenAI Codex Responses request failed (${response.status}): ${text || response.statusText}`);
+    const message = `OpenAI Codex Responses request failed (${response.status}): ${text || response.statusText}`;
+    if (response.status === 429 || response.status >= 500) throw new CodexTransientError(message);
+    throw new Error(message);
   }
   return parseResponsesSse(response);
 }

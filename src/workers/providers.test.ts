@@ -1,11 +1,28 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtempSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { config } from '../config';
+
+/**
+ * Keep the default database off the live store.
+ *
+ * The provider OAuth routes record a `cloud_api_keys_updated` audit event through
+ * `recordEventSafe`, which opens `config.appDbPath`. With `APP_DB_PATH` unset that path is
+ * the operator's live `data/BFrost.sqlite`, so exercising those routes here would write a
+ * spurious "subscription login completed" row to the real audit log. Redirecting the
+ * process default to a throwaway at import time keeps this file safe on its own, in
+ * addition to the runner-level redirect in `scripts/cross-platform.mjs`.
+ */
+const PROVIDERS_TEST_STORE_DIR = mkdtempSync(path.join(os.tmpdir(), 'BFrost-providers-default-'));
+config.appDbPath = path.join(PROVIDERS_TEST_STORE_DIR, 'default.sqlite');
+config.itemBusStoreDir = path.join(PROVIDERS_TEST_STORE_DIR, 'item-bus');
 import type { LanguageModelV3, LanguageModelV3CallOptions } from '@ai-sdk/provider';
 import { generateText, jsonSchema, stepCountIs, tool } from 'ai';
+import { resolveNativeWebSearch, runWithReasoningLevel } from '../llm';
 import { createAnthropicProviderAdapter } from './builtin/providers-anthropic/adapter';
 import {
   setAnthropicAuthMode,
@@ -257,6 +274,7 @@ test('OpenAI OAuth login route exchanges callback code and saves Codex credentia
     const result = await route.handle({
       req: {} as never,
       url: new URL('http://localhost/api/workers/providers-openai/oauth/start'),
+      activeScopeId: null,
       readJsonBody: async () => ({}),
       getDashboardState: async () => ({} as never),
     });
@@ -380,6 +398,206 @@ test('OpenAI Codex OAuth mode exposes AI SDK tools to ChatGPT Responses', async 
   }
 });
 
+test('OpenAI subscription retries a mid-stream server_error and surfaces a clean message', async () => {
+  const codexHome = await mkdtemp(path.join(os.tmpdir(), 'BFrost-codex-retry-home-'));
+  await writeFile(
+    path.join(codexHome, 'auth.json'),
+    JSON.stringify({
+      auth_mode: 'chatgpt',
+      tokens: {
+        access_token: 'fake-access-token',
+        refresh_token: 'fake-refresh-token',
+        account_id: 'fake-account-id',
+      },
+    }),
+  );
+  const previousCodexHome = process.env.CODEX_HOME;
+  const previousFetch = globalThis.fetch;
+  let requestCount = 0;
+  process.env.CODEX_HOME = codexHome;
+  globalThis.fetch = (async () => {
+    requestCount += 1;
+    if (requestCount === 1) {
+      return new Response(
+        [
+          'data: {"type":"error","error":{"type":"server_error","code":"server_error","message":"An error occurred while processing your request."}}',
+          '',
+          'data: [DONE]',
+          '',
+        ].join('\n'),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      );
+    }
+    return new Response(
+      [
+        'data: {"type":"response.output_text.delta","delta":"recovered"}',
+        '',
+        'data: [DONE]',
+        '',
+      ].join('\n'),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
+  }) as typeof fetch;
+
+  setOpenAIAuthMode('subscription');
+  setOpenAICodexCliModel('gpt-subscription-test');
+  try {
+    const adapter = createOpenAIProviderAdapter();
+    const result = await generateText({
+      model: adapter.getChatModel('gpt-subscription-test') as Parameters<typeof generateText>[0]['model'],
+      prompt: 'Say something.',
+    });
+    assert.equal(result.text, 'recovered');
+    assert.equal(requestCount, 2);
+  } finally {
+    setOpenAIAuthMode('api');
+    setOpenAICodexCliModel('gpt-5.4-mini');
+    globalThis.fetch = previousFetch;
+    if (previousCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = previousCodexHome;
+    }
+  }
+});
+
+test('OpenAI subscription does not retry non-transient stream errors', async () => {
+  const codexHome = await mkdtemp(path.join(os.tmpdir(), 'BFrost-codex-noretry-home-'));
+  await writeFile(
+    path.join(codexHome, 'auth.json'),
+    JSON.stringify({
+      auth_mode: 'chatgpt',
+      tokens: {
+        access_token: 'fake-access-token',
+        refresh_token: 'fake-refresh-token',
+        account_id: 'fake-account-id',
+      },
+    }),
+  );
+  const previousCodexHome = process.env.CODEX_HOME;
+  const previousFetch = globalThis.fetch;
+  let requestCount = 0;
+  process.env.CODEX_HOME = codexHome;
+  globalThis.fetch = (async () => {
+    requestCount += 1;
+    return new Response(
+      [
+        'data: {"type":"error","error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"Your input is too long."}}',
+        '',
+        'data: [DONE]',
+        '',
+      ].join('\n'),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
+  }) as typeof fetch;
+
+  setOpenAIAuthMode('subscription');
+  setOpenAICodexCliModel('gpt-subscription-test');
+  try {
+    const adapter = createOpenAIProviderAdapter();
+    await assert.rejects(
+      () => generateText({
+        model: adapter.getChatModel('gpt-subscription-test') as Parameters<typeof generateText>[0]['model'],
+        prompt: 'Say something.',
+      }),
+      /context_length_exceeded: Your input is too long\./,
+    );
+    assert.equal(requestCount, 1);
+  } finally {
+    setOpenAIAuthMode('api');
+    setOpenAICodexCliModel('gpt-5.4-mini');
+    globalThis.fetch = previousFetch;
+    if (previousCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = previousCodexHome;
+    }
+  }
+});
+
+test('OpenAI subscription serializes required hosted web search for Terra and Luna', async () => {
+  const codexHome = await mkdtemp(path.join(os.tmpdir(), 'BFrost-codex-web-search-home-'));
+  await writeFile(
+    path.join(codexHome, 'auth.json'),
+    JSON.stringify({
+      auth_mode: 'chatgpt',
+      tokens: {
+        access_token: 'fake-access-token',
+        refresh_token: 'fake-refresh-token',
+        account_id: 'fake-account-id',
+      },
+    }),
+  );
+  const previousCodexHome = process.env.CODEX_HOME;
+  const previousFetch = globalThis.fetch;
+  const requests: Array<Record<string, unknown>> = [];
+  process.env.CODEX_HOME = codexHome;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(String(input), 'https://chatgpt.com/backend-api/codex/responses');
+    requests.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
+    return new Response(
+      [
+        'data: {"type":"response.web_search_call.completed","item_id":"ws_1"}',
+        '',
+        'data: {"type":"response.output_text.delta","delta":"searched"}',
+        '',
+        'data: [DONE]',
+        '',
+      ].join('\n'),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
+  }) as typeof fetch;
+
+  setOpenAIAuthMode('subscription');
+  try {
+    for (const modelId of ['gpt-5.6-terra', 'gpt-5.6-luna']) {
+      const alias = `native-search-${modelId}`;
+      const runtime = await runWithReasoningLevel(
+        { modelAlias: alias, reasoningLevel: 'high' },
+        async () => resolveNativeWebSearch(
+          {
+            alias,
+            id: modelId,
+            label: modelId,
+            provider: 'openai',
+            reasoningLevels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          },
+          { searchContextSize: 'high' },
+        ),
+      );
+      assert.ok(runtime);
+      const result = await generateText({
+        model: runtime.model as Parameters<typeof generateText>[0]['model'],
+        prompt: 'Research the company with current primary sources.',
+        tools: runtime.tools as Parameters<typeof generateText>[0]['tools'],
+        toolChoice: 'required',
+      });
+      assert.equal(result.text, 'searched');
+    }
+    assert.deepEqual(requests.map((request) => request.model), ['gpt-5.6-terra', 'gpt-5.6-luna']);
+    for (const request of requests) {
+      assert.equal(request.tool_choice, 'required');
+      assert.deepEqual(request.tools, [{
+        type: 'web_search',
+        search_context_size: 'high',
+      }]);
+      assert.deepEqual(request.include, [
+        'reasoning.encrypted_content',
+        'web_search_call.action.sources',
+      ]);
+      assert.deepEqual(request.reasoning, { effort: 'high' });
+    }
+  } finally {
+    setOpenAIAuthMode('api');
+    globalThis.fetch = previousFetch;
+    if (previousCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = previousCodexHome;
+    }
+  }
+});
+
 test('Anthropic provider exposes OAuth subscription settings and can generate with a Claude login token', async () => {
   const previousFetch = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -479,6 +697,7 @@ test('Anthropic OAuth login route exchanges callback code and saves Claude crede
     const result = await route.handle({
       req: {} as never,
       url: new URL('http://localhost/api/workers/providers-anthropic/oauth/start'),
+      activeScopeId: null,
       readJsonBody: async () => ({}),
       getDashboardState: async () => ({} as never),
     });

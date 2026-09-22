@@ -8,11 +8,13 @@
 
 import { randomUUID } from 'crypto';
 import { getAppDb } from '../sqlite';
+import { withDebugTimingAsync } from '../debug';
 import type { ActionClass, ActionRequest, ActionResult, ActionState, StoredActionRequest } from './types';
 
 const TABLE = 'action_requests';
 
 export async function ensureActionTable(): Promise<void> {
+  await withDebugTimingAsync('sqlite.actions.ensure', async () => {
   const db = await getAppDb();
   db.exec(`
     CREATE TABLE IF NOT EXISTS ${TABLE} (
@@ -33,6 +35,7 @@ export async function ensureActionTable(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_action_requests_state     ON ${TABLE}(state);
     CREATE INDEX IF NOT EXISTS idx_action_requests_created_at ON ${TABLE}(created_at DESC);
   `);
+  });
 }
 
 function rowToRequest(row: Record<string, unknown>): ActionRequest {
@@ -59,6 +62,7 @@ export async function createActionRequest(opts: {
   payload: Record<string, unknown>;
   preview: string | null;
 }): Promise<ActionRequest> {
+  return withDebugTimingAsync('sqlite.actions.create', async () => {
   const db = await getAppDb();
   const id = randomUUID();
   const now = new Date().toISOString();
@@ -88,21 +92,27 @@ export async function createActionRequest(opts: {
   );
 
   return getActionRequest(id) as Promise<ActionRequest>;
+  });
 }
 
 export async function getActionRequest(id: string): Promise<ActionRequest | null> {
+  return withDebugTimingAsync('sqlite.actions.get', async () => {
   const db = await getAppDb();
   const row = db.prepare(`SELECT * FROM ${TABLE} WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
   return row ? rowToRequest(row) : null;
+  });
 }
 
 export async function listPendingActionRequests(): Promise<ActionRequest[]> {
+  return withDebugTimingAsync('sqlite.actions.list-pending', async () => {
   const db = await getAppDb();
   const rows = db.prepare(`SELECT * FROM ${TABLE} WHERE state = 'pending' ORDER BY created_at ASC`).all() as Record<string, unknown>[];
   return rows.map(rowToRequest);
+  });
 }
 
 export async function listActionRequests(opts?: { workerId?: string; limit?: number }): Promise<ActionRequest[]> {
+  return withDebugTimingAsync('sqlite.actions.list', async () => {
   const db = await getAppDb();
   const limit = Math.min(opts?.limit ?? 50, 200);
   let sql = `SELECT * FROM ${TABLE}`;
@@ -114,9 +124,11 @@ export async function listActionRequests(opts?: { workerId?: string; limit?: num
   sql += ` ORDER BY created_at DESC LIMIT ${limit}`;
   const rows = db.prepare(sql).all(...params) as Record<string, unknown>[];
   return rows.map(rowToRequest);
+  });
 }
 
 export async function approveActionRequest(id: string): Promise<ActionRequest | null> {
+  return withDebugTimingAsync('sqlite.actions.approve', async () => {
   const db = await getAppDb();
   const now = new Date().toISOString();
   const result = db.prepare(
@@ -124,9 +136,11 @@ export async function approveActionRequest(id: string): Promise<ActionRequest | 
   ).run(now, id);
   if (result.changes === 0) return null;
   return getActionRequest(id);
+  });
 }
 
 export async function rejectActionRequest(id: string): Promise<ActionRequest | null> {
+  return withDebugTimingAsync('sqlite.actions.reject', async () => {
   const db = await getAppDb();
   const now = new Date().toISOString();
   const result = db.prepare(
@@ -134,13 +148,16 @@ export async function rejectActionRequest(id: string): Promise<ActionRequest | n
   ).run(now, id);
   if (result.changes === 0) return null;
   return getActionRequest(id);
+  });
 }
 
 export async function markActionExecuted(id: string, result: ActionResult): Promise<ActionRequest | null> {
+  return withDebugTimingAsync('sqlite.actions.mark-executed', async () => {
   const db = await getAppDb();
   const state: ActionState = result.ok ? 'executed' : 'failed';
   db.prepare(
     `UPDATE ${TABLE} SET state = ?, executed_at = ?, result_json = ? WHERE id = ?`,
   ).run(state, result.executedAt, JSON.stringify(result), id);
   return getActionRequest(id);
+  });
 }

@@ -172,7 +172,7 @@ test('a concurrent run start cannot resurrect a dismissed skipped record', async
 
 test('lists only retained skipped scheduled runs for manual recovery', async () => {
   const previousDbPath = config.appDbPath;
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-scheduler-runs-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-scheduler-runs-'));
   config.appDbPath = path.join(dir, 'app.sqlite');
 
   try {
@@ -207,7 +207,7 @@ test('lists only retained skipped scheduled runs for manual recovery', async () 
 
 test('repeated misses of one job collapse into a single recovery entry', async () => {
   const previousDbPath = config.appDbPath;
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-scheduler-runs-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-scheduler-runs-'));
   config.appDbPath = path.join(dir, 'app.sqlite');
 
   try {
@@ -260,7 +260,7 @@ test('repeated misses of one job collapse into a single recovery entry', async (
 
 test('a backlog written before collapsing existed is absorbed by the next miss', async () => {
   const previousDbPath = config.appDbPath;
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-scheduler-runs-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-scheduler-runs-'));
   config.appDbPath = path.join(dir, 'app.sqlite');
 
   try {
@@ -297,7 +297,7 @@ test('a backlog written before collapsing existed is absorbed by the next miss',
 
 test('a collapsed record survives the dashboard API schema', async () => {
   const previousDbPath = config.appDbPath;
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-scheduler-runs-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-scheduler-runs-'));
   config.appDbPath = path.join(dir, 'app.sqlite');
 
   try {
@@ -324,7 +324,7 @@ test('a collapsed record survives the dashboard API schema', async () => {
 
 test('a miss reported out of order counts but never moves the marker backwards', async () => {
   const previousDbPath = config.appDbPath;
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-scheduler-runs-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-scheduler-runs-'));
   config.appDbPath = path.join(dir, 'app.sqlite');
 
   try {
@@ -358,7 +358,7 @@ test('a miss reported out of order counts but never moves the marker backwards',
 
 test('bulk dismissal clears only recovered jobs from the skipped-schedule list', async () => {
   const previousDbPath = config.appDbPath;
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-scheduler-runs-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-scheduler-runs-'));
   config.appDbPath = path.join(dir, 'app.sqlite');
 
   try {

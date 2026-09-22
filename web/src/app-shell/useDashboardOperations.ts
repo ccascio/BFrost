@@ -38,10 +38,6 @@ export function useDashboardOperations({
   mutate: (key: string, input: RequestInfo, init: RequestInit, successMessage: string) => Promise<void>;
 }) {
   const [workerUploadFile, setWorkerUploadFile] = useState<File | null>(null);
-  const [workerDescription, setWorkerDescription] = useState('');
-  const [generatedWorker, setGeneratedWorker] = useState<
-    { id: string; displayName: string; role: string; enabled: boolean; note?: string } | null
-  >(null);
   const [pendingActions, setPendingActions] = useState<ActionRequest[]>([]);
   const [actionHistory, setActionHistory] = useState<ActionRequest[]>([]);
   const [actionsLoading, setActionsLoading] = useState(false);
@@ -111,53 +107,6 @@ export function useDashboardOperations({
       if (!response.ok || 'error' in payload) throw new Error(payload.error ?? 'Worker upload failed');
       setWorkerUploadFile(null);
       setNotice('Worker uploaded.');
-      await fetchDashboard(true);
-    } catch (err) {
-      setError(toAppError(err));
-    } finally {
-      setBusyKey(null);
-    }
-  }
-
-  async function generateWorkerFromDescription() {
-    const description = workerDescription.trim();
-    if (description.length < 8) {
-      setError({ friendly: 'Describe the worker you want in a sentence or two first.' });
-      return;
-    }
-    setBusyKey('worker-generate');
-    setError(null);
-    try {
-      const response = await fetch('/api/workers/generate', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description }),
-      });
-      const payload = (await response.json()) as {
-        error?: string;
-        worker?: { id: string; displayName: string; role: string };
-        enabled?: boolean;
-        note?: string;
-        dashboard?: DashboardState;
-      };
-      if (!response.ok || 'error' in payload) throw new Error(payload.error ?? 'Worker generation failed');
-      if (payload.dashboard) setDashboard(payload.dashboard);
-      if (payload.worker) {
-        setGeneratedWorker({
-          id: payload.worker.id,
-          displayName: payload.worker.displayName,
-          role: payload.worker.role,
-          enabled: Boolean(payload.enabled),
-          note: payload.note,
-        });
-        setWorkerDescription('');
-        setNotice(
-          payload.enabled
-            ? `Created and enabled "${payload.worker.displayName}". Open the Jobs tab and Run now to see it work.`
-            : `Created "${payload.worker.displayName}". ${payload.note ?? ''}`,
-        );
-      }
       await fetchDashboard(true);
     } catch (err) {
       setError(toAppError(err));
@@ -337,11 +286,7 @@ export function useDashboardOperations({
     workers: {
       workerUploadFile,
       setWorkerUploadFile,
-      workerDescription,
-      setWorkerDescription,
-      generatedWorker,
       uploadWorkerZip,
-      generateWorkerFromDescription,
       deleteWorker,
     },
     actions: {

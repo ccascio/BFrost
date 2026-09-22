@@ -21,14 +21,18 @@ import { isWorkerEnabled, loadWorkerState, type WorkerStateStore } from './worke
 import { onItemPublished } from './jobs/item-bus';
 import { detach } from './process-lifecycle';
 import type { WorkerJobRetryPolicy } from './workers/types';
-import { getPreviousCronMatch, installReliableCronMatcher } from './cron-internals';
+import { getNextCronMatch, getPreviousCronMatch, installReliableCronMatcher } from './cron-internals';
 import { reapExpiredQueueItems } from './jobs/queue';
 
 const SCHEDULER_STATE_STORE_KEY = 'scheduler.state';
-// Recover a missed slot if it elapsed within this window. Sized to cover a daily
-// job (e.g. an 8am digest) after an overnight or full-workday outage/sleep, while
-// still treating older slots as too stale to be worth replaying.
+// Smallest catch-up window, and the one every job at a daily-or-tighter cadence gets.
+// Sized to cover a daily job (e.g. an 8am digest) after an overnight or full-workday
+// outage/sleep, while still treating older slots as too stale to be worth replaying.
 export const CATCHUP_WINDOW_MS = 26 * 60 * 60 * 1000; // 26 hours
+// Ceiling on the cadence-derived window below. Past a week, "catching up" stops being
+// a recovery and becomes replaying stale work: a yearly job's missed slot is a decision
+// to make deliberately, not something the scheduler should quietly run months later.
+export const MAX_CATCHUP_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 export const PIPELINE_TICK_INTERVAL_MS = 15 * 60 * 1000;
 // Coalescing window for Item Bus wakes: a producer publishing a burst of items
 // wakes each subscribed job once, shortly after the first publish, instead of
@@ -46,13 +50,55 @@ const DEFAULT_JOB_RETRY_POLICY: Required<WorkerJobRetryPolicy> = {
 };
 
 /**
- * A missed slot is worth recovering only if it is in the past and not older than
- * the catch-up window. Shared by the node-cron missed-execution path (process alive
- * but timers froze during sleep) and the startup recovery path (process was not
- * running at all). `slotAgeMs` is `now - slotTime`.
+ * How long a missed slot stays worth replaying, given the job's own cadence.
+ *
+ * A fixed window cannot serve every schedule, because "stale" is relative to how often
+ * the job runs at all. 26 hours is generous for a daily job — more than its whole period,
+ * so a missed slot is almost always recovered. For anything rarer it inverts: it is 15% of
+ * a weekly job's period and 7% of a semi-monthly one's, so those jobs fall outside the
+ * window after a single day and then sit dark until their *next* natural slot, which can
+ * be a fortnight away. The scheduler was declaring the run "too stale to be worth
+ * replaying" at the exact moment replaying it mattered most.
+ *
+ * Half the interval to the following slot is the balance point: recover while the missed
+ * result is still the freshest thing available, decline once the next scheduled run is
+ * closer than the missed one is behind — at that point waiting produces newer output than
+ * replaying does. Clamped to [CATCHUP_WINDOW_MS, MAX_CATCHUP_WINDOW_MS] so daily-and-
+ * tighter jobs keep exactly the behaviour they had, and rare ones do not gain an unbounded
+ * one.
  */
-export function isRecoverableSlotAge(slotAgeMs: number): boolean {
-  return slotAgeMs > 0 && slotAgeMs <= CATCHUP_WINDOW_MS;
+export function catchUpWindowMs(slotIntervalMs?: number | null): number {
+  if (slotIntervalMs === undefined || slotIntervalMs === null) return CATCHUP_WINDOW_MS;
+  if (!Number.isFinite(slotIntervalMs) || slotIntervalMs <= 0) return CATCHUP_WINDOW_MS;
+  return Math.min(Math.max(slotIntervalMs / 2, CATCHUP_WINDOW_MS), MAX_CATCHUP_WINDOW_MS);
+}
+
+/**
+ * A missed slot is worth recovering only if it is in the past and not older than the
+ * catch-up window for its cadence. Shared by the node-cron missed-execution path (process
+ * alive but timers froze during sleep) and the startup recovery path (process was not
+ * running at all). `slotAgeMs` is `now - slotTime`; `slotIntervalMs` is the gap from the
+ * missed slot to the next one, omitted when the schedule cannot be resolved.
+ */
+export function isRecoverableSlotAge(slotAgeMs: number, slotIntervalMs?: number | null): boolean {
+  return slotAgeMs > 0 && slotAgeMs <= catchUpWindowMs(slotIntervalMs);
+}
+
+/**
+ * Gap from a scheduled slot to the one after it, or null when the cron cannot be resolved.
+ *
+ * Measured forward from the missed slot rather than backward, because the question the
+ * catch-up window answers is "will a fresh run come along soon anyway?". Irregular
+ * schedules have no single period — `35 14,18,21 * * 1-5` runs 4h apart inside a day and
+ * 65h apart across a weekend — and the forward gap is the one that governs each slot.
+ */
+function slotIntervalMsFor(cron: string, timezone: string, slot: Date): number | null {
+  try {
+    const interval = getNextCronMatch(cron, timezone, slot).getTime() - slot.getTime();
+    return Number.isFinite(interval) && interval > 0 ? interval : null;
+  } catch {
+    return null;
+  }
 }
 
 type SchedulerJobDashboardField = WorkerJobDashboardField;
@@ -907,8 +953,10 @@ async function recordSkippedScheduleExecution(
   // Misses are typically caused by macOS sleep freezing setTimeout timers; on wake-up
   // the heartbeat fires late and node-cron emits execution:missed for each skipped slot.
   if (reason === 'missed') {
-    const recoveryEnabled = (await ensureSettings()).platform.automaticMissedRunRecovery;
-    if (recoveryEnabled && isRecoverableSlotAge(slotAgeMs)) {
+    const settings = await ensureSettings();
+    const recoveryEnabled = settings.platform.automaticMissedRunRecovery;
+    const slotIntervalMs = slotIntervalMsFor(jobSettings.cron, settings.timezone, slotTime);
+    if (recoveryEnabled && isRecoverableSlotAge(slotAgeMs, slotIntervalMs)) {
       console.log(
         `[Scheduler] Missed ${name} execution (age: ${Math.round(slotAgeMs / 1000)}s) — catching up now.`,
       );
@@ -922,14 +970,19 @@ async function recordSkippedScheduleExecution(
     }
 
     console.warn(
-      `[Scheduler] Missed ${name} execution is ${slotAgeMin}min old — skipping catch-up (window: ${CATCHUP_WINDOW_MS / 60000}min). Cause: ${missedCause}.`,
+      `[Scheduler] Missed ${name} execution is ${slotAgeMin}min old — skipping catch-up `
+        + `(window: ${Math.round(catchUpWindowMs(slotIntervalMs) / 60000)}min). Cause: ${missedCause}.`,
     );
   }
 
   // Record as skipped: overlaps and stale misses that are outside the catch-up window.
+  // The in-flight flags are whatever `buildJobState` derives and are deliberately not
+  // forced to false: this record is about a *slot*, and a slot can be missed while an
+  // earlier run of the same job is still executing (an overlap is exactly that case).
+  // Clearing `running` here would hand the next tick a duplicate run on top of the live
+  // handler — the hazard the abandoned-run guard exists to prevent.
   runtimeCache[name] = {
     ...buildJobState(name, jobSettings),
-    running: false,
     lastStartedAt: scheduledAt,
     lastFinishedAt: finishedAt,
     lastStatus: 'skipped',
@@ -978,8 +1031,8 @@ async function recordSkippedScheduleExecution(
  * macOS sleep freezing setTimeout timers). It can never fire for a slot that
  * elapsed while BFrost was not running at all — a powered-off or rebooted machine.
  * That is the gap this closes: after schedules are (re)loaded, for each job we look
- * at the single most recent scheduled slot and, if it elapsed within
- * CATCHUP_WINDOW_MS and was never executed, run it now.
+ * at the single most recent scheduled slot and, if it elapsed within that job's
+ * catch-up window (see `catchUpWindowMs`) and was never executed, run it now.
  *
  * The per-slot execution lock makes this idempotent and mutually exclusive with the
  * normal scheduled and node-cron missed paths, so a slot is never run twice. We only
@@ -1002,7 +1055,7 @@ export async function catchUpMissedRunsOnStartup(): Promise<void> {
     if (!slot) continue;
 
     const slotAgeMs = now.getTime() - slot.getTime();
-    if (!isRecoverableSlotAge(slotAgeMs)) continue;
+    if (!isRecoverableSlotAge(slotAgeMs, slotIntervalMsFor(jobSettings.cron, settings.timezone, slot))) continue;
 
     const scheduledAt = schedulerSlotIso(slot);
     const acquired = await acquireSchedulerExecutionLock({
@@ -1156,6 +1209,7 @@ async function runJob(
   const workerState = await loadWorkerState();
   const current = buildJobState(name, jobSettings, workerState);
   if (current.queued || current.running) {
+    if (trigger === 'schedule') await recordBusySkippedRun(name, jobSettings, options.scheduledAt);
     throw new JobBusyError(`${jobLabels()[name]} is already queued or running.`);
   }
   if (!current.workerEnabled) {
@@ -1172,6 +1226,7 @@ async function runJob(
   // runtime immediately before claiming the FIFO slot so duplicate wakes coalesce.
   const readyState = buildJobState(name, jobSettings, workerState);
   if (readyState.queued || readyState.running) {
+    if (trigger === 'schedule') await recordBusySkippedRun(name, jobSettings, options.scheduledAt);
     throw new JobBusyError(`${jobLabels()[name]} is already queued or running.`);
   }
   await markJobQueued(name, readyState, trigger);
@@ -1338,6 +1393,74 @@ async function recordNoWorkSkippedRun(name: JobName, jobSettings: CronJobSetting
       workerName: registered.worker.name,
       trigger: 'schedule',
       reason: 'no_work',
+    },
+  });
+}
+
+/**
+ * Record a scheduled slot that never ran because the job was still busy.
+ *
+ * The `JobBusyError` these slots raise is swallowed by `detachJobTrigger`, which is right —
+ * a coalesced trigger is not a failure — but it used to leave the slot with no trace at all:
+ * no run record, no skipped entry, one console line. On the live desk that hid seven of the
+ * nineteen hourly Shared Sync slots in a single day; each one had taken its execution lock and
+ * then vanished, so the slot looked neither run nor skipped, and the ops digest could not
+ * distinguish "the store was quiet" from "the slot was eaten". Every one of the seven collided
+ * with the still-executing handler of a run the 900s deadline had already abandoned.
+ *
+ * Recorded as `overlap`, deliberately not `missed`: the recovery list is `missed`-only
+ * (see `isRecoverableMissedRun`), and re-running a slot whose predecessor is *still going*
+ * would queue a second copy of the very work that is running.
+ *
+ * Runtime state is left alone on purpose — unlike the no-work skip, this job really is
+ * in flight, and clearing `running` here would hand the next tick a duplicate run.
+ */
+async function recordBusySkippedRun(
+  name: JobName,
+  jobSettings: CronJobSettings,
+  scheduledAt?: string,
+): Promise<void> {
+  const registered = getRegisteredWorkerJob(name);
+  const now = new Date().toISOString();
+  const abandonedPredecessor = hasAbandonedRun(name);
+  const message = abandonedPredecessor
+    ? `${jobLabels()[name]} skipped its scheduled slot: the previous run outran its time budget and its handler is still executing.`
+    : `${jobLabels()[name]} skipped its scheduled slot because the previous execution was still running.`;
+
+  const runRecord = await startSchedulerRunSafe({
+    job: name,
+    label: jobLabels()[name],
+    trigger: 'schedule',
+    modelAlias: jobSettings.modelAlias || getDefaultModelAlias(),
+    // The slot, not the moment the collision was noticed, so the record sorts where the
+    // operator expects the missing run to be.
+    startedAt: scheduledAt ?? now,
+  });
+  if (runRecord) {
+    await finishSchedulerRunSafe(runRecord.id, {
+      finishedAt: now,
+      status: 'skipped',
+      summary: null,
+      error: message,
+      itemCount: 0,
+      skipReason: 'overlap',
+    });
+  }
+  await recordEventSafe({
+    category: 'job',
+    action: 'overlap_skipped',
+    severity: 'warning',
+    summary: message,
+    metadata: {
+      job: name,
+      workerId: registered.worker.id,
+      workerName: registered.worker.name,
+      trigger: 'schedule',
+      reason: 'overlap',
+      scheduledAt: scheduledAt ?? now,
+      // The one field that says whether the desk is merely slow or is losing slots to a
+      // runaway handler the scheduler has already given up on.
+      abandonedPredecessor,
     },
   });
 }
@@ -1572,7 +1695,9 @@ async function runJobWork(
       ? finalState.lastSummary
       : `${jobLabels()[name]} ${finalState?.lastStatus ?? 'finished'}: ${finalState?.lastError ?? 'no output'}`;
     try {
-      await notifyOperatorChannels(text);
+      // `ops`: this is a run outcome — the platform reporting on whether the work it was
+      // asked to do succeeded — not the work's subject matter.
+      await notifyOperatorChannels(text, { category: 'ops' });
     } catch (err) {
       console.warn('[Scheduler] Failed to deliver chat-trigger notification:', err);
     }

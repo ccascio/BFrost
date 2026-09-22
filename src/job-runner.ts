@@ -9,6 +9,9 @@ import {
 } from './workers/registry';
 import type { ProviderAdapter } from './workers/module';
 import { getPinnedModelId, getPinnedModelIdSync, setPinnedModelId } from './local-model-pin';
+import { withDebugTimingAsync } from './debug';
+import { runWithUsageAttribution } from './usage-metering';
+import { randomUUID } from 'node:crypto';
 
 export { isJobName, jobLabels, knownJobs, type JobName } from './workers/registry';
 
@@ -76,10 +79,16 @@ export async function runNamedJob(
   return runWithModelFailover(primaryModel, async (model) => {
     // The job's reasoning level rides along ambiently so worker code's own
     // `getChatModel(model)` calls pick it up without signature changes.
-    const result = await runWithReasoningLevel(
-      { modelAlias: model.alias, reasoningLevel: options?.reasoningLevel },
-      () => invokeJob(job, model.id, params),
-    );
+    // 01.1 — attribution rides ambiently alongside the reasoning level, and for the same reason:
+    // the model calls happen inside worker code, which must not need a signature change to be
+    // measured. `workerId` comes from the job's own manifest, so core still names no worker.
+    const result = await withDebugTimingAsync(`job.run ${job}`, () => runWithUsageAttribution(
+      { jobName: job, runId: randomUUID(), workerId: getWorkerJob(job).workerId },
+      () => runWithReasoningLevel(
+        { modelAlias: model.alias, reasoningLevel: options?.reasoningLevel },
+        () => invokeJob(job, model.id, params),
+      ),
+    ));
     return {
       job,
       modelAlias: model.alias,
@@ -116,10 +125,10 @@ export async function runChatTurn(
     // Same ambient hand-off as job runs: the level rides along so `getChatModel(model)`
     // deep inside the agent picks it up. Keyed on the *resolved* alias — failover may
     // have moved us off the requested model.
-    const text = await runWithReasoningLevel(
+    const text = await withDebugTimingAsync('chat.turn', () => runWithReasoningLevel(
       { modelAlias: model.alias, reasoningLevel: options?.reasoningLevel },
       () => fn(model),
-    );
+    ));
     return { text, model };
   });
 }
@@ -196,7 +205,7 @@ async function runWithModelFailover<T>(
     }
 
     try {
-      return await runWithPreparedModel(model, run, options);
+      return await withDebugTimingAsync(`model.run ${model.provider}`, () => runWithPreparedModel(model, run, options));
     } catch (err) {
       if (err instanceof LocalModelUnavailableError) {
         lastLocalError = err;

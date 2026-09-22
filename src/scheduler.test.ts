@@ -6,8 +6,8 @@ import test from 'node:test';
 import { z } from 'zod';
 import { config } from './config';
 import { closeDb } from './sqlite';
-import { listSchedulerRuns } from './scheduler-runs';
-import { CATCHUP_WINDOW_MS, PIPELINE_KICK_DELAY_MS, PIPELINE_TICK_INTERVAL_MS, activeJobExecutionCount, getSchedulerSnapshot, isRecoverableSlotAge, runPipelineTick, startScheduler, stopScheduler, triggerJobNow, wakeJobsForItemType } from './scheduler';
+import { listSchedulerRuns, listSkippedScheduledRuns } from './scheduler-runs';
+import { CATCHUP_WINDOW_MS, MAX_CATCHUP_WINDOW_MS, PIPELINE_KICK_DELAY_MS, PIPELINE_TICK_INTERVAL_MS, activeJobExecutionCount, catchUpWindowMs, getSchedulerSnapshot, isRecoverableSlotAge, runPipelineTick, startScheduler, stopScheduler, triggerJobNow, updateSchedulerJob, wakeJobsForItemType } from './scheduler';
 import { seedDeclaredProviderModels } from './model-discovery';
 import { registerLoadedLocalModule, unregisterLocalWorkerModule } from './workers/registry';
 import type { BackendWorkerModule } from './workers/module';
@@ -459,6 +459,43 @@ test('catch-up window — only recovers past slots within the window', () => {
   assert.equal(isRecoverableSlotAge(CATCHUP_WINDOW_MS + MINUTE), false);
 });
 
+test('catch-up window — scales with the job cadence instead of stranding rare schedules', () => {
+  const MINUTE = 60 * 1000;
+  const HOUR = 60 * MINUTE;
+  const DAY = 24 * HOUR;
+
+  // A tighter-than-daily cadence keeps the floor: half of a 4h gap is 2h, which would
+  // strand a job over a single overnight sleep.
+  assert.equal(catchUpWindowMs(4 * HOUR), CATCHUP_WINDOW_MS);
+  assert.equal(catchUpWindowMs(DAY), CATCHUP_WINDOW_MS);
+  assert.equal(isRecoverableSlotAge(25 * HOUR, DAY), true);
+
+  // A weekly job gets half its period rather than 15% of it.
+  assert.equal(catchUpWindowMs(7 * DAY), 3.5 * DAY);
+  assert.equal(isRecoverableSlotAge(3 * DAY, 7 * DAY), true);
+  assert.equal(isRecoverableSlotAge(4 * DAY, 7 * DAY), false);
+
+  // The semi-monthly desk jobs: a slot missed the same day is recovered instead of
+  // waiting out the ~17 days to the next one.
+  assert.equal(isRecoverableSlotAge(2 * DAY, 15 * DAY), true);
+  assert.equal(isRecoverableSlotAge(30 * HOUR, 15 * DAY), true);
+
+  // The ceiling holds for rare schedules — a yearly slot is not replayed months later.
+  assert.equal(catchUpWindowMs(365 * DAY), MAX_CATCHUP_WINDOW_MS);
+  assert.equal(catchUpWindowMs(30 * DAY), MAX_CATCHUP_WINDOW_MS);
+  assert.equal(isRecoverableSlotAge(8 * DAY, 365 * DAY), false);
+
+  // An unresolvable or nonsensical interval falls back to the fixed window.
+  assert.equal(catchUpWindowMs(null), CATCHUP_WINDOW_MS);
+  assert.equal(catchUpWindowMs(undefined), CATCHUP_WINDOW_MS);
+  assert.equal(catchUpWindowMs(0), CATCHUP_WINDOW_MS);
+  assert.equal(catchUpWindowMs(Number.NaN), CATCHUP_WINDOW_MS);
+
+  // A future slot stays unrecoverable whatever the cadence.
+  assert.equal(isRecoverableSlotAge(-MINUTE, 15 * DAY), false);
+  assert.equal(isRecoverableSlotAge(0, 15 * DAY), false);
+});
+
 test('pipeline tick runs enabled jobs with work and skips idle jobs', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-pipeline-tick-'));
   const prevDbPath = config.appDbPath;
@@ -815,6 +852,74 @@ test('scheduler integration — a job that outruns its time budget is failed and
   }
 });
 
+test('scheduler integration — a scheduled slot lost to a busy job is recorded as an overlap skip', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-sched-overlap-'));
+  const prevDbPath = config.appDbPath;
+  const prevOpenaiKey = resolveOpenAIApiKey();
+  const prevFallbacks = config.modelFallbackAliases;
+  const prevSweepMs = config.pipelineBootSweepMs;
+  const gate = armSlowJob();
+
+  config.appDbPath = path.join(dir, 'app.sqlite');
+  setOpenAIApiKey('test-key');
+  config.modelFallbackAliases = [];
+  // The boot sweep would dispatch jobs of its own; this test is about the schedule path.
+  config.pipelineBootSweepMs = 60_000;
+  registerLoadedLocalModule(buildFakeWorkerModule());
+
+  try {
+    await startScheduler();
+    await triggerJobNow(SLOW_JOB_ID);
+    await gate.started;
+
+    // Only now give the job a cron that fires immediately, so the slot lands squarely on a
+    // run that is still executing — the shape that ate seven of nineteen hourly Shared Sync
+    // slots in one day on the live desk, each leaving no run record at all because the
+    // JobBusyError was swallowed whole.
+    await updateSchedulerJob(SLOW_JOB_ID, { cron: '* * * * * *' });
+
+    const runs = await pollUntil(
+      () => listSchedulerRuns(),
+      (records) => records.some((run) => run.job === SLOW_JOB_ID && run.status === 'skipped'),
+      5_000,
+    );
+    const skipped = runs.find((run) => run.job === SLOW_JOB_ID && run.status === 'skipped');
+    assert.ok(skipped, 'a scheduled slot lost to a busy job must leave a record');
+    assert.equal(skipped.trigger, 'schedule');
+    assert.equal(skipped.skipReason, 'overlap');
+    assert.match(String(skipped.error), /still running|still executing/);
+
+    // The run it collided with keeps running: this bookkeeping must never clear the flag
+    // that stops a second copy being dispatched on top of it.
+    const state = (await getSchedulerSnapshot()).jobs.find((job) => job.name === SLOW_JOB_ID);
+    assert.equal(state?.running, true);
+
+    // And the slot stays out of the recovery list, which is `missed`-only on purpose:
+    // recovering a slot whose predecessor is still executing would double the work.
+    const recoverable = await listSkippedScheduledRuns();
+    assert.equal(recoverable.some((run) => run.id === skipped.id), false);
+  } finally {
+    gate.release();
+    await stopScheduler();
+    // Ordered so a failed assertion above cannot leave the module registered for the next
+    // test: everything from here on must run even if draining the pool times out.
+    try {
+      await pollUntil(
+        () => Promise.resolve(activeJobExecutionCount()),
+        (count) => count === 0,
+      );
+    } finally {
+      unregisterLocalWorkerModule(FAKE_WORKER_ID);
+      config.appDbPath = prevDbPath;
+      setOpenAIApiKey(prevOpenaiKey);
+      config.modelFallbackAliases = prevFallbacks;
+      config.pipelineBootSweepMs = prevSweepMs;
+      closeDb();
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test('scheduler integration — transient job retries with backoff and records attempts', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-sched-integration-'));
   const prevDbPath = config.appDbPath;
@@ -936,6 +1041,7 @@ test('scheduler snapshot refreshes cached settings when a new worker job appears
 });
 
 const HANDOFF_WORKER_ID = 'test.fake-handoff-worker';
+const HANDOFF_SLOW_WORKER_ID = 'test.fake-handoff-slow-worker';
 const HANDOFF_PRODUCER_JOB_ID = 'test.fake-handoff-producer';
 const HANDOFF_SLOW_JOB_ID = 'test.fake-handoff-slow';
 const HANDOFF_CONSUMER_JOB_ID = 'test.fake-handoff-consumer';
@@ -946,11 +1052,9 @@ const HANDOFF_CONSUMER_JOB_ID = 'test.fake-handoff-consumer';
  * The consumer's work only exists once the producer has run — the shape of every handoff in
  * this codebase, where stages pass work through item metadata and emit no bus event.
  */
-function buildHandoffWorkerModule(state: {
-  producerRan: boolean; consumerRan: boolean; slowGate: Promise<void>;
-}): BackendWorkerModule {
-  const base = {
-    workerId: HANDOFF_WORKER_ID,
+function handoffJobBase(workerId: string) {
+  return {
+    workerId,
     defaultEnabled: true,
     defaultCron: '0 0 1 1 *',
     defaultModelAlias: 'gpt-5.4-mini',
@@ -962,6 +1066,12 @@ function buildHandoffWorkerModule(state: {
     defaultParams: {},
     dashboardFields: [],
   };
+}
+
+function buildHandoffWorkerModule(state: {
+  producerRan: boolean; consumerRan: boolean;
+}): BackendWorkerModule {
+  const base = handoffJobBase(HANDOFF_WORKER_ID);
   return {
     manifest: {
       id: HANDOFF_WORKER_ID,
@@ -976,18 +1086,31 @@ function buildHandoffWorkerModule(state: {
           run: async () => { state.producerRan = true; return { summary: 'produced', itemCount: 1 }; },
         },
         {
-          // Keeps the tick in flight past PIPELINE_KICK_DELAY_MS. Belongs to the same worker
-          // only for brevity; nothing about the race needs them related.
-          ...base, id: HANDOFF_SLOW_JOB_ID, label: 'Slow', description: 'Unrelated slow job.',
-          hasWork: async () => true,
-          run: async () => { await state.slowGate; return { summary: 'slow done', itemCount: 0 }; },
-        },
-        {
           ...base, id: HANDOFF_CONSUMER_JOB_ID, label: 'Consumer', description: 'Needs the producer to have run.',
           hasWork: async () => state.producerRan && !state.consumerRan,
           run: async () => { state.consumerRan = true; return { summary: 'consumed', itemCount: 1 }; },
         },
       ],
+    },
+  };
+}
+
+function buildHandoffSlowWorkerModule(slowGate: Promise<void>): BackendWorkerModule {
+  return {
+    manifest: {
+      id: HANDOFF_SLOW_WORKER_ID,
+      name: 'Handoff Slow Test Worker',
+      version: '0.1.0',
+      description: 'Keeps a pipeline tick open while another worker hands off work.',
+      builtIn: false,
+      jobs: [{
+        ...handoffJobBase(HANDOFF_SLOW_WORKER_ID),
+        id: HANDOFF_SLOW_JOB_ID,
+        label: 'Slow',
+        description: 'Unrelated slow job.',
+        hasWork: async () => true,
+        run: async () => { await slowGate; return { summary: 'slow done', itemCount: 0 }; },
+      }],
     },
   };
 }
@@ -1008,13 +1131,16 @@ test('a pipeline kick arriving during a long tick is not swallowed by it', async
     slowGate: new Promise<void>((resolve) => { releaseSlow = resolve; }),
   };
   registerLoadedLocalModule(buildHandoffWorkerModule(state));
+  registerLoadedLocalModule(buildHandoffSlowWorkerModule(state.slowGate));
 
   try {
     await startScheduler();
 
     // One tick evaluates all three: producer and slow are eligible, the consumer is not yet.
     const tick = runPipelineTick();
-    await pollUntil(async () => state.producerRan, (ran) => ran, 4000);
+    // The full suite runs many test files in parallel, so allow for process scheduling delay
+    // before this worker gets an execution slot. The scheduler behavior under test is below.
+    await pollUntil(async () => state.producerRan, (ran) => ran, 10_000);
 
     // The producer's success fires a kick. Wait past PIPELINE_KICK_DELAY_MS so it lands
     // while the tick is still held open by the slow job — the interleaving that matters.
@@ -1029,9 +1155,18 @@ test('a pipeline kick arriving during a long tick is not swallowed by it', async
     // seconds after the producer finished.
     await pollUntil(async () => state.consumerRan, (ran) => ran, 6000);
     assert.equal(state.consumerRan, true);
+    await pollUntil(
+      () => Promise.resolve(activeJobExecutionCount()),
+      (count) => count === 0,
+      6000,
+    );
+    // Let the tick's completion microtask settle before unregistering its test worker.
+    await new Promise<void>((resolve) => setImmediate(resolve));
   } finally {
+    releaseSlow();
     await stopScheduler();
     unregisterLocalWorkerModule(HANDOFF_WORKER_ID);
+    unregisterLocalWorkerModule(HANDOFF_SLOW_WORKER_ID);
     config.appDbPath = prevDbPath;
     setOpenAIApiKey(prevOpenaiKey);
     config.modelFallbackAliases = prevFallbacks;

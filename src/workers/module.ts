@@ -149,6 +149,19 @@ export interface ChannelAdapterFactory {
   create(): ChannelAdapter;
 }
 
+/**
+ * What an operator notification is *about*, so a channel can route it to a different
+ * destination per kind. Deliberately generic — this is a platform concept, not a
+ * statement about any particular worker's subject matter.
+ *
+ * - `ops`     — the platform reporting on itself: run outcomes, failures, health digests.
+ * - `content` — what a worker produced: the output the operator subscribed to.
+ *
+ * Adapters that cannot (or need not) split their destination ignore the category and
+ * deliver everything to one place, which is what every adapter did before this existed.
+ */
+export type OperatorNotificationCategory = 'ops' | 'content';
+
 export interface ChannelAdapter {
   channelId: string;
   /**
@@ -161,6 +174,9 @@ export interface ChannelAdapter {
   /**
    * Optional: deliver a proactive operator notification (e.g. a cron run summary or
    * failure alert) on this channel. Adapters that cannot push messages omit this.
+   *
+   * `category` says what the message is about. Implementations may ignore it — a
+   * single-destination adapter stays correct by dropping the second parameter.
    */
-  notifyOperator?(text: string): Promise<void>;
+  notifyOperator?(text: string, category: OperatorNotificationCategory): Promise<void>;
 }

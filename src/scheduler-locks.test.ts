@@ -30,7 +30,7 @@ test('scheduler execution locks allow only one owner per command and scheduled t
       scheduledAt: slotB,
     });
     const differentCommand = await acquireSchedulerExecutionLock({
-      commandKey: 'job:tweet-post',
+      commandKey: 'job:personal-research',
       scheduledAt: slotA,
     });
 

@@ -7,20 +7,8 @@ import type {
   WorkerOnboardingAction,
 } from '../app-types';
 import { toAppError } from '../app-types';
+import { collectActiveOnboardingActions } from '../app-helpers/onboarding';
 import { OverviewRecipesPanel } from './OverviewRecipesPanel';
-
-export type DemoNarration = {
-  stages: Array<{ label: string; detail: string }>;
-  currentIndex: number;
-  done: boolean;
-} | null;
-
-export type DemoRecap = {
-  headline: string;
-  body: string;
-  ctaText?: string;
-  ctaAction?: string;
-} | null;
 
 export type FirstResultJob = { label: string; summary: string; jobName: string } | null;
 
@@ -31,7 +19,6 @@ export interface OverviewSetupPanelsProps {
   setError: Dispatch<SetStateAction<AppError | null>>;
   setDashboard: Dispatch<SetStateAction<DashboardState | null>>;
   setActiveTab: (tab: DashboardTab) => void;
-  onboardingRan: boolean;
   runDemoAction: (action: WorkerOnboardingAction & { workerId: string }) => Promise<void>;
   fetchDashboard: (force: boolean) => Promise<void>;
   firstResultJob: FirstResultJob;
@@ -41,9 +28,6 @@ export interface OverviewSetupPanelsProps {
   setLmAdoptDismissed: Dispatch<SetStateAction<boolean>>;
   lmAdopting: boolean;
   setLmAdopting: Dispatch<SetStateAction<boolean>>;
-  demoNarration: DemoNarration;
-  demoRecap: DemoRecap;
-  setDemoRecap: Dispatch<SetStateAction<DemoRecap>>;
   setWizardOpen: Dispatch<SetStateAction<boolean>>;
   starAsk: boolean;
   dismissStarAsk: () => void;
@@ -75,7 +59,6 @@ export function OverviewSetupPanels(props: OverviewSetupPanelsProps) {
     setError,
     setDashboard,
     setActiveTab,
-    onboardingRan,
     runDemoAction,
     fetchDashboard,
     firstResultJob,
@@ -85,9 +68,6 @@ export function OverviewSetupPanels(props: OverviewSetupPanelsProps) {
     setLmAdoptDismissed,
     lmAdopting,
     setLmAdopting,
-    demoNarration,
-    demoRecap,
-    setDemoRecap,
     setWizardOpen,
     starAsk,
     dismissStarAsk,
@@ -120,41 +100,16 @@ export function OverviewSetupPanels(props: OverviewSetupPanelsProps) {
         // exposes until the user has run something. Names no worker — removing the worker
         // that contributes the action removes this card.
         const hasRun = dashboard.cron.jobs.some((j) => j.lastStartedAt !== null && j.lastStartedAt !== undefined);
-        if (hasRun || onboardingRan) return null;
-        const actions = dashboard.workers
-          .filter((w) => w.onboarding && w.enabled)
-          .map((w) => ({ ...(w.onboarding as WorkerOnboardingAction), workerId: w.id }))
-          .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+        if (hasRun) return null;
+        const actions = collectActiveOnboardingActions(dashboard);
         if (actions.length === 0) return null;
-        const runAction = runDemoAction;
-        const deletableDemoWorkers = actions
-          .map((a) => dashboard.workers.find((w) => w.id === a.workerId))
-          .filter((w): w is NonNullable<typeof w> => Boolean(w?.deletable));
-
-        const dismissDemo = async () => {
-          if (!window.confirm('Delete the demo worker? You can restore it from the Worker store later.')) return;
-          setBusyKey('onboarding:dismiss');
-          try {
-            for (const w of deletableDemoWorkers) {
-              await fetch(`/api/workers/${encodeURIComponent(w.id)}`, {
-                method: 'DELETE',
-                credentials: 'include',
-              });
-            }
-            await fetchDashboard(true);
-          } catch (err) {
-            setError(toAppError(err));
-          } finally {
-            setBusyKey(null);
-          }
-        };
 
         return (
           <section className="panel onboarding-hero">
             <div className="panel-head">
               <div>
                 <p className="panel-kicker">Get started</p>
-                <h2>See BFrost work — no setup needed</h2>
+                <h2>Get started with BFrost</h2>
               </div>
             </div>
             <p className="footnote">{actions[0].description}</p>
@@ -164,21 +119,12 @@ export function OverviewSetupPanels(props: OverviewSetupPanelsProps) {
                   key={`${action.workerId}:${action.id}`}
                   type="button"
                   className="primary"
-                  disabled={(!action.endpoint && !action.runJob) || busyKey === `onboarding:${action.id}` || busyKey === 'onboarding:dismiss'}
-                  onClick={() => void runAction(action)}
+                  disabled={(!action.endpoint && !action.runJob && !action.navigateWorkerTab) || busyKey === `onboarding:${action.id}`}
+                  onClick={() => void runDemoAction(action)}
                 >
                   {busyKey === `onboarding:${action.id}` ? 'Running…' : action.title}
                 </button>
               ))}
-              {deletableDemoWorkers.length > 0 ? (
-                <button
-                  type="button"
-                  disabled={busyKey === 'onboarding:dismiss'}
-                  onClick={() => void dismissDemo()}
-                >
-                  {busyKey === 'onboarding:dismiss' ? 'Deleting…' : 'Not interested — delete demo'}
-                </button>
-              ) : null}
             </div>
           </section>
         );
@@ -290,72 +236,6 @@ export function OverviewSetupPanels(props: OverviewSetupPanelsProps) {
         );
       })()}
 
-      {demoNarration ? (
-        <section className="panel demo-narration-panel" aria-live="polite" aria-label="Pipeline run progress">
-          <div className="panel-head">
-            <div>
-              <p className="panel-kicker">Running</p>
-              <h2>{demoNarration.done ? 'Pipeline ran' : 'Running pipeline…'}</h2>
-            </div>
-          </div>
-          <div className="demo-narration-stages">
-            {demoNarration.stages.map((stage, i) => {
-              const completed = demoNarration.done || i < demoNarration.currentIndex;
-              const active = !demoNarration.done && i === demoNarration.currentIndex;
-              return (
-                <div
-                  key={stage.label}
-                  className={`demo-narration-stage${completed ? ' completed' : ''}${active ? ' active' : ''}`}
-                >
-                  <span className="stage-icon" aria-hidden>{completed ? '✓' : active ? '◷' : '○'}</span>
-                  <div>
-                    <strong>{stage.label}</strong>
-                    {(completed || active) ? <span>{stage.detail}</span> : null}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
-
-      {demoRecap ? (
-        <section className="panel demo-recap-panel">
-          <div className="panel-head">
-            <div>
-              <p className="panel-kicker">What just happened</p>
-              <h2>{demoRecap.headline}</h2>
-            </div>
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label="Dismiss recap"
-              onClick={() => setDemoRecap(null)}
-            >
-              ✕
-            </button>
-          </div>
-          <p className="footnote">{demoRecap.body}</p>
-          <div className="panel-actions" style={{ marginTop: '0.5rem' }}>
-            {demoRecap.ctaAction === 'wizard' ? (
-              <button
-                type="button"
-                className="primary"
-                onClick={() => { setDemoRecap(null); setWizardOpen(true); }}
-              >
-                {demoRecap.ctaText ?? 'Open setup wizard →'}
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => { setDemoRecap(null); setActiveTab('pipeline'); }}
-            >
-              View Pipeline →
-            </button>
-          </div>
-        </section>
-      ) : null}
-
       {starAsk ? (
         <section className="panel star-ask-banner" aria-label="Enjoying BFrost?">
           <p>
@@ -421,7 +301,7 @@ export function OverviewSetupPanels(props: OverviewSetupPanelsProps) {
           credentialProviders[0];
 
         // Show cloud quick-connect when no real model is configured and no local runtime is detected.
-        const hasRealModel = dashboard.models.some((m) => m.provider !== 'demo');
+        const hasRealModel = dashboard.models.length > 0;
         const localRuntimeRunning = dashboard.localRuntime.running;
         if (hasRealModel || localRuntimeRunning || !selectedCredentialProvider) return null;
         if (cloudTestReply) {

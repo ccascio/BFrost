@@ -7,6 +7,7 @@ import type {
   WorkerTabDefinition,
 } from '../app-types';
 import type { WorkerDashboardViewDefinition } from '../workers/types';
+import { Skeleton, SkeletonRows } from '../ui';
 
 export function safeWorkerViewCount(definition: WorkerDashboardViewDefinition, ctx: Record<string, any>): number | undefined {
   if (typeof definition.count !== 'function') return undefined;
@@ -18,7 +19,46 @@ export function safeWorkerViewCount(definition: WorkerDashboardViewDefinition, c
   }
 }
 
+/**
+ * Stand-in for a worker tab whose data has not arrived.
+ *
+ * A view that names its `loadingSections` reads them out of `dashboard`, which is
+ * seeded empty until each section's own request returns. Until then the view would
+ * render "nothing here yet" and tell the operator their worker has no data when it
+ * simply has not been asked yet. Core cannot know what shape any given worker's page
+ * takes, so it draws a neutral panel of the right weight rather than guessing.
+ *
+ * Views that fetch their own data name no sections and are never substituted — the
+ * placeholder would postpone their mount, and with it the fetches they issue on mount.
+ */
+function WorkerDashboardLoading({ worker }: { worker: WorkerSummary }) {
+  return (
+    <section className="panel tab-page" aria-busy="true" role="status">
+      <span className="sr-only">Loading {worker.displayName ?? worker.name}</span>
+      <div className="panel-head">
+        <div>
+          <p className="panel-kicker">{worker.displayName ?? worker.name}</p>
+          <Skeleton width="12rem" height="1.35rem" />
+        </div>
+        <Skeleton width="5rem" height="1.5rem" />
+      </div>
+      <div className="skeleton-region">
+        <SkeletonRows rows={6} />
+      </div>
+    </section>
+  );
+}
+
 export function renderWorkerDashboardView(tab: WorkerTabDefinition, ctx: Record<string, any>): ReactNode {
+  const sections = tab.definition.loadingSections;
+  if (
+    Array.isArray(sections) &&
+    sections.length > 0 &&
+    typeof ctx.isSectionPending === 'function' &&
+    ctx.isSectionPending(...sections)
+  ) {
+    return <WorkerDashboardLoading worker={tab.worker} />;
+  }
   if (typeof tab.definition.render !== 'function') {
     return (
       <section className="panel tab-page">

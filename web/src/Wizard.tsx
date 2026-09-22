@@ -11,6 +11,7 @@ import { StepWelcome } from './wizard/onboarding';
 import { StepSecurity } from './wizard/security-step';
 import type { WizardProps } from './wizard/types';
 import { StepChannels, StepCredentials, StepFirstRun, StepWebSearch, StepWorkers } from './wizard/worker-steps';
+import { shouldAdvancePastWelcome } from './app-helpers/onboarding';
 
 export type { WizardProps } from './wizard/types';
 
@@ -55,7 +56,11 @@ export function Wizard({ dashboard, onDismiss, onComplete, onRefreshDashboard, o
     fetch('/api/wizard/state')
       .then((r) => r.json() as Promise<{ step: number; completed: boolean }>)
       .then((s) => {
-        if (!s.completed) setStep(s.step ?? 0);
+        if (s.completed) return;
+        const savedStep = s.step ?? 0;
+        const nextStep = savedStep === 0 && shouldAdvancePastWelcome(dashboard) ? 1 : savedStep;
+        setStep(nextStep);
+        if (nextStep !== savedStep) void persistStep(nextStep);
       })
       .catch(() => undefined)
       .finally(() => setLoading(false));

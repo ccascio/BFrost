@@ -21,6 +21,18 @@ export interface WorkerDashboardViewDefinition {
    * know what this string means; it just relays whichever value the worker declares.
    */
   defaultQueueFilter?: string;
+  /**
+   * Dashboard sections this view's content is built from — in practice `'workerData'`,
+   * which is fetched after the shell and is the slowest of them. While any named
+   * section is still in flight core substitutes a neutral loading panel for the tab,
+   * rather than letting the view render a "nothing here yet" state it will contradict
+   * a second later.
+   *
+   * Leave it unset when the view fetches its own data (core's placeholder would delay
+   * mounting, and with it those fetches), or when the view draws finer-grained
+   * placeholders itself from `ctx.isSectionPending`.
+   */
+  loadingSections?: string[];
   count?: (ctx: Record<string, any>) => number | undefined;
   render?: (ctx: Record<string, any>) => ReactNode;
   /**
@@ -37,7 +49,19 @@ export interface WorkerDashboardRenderContext {
   dashboard?: Record<string, any>;
   busyKey?: string | null;
   ui?: WorkerDashboardUiContract;
-  refreshDashboard?: () => void | Promise<void>;
+  /**
+   * True while any of the named dashboard sections is still in flight. `dashboard`
+   * is seeded with empty slices before the sections land, so a view that would
+   * otherwise render zeros or an empty state should render a loading placeholder
+   * while this returns true. Sections a view reads: usually `'workerData'`, plus
+   * `'queue'` / `'events'` / `'pipelineStages'` where relevant.
+   */
+  isSectionPending?: (...sections: string[]) => boolean;
+  /**
+   * Refresh dashboard state. Workers that pass their own id plus any workerData slots they
+   * read get a targeted slice refresh; omitting ids retains the full-shell fallback.
+   */
+  refreshDashboard?: (workerIds?: readonly string[]) => void | Promise<void>;
   triggerRun?: (key: string, url: string, successMessage: string) => void | Promise<void>;
   [key: string]: any;
 }

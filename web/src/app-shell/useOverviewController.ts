@@ -17,18 +17,6 @@ export function useOverviewController({
   setNotice: (notice: string) => void;
   fetchDashboard: (preserveDrafts: boolean) => Promise<void>;
 }) {
-  const [onboardingRan, setOnboardingRan] = useState(false);
-  const [demoNarration, setDemoNarration] = useState<{
-    stages: Array<{ label: string; detail: string }>;
-    currentIndex: number;
-    done: boolean;
-  } | null>(null);
-  const [demoRecap, setDemoRecap] = useState<{
-    headline: string;
-    body: string;
-    ctaText?: string;
-    ctaAction?: string;
-  } | null>(null);
   const [recipeExpanded, setRecipeExpanded] = useState<string | null>(null);
   const [recipeInputValues, setRecipeInputValues] = useState<Record<string, string>>({});
   const [recipeApplied, setRecipeApplied] = useState<Set<string>>(new Set());
@@ -45,16 +33,16 @@ export function useOverviewController({
   const starAskKey = 'bfrost:star-ask-shown';
 
   useEffect(() => {
-    if (!demoRecap && !firstResultJob) return;
+    if (!firstResultJob) return;
     if (localStorage.getItem(starAskKey)) return;
     setStarAsk(true);
-  }, [demoRecap, firstResultJob]);
+  }, [firstResultJob]);
 
   useEffect(() => {
     if (localStorage.getItem(firstResultShownKey)) return;
     const jobs = dashboard?.cron?.jobs ?? [];
     const hit = jobs.find(
-      (job) => job.workerId !== 'core.demo' && job.lastStatus === 'success' && job.lastSummary && job.lastFinishedAt,
+      (job) => job.lastStatus === 'success' && job.lastSummary && job.lastFinishedAt,
     );
     if (hit) setFirstResultJob({ label: hit.label, summary: hit.lastSummary!, jobName: hit.name });
   }, [dashboard?.cron?.jobs]);
@@ -65,8 +53,12 @@ export function useOverviewController({
   };
 
   async function runDemoAction(action: WorkerOnboardingAction & { workerId: string }) {
-    setDemoNarration(null);
-    setDemoRecap(null);
+    // Setup-style actions just route to the contributing worker's own tab (e.g. a
+    // "connect" form). Core stays worker-agnostic — it only opens `worker:<id>`.
+    if (action.navigateWorkerTab) {
+      setActiveTab(`worker:${action.workerId}` as DashboardTab);
+      return;
+    }
     setActiveTab('overview');
     setBusyKey(`onboarding:${action.id}`);
     try {
@@ -78,37 +70,23 @@ export function useOverviewController({
           body: '{}',
         });
         if (!res.ok) throw new Error((await res.text()) || 'Request failed');
-        const body = (await res.json().catch(() => ({}))) as {
-          summary?: string;
-          stages?: Array<{ label: string; detail: string }>;
-          recap?: { headline: string; body: string; ctaText?: string; ctaAction?: string };
-        };
-        setOnboardingRan(true);
-        if (body.stages && body.stages.length > 0) {
-          setDemoNarration({ stages: body.stages, currentIndex: 0, done: false });
-          for (let i = 0; i < body.stages.length; i++) {
-            setDemoNarration((prev) => prev ? { ...prev, currentIndex: i } : prev);
-            await new Promise((resolve) => setTimeout(resolve, 900));
-          }
-          setDemoNarration((prev) => prev ? { ...prev, done: true } : prev);
-        }
+        const body = (await res.json().catch(() => ({}))) as { summary?: string };
         await fetchDashboard(true);
-        if (body.recap) {
-          setDemoRecap(body.recap);
-        } else {
-          setNotice(body.summary ?? 'Done — open Pipeline to see the items in the bus.');
-        }
+        setNotice(body.summary ?? 'Done — open Pipeline to see the items in the bus.');
       } else if (action.runJob) {
-        const res = await fetch(`/api/cron-jobs/${encodeURIComponent(action.runJob)}`, {
+        const res = await fetch(`/api/cron-jobs/${encodeURIComponent(action.runJob)}/run`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'run' }),
+          body: '{}',
         });
         if (!res.ok) throw new Error(await res.text());
-        setNotice('Running… results will appear in the Pipeline and Jobs tabs in a moment.');
+        const body = (await res.json().catch(() => ({}))) as { queued?: boolean };
+        setNotice(body.queued
+          ? 'Queued… execution will begin when the current job finishes.'
+          : 'Running… results will appear in the Pipeline and Jobs tabs in a moment.');
         await new Promise((resolve) => setTimeout(resolve, 1500));
         await fetchDashboard(true);
-        setNotice('Done — open Pipeline to see the items in the bus.');
+        setNotice('Accepted — follow progress in Jobs and results in Pipeline.');
       }
     } catch (err) {
       setError(toAppError(err));
@@ -118,7 +96,6 @@ export function useOverviewController({
   }
 
   return {
-    onboardingRan,
     runDemoAction,
     firstResultJob,
     firstResultShownKey,
@@ -127,9 +104,6 @@ export function useOverviewController({
     setLmAdoptDismissed,
     lmAdopting,
     setLmAdopting,
-    demoNarration,
-    demoRecap,
-    setDemoRecap,
     starAsk,
     dismissStarAsk,
     cloudTestReply,

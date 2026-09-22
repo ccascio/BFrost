@@ -14,6 +14,10 @@ export interface WorkerOnboardingAction {
   description: string;
   endpoint?: string;
   runJob?: string;
+  /** When true, activating routes to the contributing worker's own dashboard tab. */
+  navigateWorkerTab?: boolean;
+  /** Worker health requirement key that marks this onboarding action complete. */
+  completedWhenHealthKey?: string;
   priority?: number;
 }
 
@@ -145,6 +149,8 @@ export interface SchedulerJobState {
   workerId: string;
   workerEnabled: boolean;
   enabled: boolean;
+  queued: boolean;
+  queuedAt: string | null;
   running: boolean;
   lastStartedAt: string | null;
   lastStatus: 'idle' | 'success' | 'error' | 'skipped';

@@ -15,6 +15,7 @@ import {
   toAppError,
 } from '../app-types';
 import {
+  SECTION_PLACEHOLDER_DELAY_MS,
   buildJobParamsDraft,
   formatTime,
   mergeSection,
@@ -43,11 +44,24 @@ export function useDashboardData({
   const [notice, setNotice] = useState<string>('Loading dashboard...');
   const [password, setPassword] = useState('');
   const [lastStreamEvent, setLastStreamEvent] = useState<EventLogRecord | null>(null);
+  // `loadedSectionsRef` is read inside async callbacks that must see the newest value
+  // synchronously; `sectionStatus` is the same knowledge in render-visible form, so a
+  // panel can show a loading placeholder instead of an empty state while its section
+  // is still in flight. A section that *failed* counts as settled — the error banner
+  // reports it, and a permanent skeleton would be a worse lie than an empty panel.
+  const [sectionStatus, setSectionStatus] = useState<
+    Partial<Record<DashboardSectionName, 'ready' | 'error'>>
+  >({});
+  // Loading placeholders stay disarmed for a moment after the shell lands, so a section
+  // that answers instantly never flashes one. See SECTION_PLACEHOLDER_DELAY_MS.
+  const [placeholdersArmed, setPlaceholdersArmed] = useState(false);
   const loadedSectionsRef = useRef<Set<DashboardSectionName>>(new Set());
-  const inflightSectionsRef = useRef<Map<DashboardSectionName, Promise<void>>>(new Map());
+  const inflightSectionsRef = useRef<Map<string, Promise<void>>>(new Map());
   const activeTabRef = useRef<DashboardTab>('overview');
   const loadedBundleWorkersRef = useRef<Set<string>>(new Set());
   const pendingStreamSectionsRef = useRef<Set<DashboardSectionName>>(new Set());
+  const pendingStreamWorkerIdsRef = useRef<Set<string>>(new Set());
+  const pendingFullWorkerDataRefreshRef = useRef(false);
   const streamSectionTimerRef = useRef<number | null>(null);
   const streamDashboardTimerRef = useRef<number | null>(null);
   const dashboardViews = useWorkerDashboardViews();
@@ -95,6 +109,12 @@ export function useDashboardData({
     }, JOBS_REFRESH_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [activeTab, dashboard !== null, session?.authenticated, session?.authEnabled, eventStreamStatus]);
+
+  useEffect(() => {
+    if (!dashboard || placeholdersArmed) return;
+    const timer = window.setTimeout(() => setPlaceholdersArmed(true), SECTION_PLACEHOLDER_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [dashboard !== null, placeholdersArmed]);
 
   useEffect(() => {
     if (!dashboard) return;
@@ -152,7 +172,20 @@ export function useDashboardData({
     if (eventNeedsDashboardRefresh(event)) {
       queueDashboardRefreshFromStream();
     }
-    queueStreamSections(sectionsForStreamEvent(event));
+    queueStreamSections(sectionsForStreamEvent(event), workerDataIdsForStreamEvent(event));
+  }
+
+  function workerDataIdsForStreamEvent(event: EventLogRecord): string[] | undefined {
+    // Routine job/worker events carry their owner id. Only that owner's sanctioned
+    // workerData slot can have changed, so avoid rebuilding every worker dashboard slice.
+    // Structural/config/queue events remain full refreshes because they may change topology
+    // or shared state across multiple workers.
+    const routineWorkerEvent = event.category === 'job' ||
+      (event.category === 'worker' && !eventNeedsDashboardRefresh(event));
+    const workerId = routineWorkerEvent && typeof event.metadata?.workerId === 'string'
+      ? event.metadata.workerId.trim()
+      : '';
+    return workerId ? [workerId] : undefined;
   }
 
   function sectionsForStreamEvent(event: EventLogRecord): DashboardSectionName[] {
@@ -216,18 +249,32 @@ export function useDashboardData({
     return false;
   }
 
-  function queueStreamSections(sections: DashboardSectionName[]) {
+  function queueStreamSections(sections: DashboardSectionName[], workerIds?: readonly string[]) {
     if (sections.length === 0) return;
     for (const section of sections) pendingStreamSectionsRef.current.add(section);
+    if (sections.includes('workerData')) {
+      if (workerIds && workerIds.length > 0) {
+        for (const workerId of workerIds) pendingStreamWorkerIdsRef.current.add(workerId);
+      } else {
+        pendingFullWorkerDataRefreshRef.current = true;
+      }
+    }
     if (streamSectionTimerRef.current !== null) return;
 
     streamSectionTimerRef.current = window.setTimeout(() => {
       streamSectionTimerRef.current = null;
       const queued = [...pendingStreamSectionsRef.current];
+      const refreshAllWorkerData = pendingFullWorkerDataRefreshRef.current;
+      const queuedWorkerIds = [...pendingStreamWorkerIdsRef.current];
       pendingStreamSectionsRef.current.clear();
+      pendingStreamWorkerIdsRef.current.clear();
+      pendingFullWorkerDataRefreshRef.current = false;
       if (!dashboardAccessAllowed()) return;
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-      void Promise.all(queued.map((section) => fetchSection(section, { force: true })));
+      void Promise.all(queued.map((section) => fetchSection(section, {
+        force: true,
+        workerIds: section === 'workerData' && !refreshAllWorkerData ? queuedWorkerIds : undefined,
+      })));
     }, 250);
   }
 
@@ -347,25 +394,49 @@ export function useDashboardData({
     }
   }
 
-  async function fetchSection(name: DashboardSectionName, opts: { force?: boolean } = {}): Promise<void> {
+  async function fetchSection(
+    name: DashboardSectionName,
+    opts: { force?: boolean; workerIds?: readonly string[] } = {},
+  ): Promise<void> {
     if (!opts.force && loadedSectionsRef.current.has(name)) return;
-    const inflight = inflightSectionsRef.current.get(name);
+    const requestedWorkerIds = name === 'workerData'
+      ? [...new Set(opts.workerIds?.map((id) => id.trim()).filter(Boolean) ?? [])].sort()
+      : [];
+    const requestKey = requestedWorkerIds.length > 0 ? `${name}:${requestedWorkerIds.join('|')}` : name;
+    // Keep full and partial worker-data responses ordered so an older full snapshot cannot
+    // overwrite a newer targeted slice merely because their requests crossed in flight.
+    if (name === 'workerData') {
+      if (requestedWorkerIds.length > 0) {
+        const fullRefresh = inflightSectionsRef.current.get('workerData');
+        if (fullRefresh) await fullRefresh;
+      } else {
+        const targetedRefreshes = [...inflightSectionsRef.current.entries()]
+          .filter(([key]) => key.startsWith('workerData:'))
+          .map(([, pending]) => pending);
+        if (targetedRefreshes.length > 0) await Promise.all(targetedRefreshes);
+      }
+    }
+    const inflight = inflightSectionsRef.current.get(requestKey);
     if (inflight) return inflight;
 
     const promise = (async () => {
       try {
-        const response = await fetch(sectionEndpoint(name), { credentials: 'include' });
+        const response = await fetch(sectionEndpoint(name, requestedWorkerIds), { credentials: 'include' });
         const payload = await response.json();
         if (!response.ok || 'error' in payload) throw new Error(payload.error ?? `Failed to load ${name}`);
         loadedSectionsRef.current.add(name);
-        setDashboard((prev) => (prev ? mergeSection(prev, name, payload) : prev));
+        setSectionStatus((prev) => (prev[name] === 'ready' ? prev : { ...prev, [name]: 'ready' }));
+        setDashboard((prev) => (prev ? mergeSection(prev, name, payload, {
+          mergeWorkerData: name === 'workerData' && requestedWorkerIds.length > 0,
+        }) : prev));
       } catch (err) {
+        setSectionStatus((prev) => (prev[name] ? prev : { ...prev, [name]: 'error' }));
         setError(toAppError(err));
       } finally {
-        inflightSectionsRef.current.delete(name);
+        inflightSectionsRef.current.delete(requestKey);
       }
     })();
-    inflightSectionsRef.current.set(name, promise);
+    inflightSectionsRef.current.set(requestKey, promise);
     return promise;
   }
 
@@ -514,6 +585,8 @@ export function useDashboardData({
     dashboardViews,
     eventStreamStatus,
     lastStreamEvent,
+    sectionStatus,
+    placeholdersArmed,
     fetchDashboard,
     fetchSection,
     mutate,

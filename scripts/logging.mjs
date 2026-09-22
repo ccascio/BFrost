@@ -1,16 +1,9 @@
-import { existsSync, mkdirSync, openSync, renameSync, rmSync, statSync, writeSync, closeSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { closeSync, existsSync, mkdirSync, openSync, renameSync, rmSync, statSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { Writable } from 'node:stream';
 
 export const DEFAULT_MAX_LOG_BYTES = 10 * 1024 * 1024;
 export const DEFAULT_LOG_ROTATIONS = 1;
-
-export function defaultLogFile(root) {
-  return process.platform === 'darwin'
-    ? path.join(homedir(), 'Library', 'Logs', 'BFrost', 'bfrost.log')
-    : path.join(root, 'data', 'bfrost.log');
-}
 
 export function parseLogLimit(value, fallback = DEFAULT_MAX_LOG_BYTES) {
   if (value === undefined || value === '') return fallback;
@@ -97,3 +90,4 @@ export class RotatingLogWriter extends Writable {
     this.size = existsSync(this.file) ? statSync(this.file).size : 0;
   }
 }
+

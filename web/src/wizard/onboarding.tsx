@@ -1,13 +1,11 @@
 import { useState } from 'react';
-import type { DashboardSnapshot, OnboardingActionEntry, WorkerOnboardingAction } from './types';
+import type { DashboardSnapshot, OnboardingActionEntry } from './types';
+import { collectActiveOnboardingActions } from '../app-helpers/onboarding';
 
 type OnboardingOutcome = { status: 'success' | 'error'; summary: string };
 
 export function collectOnboardingActions(dashboard: DashboardSnapshot): OnboardingActionEntry[] {
-  return dashboard.workers
-    .filter((w) => w.onboarding && w.enabled)
-    .map((w) => ({ ...(w.onboarding as WorkerOnboardingAction), workerId: w.id }))
-    .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+  return collectActiveOnboardingActions(dashboard) as OnboardingActionEntry[];
 }
 
 async function runOnboardingEndpoint(endpoint: string): Promise<OnboardingOutcome> {
@@ -24,10 +22,10 @@ async function runOnboardingEndpoint(endpoint: string): Promise<OnboardingOutcom
 
 async function runOnboardingJob(jobName: string): Promise<OnboardingOutcome> {
   const after = Date.now();
-  const res = await fetch(`/api/cron-jobs/${encodeURIComponent(jobName)}`, {
+  const res = await fetch(`/api/cron-jobs/${encodeURIComponent(jobName)}/run`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'run' }),
+    body: '{}',
   });
   if (!res.ok) throw new Error(await res.text());
   for (let attempt = 0; attempt < 15; attempt++) {
@@ -37,7 +35,7 @@ async function runOnboardingJob(jobName: string): Promise<OnboardingOutcome> {
       if (!snapRes.ok) continue;
       const snap = (await snapRes.json()) as DashboardSnapshot;
       const job = snap.cron?.jobs?.find((j) => j.name === jobName);
-      if (!job || !job.lastStartedAt || job.running) continue;
+      if (!job || !job.lastStartedAt || job.queued || job.running) continue;
       if (new Date(job.lastStartedAt).getTime() < after - 3000) continue;
       if (job.lastStatus === 'success') return { status: 'success', summary: job.lastSummary ?? 'Done.' };
       if (job.lastStatus === 'error') return { status: 'error', summary: job.lastError ?? 'The demo job failed.' };
@@ -45,7 +43,7 @@ async function runOnboardingJob(jobName: string): Promise<OnboardingOutcome> {
       // transient; keep polling
     }
   }
-  return { status: 'success', summary: 'Started - open the Queue to see the results.' };
+  return { status: 'success', summary: 'Queued or started - open Jobs to follow progress.' };
 }
 
 function OnboardingActions({
@@ -125,7 +123,7 @@ export function StepWelcome({
         <h2>Welcome to BFrost</h2>
         <p className="wizard-lead">
           BFrost is a <strong>worker-first local AI operations platform</strong>. Every
-          capability - collecting, analyzing, publishing - is a worker you install, configure, and schedule. Nothing runs in the cloud unless you choose it.
+          capability - watching sources, triaging what matters, analyzing impact, alerting you - is a worker you install, configure, and schedule. Nothing runs in the cloud unless you choose it.
         </p>
         <OnboardingActions dashboard={dashboard} onRefresh={onRefresh} onRunDemoAction={onRunDemoAction} />
         <ul className="wizard-bullets">

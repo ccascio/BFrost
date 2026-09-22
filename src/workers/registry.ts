@@ -4,6 +4,7 @@ import type { AdminApiRoute } from '../admin-route';
 import type {
   BackendWorkerModule,
   ChannelAdapterFactory,
+  OperatorNotificationCategory,
   ProviderAdapter,
   ProviderAdapterFactory,
   WorkerHealthCheck,
@@ -306,10 +307,19 @@ export function getActiveLocalProvider(): ProviderAdapter | undefined {
  * channel. Falls back to the first configured channel that opts into proactive delivery so
  * notifications still flow on a fresh install. Silent no-op when no channel can deliver.
  *
+ * `options.category` says what the message is about, letting a channel route ops traffic
+ * and worker output to different destinations. It defaults to `content` so a caller that
+ * does not care — including any local worker written against the SDK before this existed —
+ * keeps landing wherever notifications already went.
+ *
  * Note: only outbound operator notifications are funneled through the primary channel.
  * Inbound user messages still flow through every started channel adapter independently.
  */
-export async function notifyOperatorChannels(text: string): Promise<void> {
+export async function notifyOperatorChannels(
+  text: string,
+  options: { category?: OperatorNotificationCategory } = {},
+): Promise<void> {
+  const category = options.category ?? 'content';
   const primaryId = config.primaryChannelId?.trim();
   const channels = listRegisteredChannels();
   const candidates: typeof channels = [];
@@ -324,7 +334,7 @@ export async function notifyOperatorChannels(text: string): Promise<void> {
     if (!adapter.notifyOperator) continue;
     if (!(await adapter.isConfigured())) continue;
     try {
-      await adapter.notifyOperator(text);
+      await adapter.notifyOperator(text, category);
       return;
     } catch (err) {
       console.warn(`[Channels] ${channel.manifest.id} operator notification failed:`, err);

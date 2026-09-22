@@ -76,6 +76,15 @@ export function JobOperationsPanel({
   return (
     <div className="detail-body">
       {!job.workerEnabled ? <p className="error-box">Worker disabled. Enable it from Workers to run this job.</p> : null}
+      {job.queued ? (
+        <div className="job-running-progress">
+          <Progress
+            value={null}
+            label={job.queuedAt ? `Queued since ${formatDate(job.queuedAt)}` : 'Job queued'}
+            tone="default"
+          />
+        </div>
+      ) : null}
       {job.running ? (
         <div className="job-running-progress">
           <Progress
@@ -480,8 +489,6 @@ function JobTimeline({ job, runs }: { job: SchedulerJobState; runs: SchedulerRun
         <Detail label="Worker type" value={job.workerBuiltIn ? 'built-in' : 'local'} />
         <Detail label="Enabled" value={job.enabled ? 'yes' : 'no'} />
         <Detail label="Cron" value={job.cron} />
-        <Detail label="Next scheduled" value={formatDate(job.nextScheduledAt)} />
-        <Detail label="Queued at" value={formatDate(job.queuedAt)} />
         <Detail label="Effective model" value={job.effectiveModelAlias} />
         <Detail label="Last trigger" value={job.lastTrigger ?? 'n/a'} />
         <Detail label="Last started" value={formatDate(job.lastStartedAt)} />
@@ -537,6 +544,181 @@ function JobTimeline({ job, runs }: { job: SchedulerJobState; runs: SchedulerRun
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+interface JobSchedulePanelProps {
+  dashboard: DashboardState;
+  job: SchedulerJobState;
+  runs: SchedulerRunRecord[];
+  busyKey: string | null;
+  jobDrafts: Record<string, JobDraft>;
+  setJobDrafts: Dispatch<SetStateAction<Record<string, JobDraft>>>;
+  confirmSaveJobName: string | null;
+  setConfirmSaveJobName: Dispatch<SetStateAction<string | null>>;
+  mutate: Mutate;
+  triggerRun: TriggerRun;
+}
+
+export function JobSchedulePanel({
+  job,
+  runs,
+  busyKey,
+  jobDrafts,
+  setJobDrafts,
+  confirmSaveJobName,
+  setConfirmSaveJobName,
+  mutate,
+  triggerRun,
+}: JobSchedulePanelProps) {
+  const draft = jobDrafts[job.name] ?? buildDraft(job);
+  const changes = jobScheduleChanges(job, draft);
+  const runningRun = job.running
+    ? runs.find((run) => run.status === 'running' || run.finishedAt === null)
+    : null;
+
+  return (
+    <div className="detail-body">
+      {!job.workerEnabled ? <p className="error-box">Worker disabled. Enable it from Workers to run this job.</p> : null}
+      {job.queued ? (
+        <div className="job-running-progress">
+          <Progress
+            value={null}
+            label={job.queuedAt ? `Queued since ${formatDate(job.queuedAt)}` : 'Job queued'}
+            tone="default"
+          />
+        </div>
+      ) : null}
+      {job.running ? (
+        <div className="job-running-progress">
+          <Progress
+            value={null}
+            label={runningRun?.startedAt ? `Running since ${formatDate(runningRun.startedAt)}` : 'Job running'}
+            tone="warning"
+          />
+        </div>
+      ) : null}
+
+      <div className="job-grid standard-job-grid">
+        <label className="field checkbox">
+          <span>Enabled</span>
+          <input
+            type="checkbox"
+            checked={draft.enabled}
+            onChange={(event) =>
+              setJobDrafts((current) => ({
+                ...current,
+                [job.name]: { ...draft, enabled: event.target.checked },
+              }))
+            }
+          />
+        </label>
+
+        <div className="field cron-builder-field">
+          <span>Schedule</span>
+          <CronBuilder
+            value={draft.cron}
+            onChange={(cron) =>
+              setJobDrafts((current) => ({
+                ...current,
+                [job.name]: { ...draft, cron },
+              }))
+            }
+          />
+        </div>
+      </div>
+
+      <div className="panel-actions wrap">
+        <button
+          className="primary"
+          disabled={jobDrafts[job.name] === undefined || confirmSaveJobName === job.name}
+          onClick={() => setConfirmSaveJobName(job.name)}
+        >
+          Save schedule
+        </button>
+        <button
+          disabled={busyKey === `run-${job.name}` || job.queued || job.running || !job.workerEnabled}
+          onClick={() =>
+            void triggerRun(
+              `run-${job.name}`,
+              `/api/cron-jobs/${job.name}/run`,
+              `${job.label} started.`,
+            )
+          }
+        >
+          {job.queued ? 'Queued...' : job.running ? 'Running...' : 'Run now'}
+        </button>
+        {jobDrafts[job.name] !== undefined ? (
+          <button
+            type="button"
+            onClick={() => {
+              setConfirmSaveJobName(null);
+              discardJobDraft(job.name, setJobDrafts);
+            }}
+          >
+            Discard changes
+          </button>
+        ) : null}
+      </div>
+
+      <AlertDialog
+        open={confirmSaveJobName === job.name}
+        onOpenChange={(open) => {
+          if (!open) setConfirmSaveJobName(null);
+        }}
+        title={`Save schedule for ${job.label}?`}
+        description="Review the operational changes before they affect future runs."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setConfirmSaveJobName(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={busyKey === `save-${job.name}` || changes.length === 0}
+              onClick={() => {
+                setConfirmSaveJobName(null);
+                void mutate(
+                  `save-${job.name}`,
+                  `/api/cron-jobs/${job.name}`,
+                  {
+                    method: 'POST',
+                    body: JSON.stringify({
+                      enabled: draft.enabled,
+                      cron: draft.cron,
+                      modelAlias: draft.modelAlias,
+                      approvalRequired: draft.approvalRequired,
+                    }),
+                  },
+                  `${job.label} schedule saved.`,
+                );
+              }}
+            >
+              Confirm save
+            </Button>
+          </>
+        }
+      >
+        {changes.length === 0 ? (
+          <p className="schedule-preview-no-changes">No changes to save.</p>
+        ) : (
+          <table className="schedule-preview-table">
+            <thead>
+              <tr><th>Field</th><th>Current</th><th>New value</th></tr>
+            </thead>
+            <tbody>
+              {changes.map((change) => (
+                <tr key={change.field}>
+                  <td>{change.field}</td>
+                  <td className="schedule-preview-old">{change.from}</td>
+                  <td className="schedule-preview-new">{change.to}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </AlertDialog>
     </div>
   );
 }

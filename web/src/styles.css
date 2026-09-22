@@ -4946,6 +4946,146 @@ code {
   font-weight: 800;
 }
 
+/* ---------------------------------------------------------------------------
+   Loading placeholders (see web/src/ui/Skeleton.tsx)
+
+   A single sweeping highlight travels across every placeholder on screen. The
+   sweep is driven by `background-position` over an over-sized gradient, and all
+   shapes share one animation name and duration so the passes stay in phase —
+   independent per-shape pulses read as noise, one coordinated sweep reads as a
+   surface that is filling in.
+   --------------------------------------------------------------------------- */
+
+/* Two tokens carry the whole look: a resting fill and the lighter band that travels
+   across it. Everything else — the gradient, the reduced-motion fallback, the on-dark
+   variant — is written once against these, so retoning is a two-line change. */
+.skeleton {
+  --skeleton-base: color-mix(in srgb, var(--line) 62%, var(--panel));
+  --skeleton-sheen: color-mix(in srgb, var(--panel) 82%, var(--line));
+  display: block;
+  height: 0.85rem;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--skeleton-base) 0%,
+    var(--skeleton-base) 35%,
+    var(--skeleton-sheen) 50%,
+    var(--skeleton-base) 65%,
+    var(--skeleton-base) 100%
+  );
+  background-size: 300% 100%;
+  animation: skeleton-sweep 1.6s ease-in-out infinite;
+}
+
+.skeleton--block {
+  height: 100%;
+  min-height: 3rem;
+  border-radius: 10px;
+}
+
+.skeleton--circle {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.skeleton-stack {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.skeleton-rows {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 45%, transparent);
+}
+
+.skeleton-row:last-child {
+  border-bottom: none;
+}
+
+.skeleton-row__body {
+  display: grid;
+  gap: 0.4rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.skeleton-row__value {
+  display: grid;
+  gap: 0.4rem;
+  justify-items: end;
+  flex: 0 0 auto;
+}
+
+/* The placeholder is a stand-in, not content: keep it quieter than the real thing
+   so the swap to live data reads as arrival rather than as a flash.
+   Deliberately sets no `display` — callers hand the region the same layout class the
+   real container uses so the placeholder occupies the same box, and a `display` here
+   would fight that at equal specificity, decided by bundle order. */
+.skeleton-region {
+  opacity: 0.85;
+}
+
+/* A metric card lays its icon, label, value and detail out on one grid; the
+   placeholder replaces the last two cells, so it carries their spacing itself. */
+.overview-metric-card .overview-metric-skeleton {
+  display: grid;
+  gap: 0.45rem;
+  align-content: start;
+  padding-top: 0.28rem;
+}
+
+/* Matches `.pipeline-stage-strip` so the blocks do not shift when the real
+   stages replace them. */
+.overview-stage-skeletons {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: 0.25rem;
+}
+
+.overview-stage-skeletons .skeleton {
+  flex: 1 1 0;
+  min-width: 96px;
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+/* Placeholders sitting on a dark card: the surface tokens above resolve to light
+   fills there, which reads as a stack of bright bars rather than absent content.
+   Draw with white alpha so the shapes recede into the card the way real text does. */
+.skeleton-region--inverse .skeleton {
+  --skeleton-base: rgba(255, 255, 255, 0.1);
+  --skeleton-sheen: rgba(255, 255, 255, 0.23);
+}
+
+/* Motion is the whole point of the effect, so when it is unwelcome fall back to a
+   flat tone rather than a slower sweep — a static bar still says "pending". */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    background: var(--skeleton-base);
+  }
+}
+
 .store-detail-loading {
   display: grid;
   gap: 0.7rem;

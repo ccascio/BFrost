@@ -174,12 +174,24 @@ export function StepWebSearch({
     setBusy(key);
     setMessage(null);
     try {
-      const response = await fetch(surface.path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(serializeDashboardFields(fields, draft)),
-      });
-      if (!response.ok) throw new Error((await response.text()) || 'Failed to save web search credentials.');
+      const surfacePayload = serializeDashboardFields(fields, draft);
+      if (Object.keys(surfacePayload).length > 0) {
+        const response = await fetch(surface.path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(surfacePayload),
+        });
+        if (!response.ok) throw new Error((await response.text()) || 'Failed to save web search credentials.');
+      }
+      for (const field of fields) {
+        if (field.type !== 'model-alias') continue;
+        const response = await fetch(`/api/cron-jobs/${encodeURIComponent(field.targetJob)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ modelAlias: String(draft[field.key] ?? '') }),
+        });
+        if (!response.ok) throw new Error((await response.text()) || 'Failed to save model choice.');
+      }
       await onRefresh();
       setMessage({ status: 'success', text: `${worker.displayName ?? worker.name} saved.` });
     } catch (err) {
@@ -340,10 +352,10 @@ export function StepFirstRun({
     setBusy(jobName);
     setError(null);
     try {
-      const res = await fetch(`/api/cron-jobs/${encodeURIComponent(jobName)}`, {
+      const res = await fetch(`/api/cron-jobs/${encodeURIComponent(jobName)}/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'run' }),
+        body: '{}',
       });
       if (!res.ok) throw new Error(await res.text());
       setTriggered(jobName);
@@ -370,7 +382,7 @@ export function StepFirstRun({
     <div className="wizard-step-body">
       <h2>Run your first job</h2>
       <p className="wizard-lead">
-        Trigger a job now to see BFrost in action. It will run immediately using your configured model.
+        Trigger a job now to see BFrost in action. It enters the scheduler queue and starts as soon as the current job finishes.
       </p>
       <div className="wizard-worker-list">
         {runnableJobs.slice(0, 5).map((j) => {
@@ -392,10 +404,10 @@ export function StepFirstRun({
               <button
                 type="button"
                 className="primary"
-                disabled={busy === j.name || j.running}
+                disabled={busy === j.name || j.queued || j.running}
                 onClick={() => void runJob(j.name)}
               >
-                {j.running ? 'Running...' : busy === j.name ? 'Starting...' : triggered === j.name ? 'Triggered ✓' : 'Run now'}
+                {j.queued ? 'Queued...' : j.running ? 'Running...' : busy === j.name ? 'Starting...' : triggered === j.name ? 'Triggered ✓' : 'Run now'}
               </button>
             </div>
           );
@@ -404,7 +416,7 @@ export function StepFirstRun({
       {error ? <p className="wizard-error">{error}</p> : null}
       {triggered ? (
         <p className="wizard-status-ok">
-          ✓ Job triggered. Check the Jobs tab to see the result when it finishes.
+          ✓ Job accepted. Check the Jobs tab to see whether it is queued, running, or finished.
         </p>
       ) : null}
     </div>

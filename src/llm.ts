@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { LanguageModel, type ToolSet } from 'ai';
 import { resolveReasoningLevel, type ModelOption } from './config';
 import type { NativeWebSearchOptions } from './workers/module';
+import { meterLanguageModel } from './usage-metering';
 
 // Imported lazily to break a CJS cycle between the worker registry and model dispatch.
 function lookupProvider(providerId: string) {
@@ -56,10 +57,13 @@ export function getChatModel(
     );
   }
   const reasoningLevel = requestedReasoningLevel(model, options?.reasoningLevel);
-  return adapter.getChatModel(
+  const resolved = adapter.getChatModel(
     model.id,
     reasoningLevel ? { reasoningLevel } : undefined,
   ) as LanguageModel;
+  // 01.1 — every model call in BFrost resolves its handle here, which is what makes metering
+  // complete rather than dependent on each worker remembering to report.
+  return meterLanguageModel(resolved, model.provider, model.id);
 }
 
 /**
@@ -78,5 +82,12 @@ export function resolveNativeWebSearch(
     ...options,
     ...(reasoningLevel ? { reasoningLevel } : {}),
   });
-  return resolved ? { model: resolved.model as LanguageModel, tools: resolved.tools as ToolSet } : undefined;
+  // 01.1 — metered too. This is the *second* dispatch path out of this module, and wrapping only
+  // `getChatModel` left every native-web-search call unmeasured: `agent.ts:130` prefers this
+  // branch whenever the provider supports it, so for a search-capable provider it was the common
+  // path, not the exceptional one. Found by running a real task and finding no row, which no
+  // fixture would have shown.
+  return resolved
+    ? { model: meterLanguageModel(resolved.model as LanguageModel, model.provider, model.id), tools: resolved.tools as ToolSet }
+    : undefined;
 }

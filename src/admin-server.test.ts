@@ -16,6 +16,10 @@ import { createThread, getThread, hydrateThreads } from './chat-threads';
 import { hydrateProjects } from './projects';
 import { addUserMessage, addAssistantMessage } from './conversation';
 import { recordEvent } from './event-log';
+import { JobBusyError } from './scheduler';
+import { registerLoadedLocalModule, unregisterLocalWorkerModule } from './workers/registry';
+import type { BackendWorkerModule } from './workers/module';
+import type { WorkerManifest } from './workers/types';
 
 async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -375,6 +379,87 @@ test('project routes create/list/delete and assign a chat to a project over HTTP
     assert.equal(getThread('chat-proj')?.projectId, null);
   } finally {
     await stopAdminServer();
+    config.appDbPath = previous.appDbPath;
+    config.adminPort = previous.adminPort;
+    config.adminHost = previous.adminHost;
+    config.adminPassword = previous.adminPassword;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a job already in flight answers 409, not a 500 with a stack trace', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'BFrost-admin-busy-'));
+  const previous = {
+    appDbPath: config.appDbPath,
+    adminPort: config.adminPort,
+    adminHost: config.adminHost,
+    adminPassword: config.adminPassword,
+  };
+  config.appDbPath = path.join(dir, 'app.sqlite');
+  config.adminHost = '127.0.0.1';
+  config.adminPort = await freePort();
+  config.adminPassword = '';
+  const base = `http://127.0.0.1:${config.adminPort}`;
+
+  // Registering a route that raises the error is enough, and is the point: what is under
+  // test is how the admin server *maps* it, not the scheduler's serialisation (covered in
+  // scheduler.test.ts). Standing up a genuinely busy job here would test that twice.
+  const workerId = 'test.busy-mapping';
+  const module: BackendWorkerModule = {
+    manifest: {
+      id: workerId,
+      name: 'Busy Mapping Worker',
+      version: '0.1.0',
+      description: 'Raises JobBusyError from an API route to pin its HTTP mapping.',
+      builtIn: false,
+      jobs: [],
+      tools: [],
+      settings: [],
+    } as unknown as WorkerManifest,
+    apiRoutes: [{
+      method: 'POST',
+      path: '/api/test-busy-mapping',
+      workerIds: [workerId],
+      async handle() {
+        throw new JobBusyError('Shared Sync is already queued or running.');
+      },
+    }],
+  };
+
+  const errors: unknown[][] = [];
+  const realError = console.error;
+  console.error = (...args: unknown[]) => { errors.push(args); };
+
+  try {
+    registerLoadedLocalModule(module);
+    await hydrateThreads();
+    await startAdminServer();
+
+    const response = await fetch(`${base}/api/test-busy-mapping`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+
+    // 409 Conflict: the request conflicts with current state and will succeed later.
+    assert.equal(response.status, 409);
+    const payload = await response.json() as { error?: string; busy?: boolean };
+    assert.match(payload.error ?? '', /already queued or running/);
+    // The flag is what lets a dashboard say "already running" without matching on prose.
+    assert.equal(payload.busy, true);
+
+    // And it must not be logged as a crash. A refusal filed next to real faults is how
+    // an expected condition ends up looking like an incident.
+    assert.equal(
+      errors.some((args) => String(args[0]).includes('[Admin] Request failed')),
+      false,
+      `expected no failure log, got ${JSON.stringify(errors.map((a) => String(a[0])))}`,
+    );
+  } finally {
+    console.error = realError;
+    await stopAdminServer();
+    unregisterLocalWorkerModule(workerId);
     config.appDbPath = previous.appDbPath;
     config.adminPort = previous.adminPort;
     config.adminHost = previous.adminHost;

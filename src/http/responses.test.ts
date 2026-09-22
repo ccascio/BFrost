@@ -17,20 +17,20 @@ function requestWithBody(
 
 test('readJsonBody accepts JSON media types and validates the parsed body', async () => {
   const body = await readJsonBody(
-    requestWithBody(JSON.stringify({ name: 'BFrost' }), {
+    requestWithBody(JSON.stringify({ name: 'bfrost' }), {
       'content-type': 'application/vnd.bfrost+json; charset=utf-8',
-      'content-length': String(Buffer.byteLength(JSON.stringify({ name: 'BFrost' }))),
+      'content-length': String(Buffer.byteLength(JSON.stringify({ name: 'bfrost' }))),
     }),
     z.object({ name: z.string() }).strict(),
   );
 
-  assert.deepEqual(body, { name: 'BFrost' });
+  assert.deepEqual(body, { name: 'bfrost' });
 });
 
 test('readJsonBody rejects non-JSON request bodies with 415', async () => {
   await assert.rejects(
     readJsonBody(
-      requestWithBody('{"name":"BFrost"}', {
+      requestWithBody('{"name":"bfrost"}', {
         'content-type': 'text/plain',
         'content-length': '17',
       }),

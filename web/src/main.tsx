@@ -11,6 +11,8 @@ import './styles.css';
 // bundles can build against `react` / `react/jsx-runtime` without bundling a second
 // React (two Reacts would silently break hooks). The esbuild worker in
 // `src/workers/build.ts` rewrites those imports to read from this global.
+// The global keeps the legacy `bfrost` name: it is the SDK wiring contract that
+// runtime-loaded worker bundles are compiled against (see src/workers/build.ts).
 declare global {
   interface Window {
     bfrost: {

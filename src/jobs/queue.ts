@@ -5,6 +5,7 @@ import path from 'path';
 import { z } from 'zod';
 import { config } from '../config';
 import { getAppDb, listKvJsonBySuffix } from '../sqlite';
+import { withDebugTiming, withDebugTimingAsync } from '../debug';
 
 const QUEUE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const LOCK_STALE_MS = 3 * 60 * 1000;
@@ -210,6 +211,7 @@ const UPSERT_QUEUE_ITEM_SQL = `${INSERT_QUEUE_ITEM_SQL}
     metadata_json = excluded.metadata_json`;
 
 async function ensureQueueTable(): Promise<Awaited<ReturnType<typeof getAppDb>>> {
+  return withDebugTimingAsync('sqlite.queue.ensure', async () => {
   const db = await getAppDb();
   if (initializedQueueDbs.has(db)) return db;
   db.exec(`
@@ -263,10 +265,13 @@ async function ensureQueueTable(): Promise<Awaited<ReturnType<typeof getAppDb>>>
   }
   initializedQueueDbs.add(db);
   return db;
+  });
 }
 
 function queueStoreInitialized(db: Awaited<ReturnType<typeof getAppDb>>): boolean {
-  return db.prepare('SELECT 1 FROM item_bus_meta WHERE singleton = 1').get() !== undefined;
+  return withDebugTiming('sqlite.queue.initialized-check', () =>
+    db.prepare('SELECT 1 FROM item_bus_meta WHERE singleton = 1').get() !== undefined,
+  );
 }
 
 function selectRowsSql(query: QueueQuery): { sql: string; params: unknown[] } {
@@ -311,6 +316,7 @@ function selectRowsSql(query: QueueQuery): { sql: string; params: unknown[] } {
 
 /** Query only the indexed Item Bus rows a caller needs. */
 export async function queryQueue(query: QueueQuery = {}): Promise<QueueItem[]> {
+  return withDebugTimingAsync('sqlite.queue.query', async () => {
   const db = await ensureQueueTable();
   if (!queueStoreInitialized(db)) {
     // `loadQueue` owns the one-time file/KV compatibility scan. Once it completes all
@@ -320,9 +326,14 @@ export async function queryQueue(query: QueueQuery = {}): Promise<QueueItem[]> {
   const selected = selectRowsSql(query);
   const rows = db.prepare(selected.sql).all(...selected.params) as QueueRow[];
   return rows.map(rowToQueueItem);
+  });
 }
 
 export async function loadQueue(): Promise<QueueItem[]> {
+  return withDebugTimingAsync('sqlite.queue.load', () => loadQueueInternal());
+}
+
+async function loadQueueInternal(): Promise<QueueItem[]> {
   const db = await ensureQueueTable();
   if (queueStoreInitialized(db)) {
     const selected = selectRowsSql({});
@@ -404,6 +415,7 @@ function dedupeQueueById(queue: QueueItem[]): QueueItem[] {
  * `insertQueueItem`, `updateQueueItems`, `upsertQueueItems`, or `deleteQueueItems`.
  */
 export async function saveQueue(queue: QueueItem[]): Promise<void> {
+  return withDebugTimingAsync('sqlite.queue.replace', async () => {
   invalidateQueueReadCache();
   const normalized = QueueSchema.parse(dedupeQueueById(queue.map(normalizeQueueItem)));
   const db = await ensureQueueTable();
@@ -415,6 +427,7 @@ export async function saveQueue(queue: QueueItem[]): Promise<void> {
     db.prepare('DELETE FROM app_kv WHERE key = ?').run(QUEUE_STORE_KEY);
   });
   replace();
+  });
 }
 
 /** Read one Item Bus row without materialising unrelated payloads. */
@@ -428,6 +441,7 @@ export async function loadQueueItem(id: string): Promise<QueueItem | null> {
  * Returns the existing row when the stable id is already present.
  */
 export async function insertQueueItem(item: QueueItem): Promise<{ item: QueueItem; inserted: boolean }> {
+  return withDebugTimingAsync('sqlite.queue.insert', async () => {
   assertQueueLockHeld('insertQueueItem');
   invalidateQueueReadCache();
   const db = await ensureQueueTable();
@@ -437,10 +451,12 @@ export async function insertQueueItem(item: QueueItem): Promise<{ item: QueueIte
   const nextOrder = (db.prepare(`SELECT coalesce(max(sort_order), -1) + 1 AS value FROM ${QUEUE_TABLE}`).get() as { value: number }).value;
   db.prepare(INSERT_QUEUE_ITEM_SQL).run(itemParams(QueueItemSchema.parse(item), nextOrder));
   return { item, inserted: true };
+  });
 }
 
 /** Persist only the supplied rows, preserving every unrelated Item Bus entry. */
 export async function upsertQueueItems(items: readonly QueueItem[]): Promise<void> {
+  return withDebugTimingAsync('sqlite.queue.upsert', async () => {
   assertQueueLockHeld('upsertQueueItems');
   if (items.length === 0) return;
   invalidateQueueReadCache();
@@ -457,10 +473,12 @@ export async function upsertQueueItems(items: readonly QueueItem[]): Promise<voi
     }
   });
   write();
+  });
 }
 
 /** Delete selected rows without rewriting retained payloads. */
 export async function deleteQueueItems(ids: readonly string[]): Promise<number> {
+  return withDebugTimingAsync('sqlite.queue.delete', async () => {
   assertQueueLockHeld('deleteQueueItems');
   if (ids.length === 0) return 0;
   invalidateQueueReadCache();
@@ -468,6 +486,7 @@ export async function deleteQueueItems(ids: readonly string[]): Promise<number> 
   if (!queueStoreInitialized(db)) await loadQueue();
   const placeholders = ids.map(() => '?').join(', ');
   return db.prepare(`DELETE FROM ${QUEUE_TABLE} WHERE id IN (${placeholders})`).run(...ids).changes;
+  });
 }
 
 /** Atomically load and update only selected rows. Missing ids are ignored. */
@@ -859,6 +878,10 @@ async function acquireFileLock(p: string): Promise<boolean> {
 }
 
 export async function withQueueLock<T>(fn: () => Promise<T>): Promise<T> {
+  return withDebugTimingAsync('queue.lock', () => withQueueLockInternal(fn));
+}
+
+async function withQueueLockInternal<T>(fn: () => Promise<T>): Promise<T> {
   if (queueLockHeld.getStore()) return fn();
 
   // Join the in-process queue: wait for the previous holder, then publish our own gate for

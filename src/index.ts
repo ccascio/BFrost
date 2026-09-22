@@ -23,6 +23,7 @@ import { registerBfrostRuntimeModule } from './sdk-runtime';
 import { ensureActionTable } from './actions';
 import { refreshActiveLocalProviderModels, refreshCloudProviderModels } from './model-discovery';
 import { config, findModel } from './config';
+import { installDebugFetchInstrumentation } from './debug';
 import type { ChannelAdapter, ProviderAdapter } from './workers/module';
 import { acquireRuntimeLock, releaseRuntimeLock } from './runtime-lock';
 import { closeDb } from './sqlite';
@@ -33,6 +34,8 @@ import {
   logProcessFault,
   type ProcessFaultKind,
 } from './process-lifecycle';
+
+installDebugFetchInstrumentation();
 
 installProcessFaultHandlers({
   cleanup: async (kind) => {
@@ -74,7 +77,7 @@ async function main(): Promise<void> {
   await hydrateProjects();
   await releaseStaleQueueLockOnBoot();
   await ensureActionTable();
-  // Make `import { ... } from 'WFrost'` resolvable inside local worker bundles.
+  // Make `import { ... } from 'bfrost'` resolvable inside local worker bundles.
   // Must happen before bootstrapLocalWorkers so the first require() inside a worker
   // entrypoint sees the synthetic module.
   registerBfrostRuntimeModule();

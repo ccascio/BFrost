@@ -9,9 +9,11 @@ import { registerCoreRoutes } from './admin-routes';
 import { buildDashboardState } from './admin-dashboard-state';
 import { isAdminAuthEnabled, isAuthenticated } from './admin-auth';
 import { BadRequestError } from './admin-route';
+import { JobBusyError } from './scheduler';
 import { handleAuthRoutes } from './http/routes/auth';
 import { detach } from './process-lifecycle';
 import { getActiveScopeId } from './active-scope';
+import { withDebugTimingAsync } from './debug';
 
 let server: Server | null = null;
 
@@ -53,6 +55,8 @@ export async function stopAdminServer(): Promise<void> {
 }
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  // Do not include the URL: worker routes are extensible and path/query segments may be secrets.
+  return withDebugTimingAsync(`http.request ${req.method ?? 'GET'}`, async () => {
   try {
     const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
     const authEnabled = isAdminAuthEnabled();
@@ -78,9 +82,17 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     if (err instanceof BadRequestError) {
       return sendJson(res, err.statusCode, { error: message });
     }
+    // Refusing to start a second run of a job already in flight is the scheduler working:
+    // runs of one worker are serial because they share its KV and tables. That is a
+    // conflict with current state, not a server fault, so it gets 409 and no stack — a
+    // legitimate "not now" was being logged as `[Admin] Request failed` next to real crashes.
+    if (err instanceof JobBusyError) {
+      return sendJson(res, 409, { error: message, busy: true });
+    }
     console.error('[Admin] Request failed:', err);
     return sendJson(res, 500, { error: message });
   }
+  });
 }
 
 function buildRequestRouter(): HttpRouter {
@@ -106,7 +118,7 @@ function buildRequestRouter(): HttpRouter {
 
 // The dashboard build lives next to the working directory in a repo checkout, but
 // next to the compiled module when BFrost runs from an installed npm package
-// (where cwd is the user's data home, e.g. ~/.BFrost).
+// (where cwd is the user's data home, e.g. ~/.bfrost).
 let cachedFrontendDir: string | undefined;
 function frontendDistDir(): string {
   if (!cachedFrontendDir) {

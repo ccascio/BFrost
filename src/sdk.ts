@@ -12,6 +12,7 @@
  * scheduler runner, the live registry mutators, the admin server, etc.). Treat every
  * new export as a public API commitment.
  */
+import type { OperatorNotificationCategory } from './workers/module';
 import { openWorkerKv } from './workers/storage';
 import { openWorkerDb } from './workers/db';
 import { requestFileRead, requestFileWrite } from './actions/primitives';
@@ -60,9 +61,12 @@ export async function getJobPrompt(jobId: string, fallback = ''): Promise<string
  * live-mutator surface) at SDK load; only this one broadcast helper is exposed,
  * not the registry itself.
  */
-export function notifyOperatorChannels(text: string): Promise<void> {
+export function notifyOperatorChannels(
+  text: string,
+  options: { category?: OperatorNotificationCategory } = {},
+): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return (require('./workers/registry') as typeof import('./workers/registry')).notifyOperatorChannels(text);
+  return (require('./workers/registry') as typeof import('./workers/registry')).notifyOperatorChannels(text, options);
 }
 
 export const bfrostSdk = {
@@ -74,6 +78,9 @@ export const bfrostSdk = {
   requestFileWrite,
   // Item Bus (cross-worker producer/consumer queue)
   publishItem,
+  // Publish-time wake events. `publishItem` emits automatically; producers that
+  // batch-save via `saveQueue` call this once per stored item so `wakeOn` jobs
+  // still fire without waiting for the pipeline tick.
   emitItemPublished,
   listItemsForConsumer,
   filterItemsForConsumer,
@@ -121,6 +128,7 @@ export {
   openWorkerKv,
   openWorkerDb,
   publishItem,
+  emitItemPublished,
   listItemsForConsumer,
   filterItemsForConsumer,
   applyConsumerSuccess,
@@ -147,6 +155,7 @@ export type { ActionClass, ActionState, ActionRequest, ActionResult } from './ac
 export type { EmbeddingResult } from './embeddings';
 export type { ModelOption } from './config';
 export type { QueueItem, QueueItemState } from './jobs/queue';
+export type { ItemPublishedEvent } from './jobs/item-bus';
 export type { WorkerKvStore } from './workers/storage';
 export type {
   WorkerDb,
@@ -170,6 +179,7 @@ export type {
   WorkerMigrationContext,
   ChannelAdapter,
   ChannelAdapterFactory,
+  OperatorNotificationCategory,
   ProviderAdapter,
   ProviderAdapterFactory,
 } from './workers/module';

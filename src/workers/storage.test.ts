@@ -24,9 +24,21 @@ test('openWorkerKv stores and retrieves values under a namespaced prefix', async
   await withTempDb(async () => {
     const kv = openWorkerKv('core.example');
     await kv.set('alpha', { hello: 'world' });
-    const direct = await loadKvJson<{ hello: string }>('worker.core.example.alpha');
+    const direct = await loadKvJson<{ hello: string }>('worker.core.example.__global__.alpha');
     assert.deepEqual(direct, { hello: 'world' });
     assert.deepEqual(await kv.get<{ hello: string }>('alpha'), { hello: 'world' });
+  });
+});
+
+test('scoped worker KV falls back to global values without overwriting them', async () => {
+  await withTempDb(async () => {
+    const global = openWorkerKv('core.example');
+    const site = openWorkerKv('core.example', 'site-a');
+    await global.set('config', { threshold: 10 });
+    assert.deepEqual(await site.getWithGlobalFallback('config'), { threshold: 10 });
+    await site.set('config', { threshold: 90 });
+    assert.deepEqual(await global.get('config'), { threshold: 10 });
+    assert.deepEqual(await site.getWithGlobalFallback('config'), { threshold: 90 });
   });
 });
 

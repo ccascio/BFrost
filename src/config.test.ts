@@ -5,11 +5,19 @@ import {
   clearDiscoveredProviderModels,
   config,
   findModel,
+  parseLogLevel,
   getDefaultModelAlias,
   replaceDiscoveredProviderModels,
   resolveReasoningLevel,
 } from './config';
 import { seedDeclaredProviderModels } from './model-discovery';
+
+test('LOG_LEVEL parsing is case-insensitive and defaults safely', () => {
+  assert.equal(parseLogLevel(' DEBUG '), 'debug');
+  assert.equal(parseLogLevel('warn'), 'warn');
+  assert.equal(parseLogLevel('unknown'), 'info');
+  assert.equal(parseLogLevel(undefined), 'info');
+});
 
 test('model lookup accepts aliases and ids', () => {
   seedDeclaredProviderModels();

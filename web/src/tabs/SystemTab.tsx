@@ -59,7 +59,9 @@ export function SystemTab(props: SystemTabProps) {
     setActiveTab,
   } = props;
   const dependencyEntries = Object.entries(dashboard.dependencies)
-    .sort(([a], [b]) => dependencyLabel(a).localeCompare(dependencyLabel(b)));
+    .sort(([a, aStatus], [b, bStatus]) =>
+      (aStatus.label ?? dependencyLabel(a)).localeCompare(bStatus.label ?? dependencyLabel(b)),
+    );
 
   return (
     <>
@@ -107,7 +109,26 @@ export function SystemTab(props: SystemTabProps) {
 
         <div className="stack-list">
           {dependencyEntries.map(([key, status]) => (
-            <HealthRow key={key} label={dependencyLabel(key)} status={status} />
+            <HealthRow
+              key={key}
+              label={status.label ?? dependencyLabel(key)}
+              status={status}
+              action={!status.ok && status.action ? (
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busyKey === `health-action:${key}`}
+                  onClick={() => mutate(
+                    `health-action:${key}`,
+                    status.action!.path,
+                    { method: status.action!.method },
+                    status.action!.successMessage,
+                  )}
+                >
+                  {busyKey === `health-action:${key}` ? 'Starting…' : status.action.label}
+                </button>
+              ) : undefined}
+            />
           ))}
         </div>
 
@@ -361,8 +382,6 @@ function dependencyLabel(key: string): string {
   const known: Record<string, string> = {
     ffmpeg: 'ffmpeg',
     sqliteCli: 'sqlite3',
-    whisperCli: 'whisper-cli',
-    whisperModel: 'Whisper model',
     embeddingModelReachable: 'Embedding model',
   };
   if (known[key]) return known[key];

@@ -3,8 +3,11 @@
 import './net-tuning';
 import { findModel, getDefaultModelAlias, availableModels } from './config';
 import { isJobName, knownJobs, runFreeformTask, runNamedJob } from './job-runner';
-import { refreshActiveLocalProviderModels } from './model-discovery';
+import { refreshActiveLocalProviderModels, refreshCloudProviderModels } from './model-discovery';
 import { notifyOperatorChannels } from './workers/registry';
+import { installDebugFetchInstrumentation } from './debug';
+
+installDebugFetchInstrumentation();
 
 interface CliArgs {
   modelAlias: string;
@@ -78,7 +81,13 @@ function printUsage(): void {
 }
 
 async function main(): Promise<void> {
-  await refreshActiveLocalProviderModels();
+  // Both halves, exactly as `index.ts` does at boot. Only the local half used to run here, so
+  // every cloud model was invisible to `npm run task`: `--help` listed local models only, a
+  // `--model gpt-5.5` exited with "Unknown model alias", and a job whose configured alias was
+  // a cloud model silently fell back to the local runtime. Same class of bug as the
+  // `./net-tuning` note at the top of this file — this entrypoint is not `index.ts`, so
+  // anything `index.ts` does at boot has to be done here too.
+  await Promise.all([refreshActiveLocalProviderModels(), refreshCloudProviderModels()]);
   const { modelAlias, job, task, params } = parseArgs();
   const model = findModel(modelAlias);
   if (!model) {
@@ -107,7 +116,7 @@ async function main(): Promise<void> {
     } else {
       console.error('[Cron] Run failed:', err);
       try {
-        await notifyOperatorChannels(`Cron ${job ?? 'task'} fallito: ${msg}`);
+        await notifyOperatorChannels(`Cron ${job ?? 'task'} fallito: ${msg}`, { category: 'ops' });
       } catch (notifyErr) {
         console.error('[Cron] Also failed to notify operator channels:', notifyErr);
       }
@@ -116,7 +125,7 @@ async function main(): Promise<void> {
   }
 
   try {
-    await notifyOperatorChannels(outcome);
+    await notifyOperatorChannels(outcome, { category: 'ops' });
   } catch (err) {
     console.error('[Cron] Failed to deliver operator notification:', err);
   }

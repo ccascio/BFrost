@@ -8,6 +8,9 @@ const SETTINGS_SECTIONS: Record<string, SettingsTab> = {
   settings: 'config',
   system: 'system',
   workers: 'workers',
+  jobs: 'jobs',
+  store: 'store',
+  health: 'health',
 };
 
 export interface DashboardRouteState {
@@ -40,10 +43,13 @@ export function routeStateFromPath(pathname: string): DashboardRouteState {
   }
 
   if (parts.length === 1) {
-    if (parts[0] === 'jobs') return { ...fallback, activeTab: 'jobs' };
-    if (parts[0] === 'store') return { ...fallback, activeTab: 'store' };
-    if (parts[0] === 'health') return { ...fallback, activeTab: 'health' };
     if (parts[0] === 'chat') return { ...fallback, activeTab: 'chat' };
+    if (parts[0] === 'channels' || parts[0] === 'workers' || parts[0] === 'jobs' || parts[0] === 'store' || parts[0] === 'health' || parts[0] === 'system' || parts[0] === 'actions') {
+      return { ...fallback, activeTab: parts[0] };
+    }
+    // Legacy settings aliases.
+    const legacySettingsTab = SETTINGS_SECTIONS[parts[0]];
+    if (legacySettingsTab) return { ...fallback, settingsOpen: true, settingsTab: legacySettingsTab };
   }
 
   if (parts[0] === 'workers' && parts[1]) {
@@ -63,6 +69,9 @@ export function routeStateFromPath(pathname: string): DashboardRouteState {
       };
     }
     const section = SETTINGS_SECTIONS[parts[1] ?? 'platform'] ?? 'config';
+    if (section !== 'config') {
+      return { ...fallback, activeTab: section as DashboardTab };
+    }
     return {
       activeTab: fallback.activeTab,
       settingsOpen: true,
@@ -75,12 +84,10 @@ export function routeStateFromPath(pathname: string): DashboardRouteState {
 
 export function pathForDashboardTab(tab: DashboardTab): string {
   if (tab === 'overview' || tab === 'pipeline') return '/';
-  if (tab === 'jobs') return '/jobs';
-  if (tab === 'store') return '/store';
-  if (tab === 'health') return '/health';
   if (tab === 'chat') return '/chat';
-  if (tab === 'channels' || tab === 'workers' || tab === 'config' || tab === 'system' || tab === 'actions') {
-    return pathForSettingsTab(tab);
+  if (tab === 'config') return pathForSettingsTab(tab);
+  if (tab === 'channels' || tab === 'workers' || tab === 'jobs' || tab === 'store' || tab === 'health' || tab === 'system' || tab === 'actions') {
+    return `/${tab}`;
   }
   if (tab.startsWith('worker-config:')) {
     return `/workers/${encodeURIComponent(tab.slice('worker-config:'.length))}/config`;
@@ -101,15 +108,10 @@ export function pathForSettingsTab(tab: SettingsTab): string {
 
 export function pushDashboardPath(path: string): void {
   if (typeof window === 'undefined') return;
-  const next = withCurrentQuery(path);
   const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-  if (current === next) return;
-  window.history.pushState({}, '', next);
-}
-
-function withCurrentQuery(path: string): string {
-  if (typeof window === 'undefined') return path;
-  const query = window.location.search;
-  const hash = window.location.hash;
-  return `${path}${query}${hash}`;
+  if (current === path) return;
+  // Query parameters and hashes belong to the route that created them (for example
+  // a worker's ticker/cluster focus). A normal tab change must not leak that state
+  // into the next dashboard. Callers that need route state include it in `path`.
+  window.history.pushState({}, '', path);
 }

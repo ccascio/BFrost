@@ -48,6 +48,8 @@ export function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
+const DETAIL_BLOCK_PREVIEW_CHARS = 400;
+
 export function DetailBlock({
   label,
   value,
@@ -57,11 +59,19 @@ export function DetailBlock({
   value?: string;
   tone?: 'error';
 }) {
+  const [expanded, setExpanded] = useState(false);
   if (!value) return null;
+  const isLong = value.length > DETAIL_BLOCK_PREVIEW_CHARS;
+  const display = expanded || !isLong ? value : `${value.slice(0, DETAIL_BLOCK_PREVIEW_CHARS)}…`;
   return (
     <div className={`detail-block${tone === 'error' ? ' error' : ''}`}>
       <span>{label}</span>
-      <p>{value}</p>
+      <p>{display}</p>
+      {isLong ? (
+        <button type="button" className="run-error-toggle" onClick={() => setExpanded((v) => !v)}>
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -82,14 +92,17 @@ export function HelpTip({ children }: { children: ReactNode }) {
   );
 }
 
-export function HealthRow({ label, status }: { label: string; status: HealthStatus }) {
+export function HealthRow({ label, status, action }: { label: string; status: HealthStatus; action?: ReactNode }) {
   return (
     <div className="health-row">
       <div>
         <strong>{label}</strong>
         <span className="health-copy">{status.detail}</span>
       </div>
-      <StatusPill tone={status.ok ? 'good' : 'warning'}>{status.ok ? 'ready' : 'missing'}</StatusPill>
+      <div className="panel-actions">
+        {action}
+        <StatusPill tone={status.ok ? 'good' : 'warning'}>{status.ok ? 'ready' : 'missing'}</StatusPill>
+      </div>
     </div>
   );
 }

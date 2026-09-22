@@ -1,20 +1,15 @@
-// Workers tab — describe-a-worker, install/upload, and the installed-worker list.
+// Workers tab — install/upload and the installed-worker list.
 // Extracted from App.tsx (CODE_ROADMAP Phase 1.2). renderWorkerGroups/renderWorkerRow
 // are worker-only closures kept as inner functions so they close over props.
-import type { Dispatch, SetStateAction } from 'react';
 import { HelpTip, StatusPill, workerHealthTone, workerHealthLabel } from '../app-helpers';
 import type { DashboardState, WorkerKind, WorkerSummary } from '../app-types';
 
 export interface WorkersTabProps {
   dashboard: DashboardState;
   busyKey: string | null;
-  workerDescription: string;
-  setWorkerDescription: Dispatch<SetStateAction<string>>;
-  generatedWorker: { id: string; displayName: string; role: string; enabled: boolean; note?: string } | null;
   workerUploadFile: File | null;
   setWorkerUploadFile: (f: File | null) => void;
   storeUpdates: Map<string, string>;
-  generateWorkerFromDescription: () => void | Promise<void>;
   uploadWorkerZip: () => void | Promise<void>;
   deleteWorker: (worker: WorkerSummary) => void | Promise<void>;
   mutate: (key: string, input: RequestInfo, init: RequestInit, successMessage: string) => void | Promise<void>;
@@ -22,9 +17,9 @@ export interface WorkersTabProps {
 
 export function WorkersTab(props: WorkersTabProps) {
   const {
-    dashboard, busyKey, workerDescription, setWorkerDescription, generatedWorker,
+    dashboard, busyKey,
     workerUploadFile, setWorkerUploadFile, storeUpdates,
-    generateWorkerFromDescription, uploadWorkerZip, deleteWorker, mutate,
+    uploadWorkerZip, deleteWorker, mutate,
   } = props;
 
   function renderWorkerGroups(workers: WorkerSummary[]) {
@@ -104,65 +99,6 @@ export function WorkersTab(props: WorkersTabProps) {
 
   return (
         <>
-        <section className="panel tab-page">
-          <div className="panel-head">
-            <div>
-              <p className="panel-kicker">Describe a worker</p>
-              <h2>Create a worker by describing it <HelpTip>Type what you want a worker to do in plain English. BFrost asks your model to design it, scaffolds the code, installs it, and enables it — no files, no restart. Needs a real model connected through a local runtime or cloud provider.</HelpTip></h2>
-            </div>
-          </div>
-          <div className="stack-list">
-            <textarea
-              rows={3}
-              placeholder='e.g. "Every morning, write me one calm haiku about the day ahead."'
-              value={workerDescription}
-              onChange={(event) => setWorkerDescription(event.target.value)}
-              disabled={busyKey === 'worker-generate'}
-            />
-            <div className="panel-actions">
-              <button
-                type="button"
-                className="primary"
-                disabled={busyKey === 'worker-generate' || workerDescription.trim().length < 8}
-                onClick={() => void generateWorkerFromDescription()}
-              >
-                {busyKey === 'worker-generate' ? 'Designing…' : 'Create worker'}
-              </button>
-              {(['Write me one calm haiku every morning.', 'Summarize each new item into three bullet points.', 'Draft a daily gratitude journal prompt.'] as const).map((example) => (
-                <button
-                  key={example}
-                  type="button"
-                  className="chip"
-                  disabled={busyKey === 'worker-generate'}
-                  onClick={() => setWorkerDescription(example)}
-                >
-                  {example}
-                </button>
-              ))}
-            </div>
-            {generatedWorker ? (
-              <div className="summary-row">
-                <div>
-                  <strong>{generatedWorker.displayName}</strong>
-                  <span>{generatedWorker.id} · {generatedWorker.role}</span>
-                  <span>
-                    {generatedWorker.enabled
-                      ? 'Created and enabled. Open the Jobs tab and click Run now to see it work.'
-                      : (generatedWorker.note ?? 'Created. Enable it below.')}
-                  </span>
-                </div>
-                <StatusPill tone={generatedWorker.enabled ? 'good' : 'warning'}>
-                  {generatedWorker.enabled ? 'enabled' : 'created'}
-                </StatusPill>
-              </div>
-            ) : (
-              <p className="footnote">
-                The model only fills in the worker's design — the code is generated from a fixed,
-                contract-safe template, so a worker created this way always loads.
-              </p>
-            )}
-          </div>
-        </section>
         <section className="panel tab-page">
           <div className="panel-head">
             <div>

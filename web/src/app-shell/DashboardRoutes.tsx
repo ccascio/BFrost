@@ -39,6 +39,7 @@ export function DashboardRoutes(props: any) {
     renderStuckDetectorBanner,
     dashboardViews,
     workerViewContext,
+    isSectionPending,
     selectedModelAlias,
     setSelectedModelAlias,
     saveDefaultModel,
@@ -119,10 +120,6 @@ export function DashboardRoutes(props: any) {
           lmAdopting={overview.lmAdopting}
           setLmAdopting={overview.setLmAdopting}
           setWizardOpen={setWizardOpen}
-          onboardingRan={overview.onboardingRan}
-          demoNarration={overview.demoNarration}
-          demoRecap={overview.demoRecap}
-          setDemoRecap={overview.setDemoRecap}
           starAsk={overview.starAsk}
           dismissStarAsk={overview.dismissStarAsk}
           wizardCompleted={wizardCompleted}
@@ -146,10 +143,10 @@ export function DashboardRoutes(props: any) {
           renderStuckDetectorBanner={renderStuckDetectorBanner}
           dashboardViews={dashboardViews}
           workerViewContext={workerViewContext}
+          isSectionPending={isSectionPending}
           selectedModelAlias={selectedModelAlias}
           setSelectedModelAlias={setSelectedModelAlias}
           saveDefaultModel={saveDefaultModel}
-          setNotice={setNotice}
         />
       ) : null}
 
@@ -243,13 +240,9 @@ export function DashboardRoutes(props: any) {
             <WorkersTab
               dashboard={dashboard}
               busyKey={busyKey}
-              workerDescription={operations.workers.workerDescription}
-              setWorkerDescription={operations.workers.setWorkerDescription}
-              generatedWorker={operations.workers.generatedWorker}
               workerUploadFile={operations.workers.workerUploadFile}
               setWorkerUploadFile={operations.workers.setWorkerUploadFile}
               storeUpdates={store.storeUpdates}
-              generateWorkerFromDescription={operations.workers.generateWorkerFromDescription}
               uploadWorkerZip={operations.workers.uploadWorkerZip}
               deleteWorker={operations.workers.deleteWorker}
               mutate={mutate}

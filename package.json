@@ -1,7 +1,7 @@
 {
   "name": "bfrost",
   "version": "0.2.0",
-  "description": "Worker-first local AI operations platform — every capability is a pluggable worker",
+  "description": "Worker-first local AI operations platform \u2014 every capability is a pluggable worker",
   "license": "MIT",
   "homepage": "https://bfrost.net",
   "repository": {
@@ -38,10 +38,10 @@
     "!docs/launch"
   ],
   "scripts": {
-    "clean": "rm -rf dist web/dist",
-    "clean:server": "rm -rf dist",
-    "build": "npm run clean && tsc && vite build",
-    "build:server": "npm run clean:server && tsc",
+    "clean": "node scripts/cross-platform.mjs clean",
+    "clean:server": "node scripts/cross-platform.mjs clean:server",
+    "build": "node scripts/cross-platform.mjs build",
+    "build:server": "node scripts/cross-platform.mjs build:server",
     "build:web": "vite build",
     "check:web": "tsc --noEmit -p web/tsconfig.json",
     "smoke:web": "node scripts/web-smoke.mjs",
@@ -51,12 +51,13 @@
     "logs": "node scripts/logs.mjs",
     "install-service": "node scripts/install-service.mjs",
     "uninstall-service": "node scripts/uninstall-service.mjs",
-    "test": "rm -rf dist && tsc && node --test $(find dist -name '*.test.js' -print | sort) && npm run check:web",
-    "task": "node dist/cron.js",
+    "test": "node scripts/cross-platform.mjs test",
+    "task": "node scripts/run-task.mjs",
     "dev": "node scripts/dev.mjs",
     "dev:watch": "tsc --watch",
     "dev:web": "vite",
-    "check:manifest": "node scripts/check-manifest-enums.mjs"
+    "check:manifest": "node scripts/check-manifest-enums.mjs",
+    "lmstudio:start": "node scripts/start-lmstudio-windows.mjs"
   },
   "devDependencies": {
     "@types/node": "^25.5.2",
@@ -87,5 +88,10 @@
     "react-dom": "^19.2.5",
     "telegraf": "^4.16.3",
     "zod": "^3.25.76"
+  },
+  "allowScripts": {
+    "better-sqlite3": true,
+    "esbuild": true,
+    "fsevents": true
   }
 }

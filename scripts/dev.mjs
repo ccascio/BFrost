@@ -1,6 +1,6 @@
 import { spawn, execFileSync } from 'node:child_process';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { envWithSystemCa } from './node-options.mjs';
+import { service } from './service-config.mjs';
 import { stopAllServerInstances } from './process-lock.mjs';
 
 const npmCli = process.env.npm_execpath;
@@ -24,7 +24,7 @@ function runOnce(script) {
   const { command, args } = npmArgs(script);
   const child = spawn(command, args, {
     stdio: 'inherit',
-    env: process.env,
+    env: envWithSystemCa(process.env),
   });
 
   return new Promise((resolve, reject) => {
@@ -45,7 +45,7 @@ function startLongRunning(label, command, args) {
 
   return spawn(command, args, {
     stdio: 'inherit',
-    env: process.env,
+    env: envWithSystemCa(process.env),
   });
 }
 
@@ -132,10 +132,14 @@ console.log('[dev] Tests passed. Starting Telegram agents and GUI...');
 const adminPort = Number(process.env.ADMIN_PORT || 3030);
 const webPort = Number(process.env.VITE_PORT || process.env.BFROST_WEB_PORT || 5173);
 
-// Release app ports if a previous dev session is still holding them.
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const stoppedPids = stopAllServerInstances({ ENTRY: path.join(root, 'dist', 'index.js'), RUNNER: path.join(root, 'scripts', 'run-server.mjs'), PORT: adminPort });
-if (stoppedPids.length) console.log(`[dev] Stopped previous backend instance(s) (PID ${stoppedPids.join(', ')})`);
+// Release app ports if a previous dev session is still holding them. The backend is
+// swept by entry-path match (see scripts/process-lock.mjs) so a stray/hung `node
+// dist/index.js` from a previous session gets killed even if it never bound the port;
+// the Vite dev server has no stable entry-path signature, so it stays port-based.
+const stoppedPids = stopAllServerInstances({ ENTRY: service.ENTRY, RUNNER: service.RUNNER, PORT: adminPort });
+if (stoppedPids.length) {
+  console.log(`[dev] Stopped previous backend instance(s) (PID ${stoppedPids.join(', ')})`);
+}
 freePort(webPort);
 
 const children = [

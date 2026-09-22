@@ -34,8 +34,13 @@ export function registerDashboardRoutes(router: HttpRouter): void {
   router.add('GET', '/api/dashboard/backups', async (_req, res) => {
     return sendJson(res, 200, await buildBackupsSection());
   });
-  router.add('GET', '/api/dashboard/worker-data', async (_req, res) => {
-    return sendJson(res, 200, await buildWorkerDataSection());
+  router.add('GET', '/api/dashboard/worker-data', async (req, res) => {
+    const url = new URL(req.url ?? '/api/dashboard/worker-data', 'http://localhost');
+    const workerIds = url.searchParams
+      .getAll('workerId')
+      .map((id) => id.trim())
+      .filter(Boolean);
+    return sendJson(res, 200, await buildWorkerDataSection(workerIds.length > 0 ? workerIds : undefined));
   });
   router.add('GET', '/api/dashboard/local-runtime-models', async (_req, res) => {
     return sendJson(res, 200, await buildLocalRuntimeModelsSection());

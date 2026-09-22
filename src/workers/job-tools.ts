@@ -3,7 +3,7 @@ import { listWorkerJobs } from './registry';
 
 /**
  * Generate one synthetic AI SDK tool per registered worker job, so the assistant
- * can trigger jobs (news-digest, tweet-post, ...) on demand from any channel.
+ * can trigger jobs (news-digest, personal-research, ...) on demand from any channel.
  *
  * Execution is fire-and-forget: the tool returns immediately, and the job's
  * outcome is delivered via the existing operator-channel notification path

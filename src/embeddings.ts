@@ -1,5 +1,6 @@
 import { config } from './config';
 import { getActiveLocalProvider, getProviderAdapter } from './workers/registry';
+import { withDebugTimingAsync } from './debug';
 
 export interface EmbeddingResult {
   provider: string;
@@ -22,7 +23,7 @@ export async function embedText(text: string): Promise<EmbeddingResult> {
     throw new Error(`Embedding provider "${provider}" does not support embeddings.`);
   }
 
-  const embedding = await adapter.embedText(model, input);
+  const embedding = await withDebugTimingAsync(`embedding.generate ${provider}`, () => adapter.embedText!(model, input));
   if (!embedding.length || embedding.some((value) => !Number.isFinite(value))) {
     throw new Error('Embedding endpoint returned an empty or invalid vector.');
   }

@@ -1,6 +1,13 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+
+export function parseLogLevel(value: string | undefined): LogLevel {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === 'error' || normalized === 'warn' || normalized === 'debug' ? normalized : 'info';
+}
+
 export interface ModelOption {
   alias: string;
   id: string;
@@ -32,6 +39,8 @@ function positiveNumberEnv(name: string, fallback: number): number {
 }
 
 export const config = {
+  /** Set LOG_LEVEL=debug to emit start/end timings for slow-operation boundaries. */
+  logLevel: parseLogLevel(process.env.LOG_LEVEL),
   ollamaModel: process.env.OLLAMA_MODEL || '',
   /**
    * Platform-wide reasoning level applied when a model supports reasoning levels and no
@@ -59,7 +68,7 @@ export const config = {
   xAccessTokenSecret: process.env.X_ACCESS_TOKEN_SECRET || '',
   xUsername: process.env.X_USERNAME || '',
   adminHost: process.env.ADMIN_HOST || '127.0.0.1',
-  // BFrost defaults to 3032 so it can run alongside BFrost (3030) and WFrost (3031).
+  // Default admin port; forks change it so several instances can run side by side.
   adminPort: Number(process.env.ADMIN_PORT || '3030'),
   adminStoreDir: process.env.ADMIN_STORE_DIR || './data/admin',
   adminPassword: process.env.ADMIN_PASSWORD || '',

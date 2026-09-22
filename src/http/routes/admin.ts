@@ -6,9 +6,9 @@ import { config } from '../../config';
 import { recordEventSafe } from '../../event-log';
 import { BadRequestError } from '../../admin-route';
 import { listWorkers } from '../../workers/registry';
+import { publishItem } from '../../jobs/item-bus';
 import { isWorkerEnabled, loadWorkerState, setWorkerEnabled } from '../../workers/state';
 import { deactivateLocalWorker } from '../../workers/bootstrap';
-import { publishItem } from '../../jobs/item-bus';
 import { FactoryResetBodySchema } from '../../admin-api';
 import { detach, logCleanupFailure } from '../../process-lifecycle';
 
@@ -110,4 +110,5 @@ export function registerAdminRoutes(router: HttpRouter): void {
     await recordEventSafe({ category: 'admin', action: 'sample_data_seeded', summary: 'Sample data seeded for demo purposes.', metadata: { seeded } });
     return sendJson(res, 200, { ok: true, seeded });
   });
+
 }

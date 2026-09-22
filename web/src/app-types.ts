@@ -393,7 +393,6 @@ export interface WorkerSummary {
   tagline?: string;
   chatPrompts: ChatPromptExample[];
   onboarding?: WorkerOnboardingAction;
-  /** Optional worker-owned banner, rendered without core knowing the worker id. */
   demoNotice?: string;
   builtIn: boolean;
   /** True when the built-in worker can be soft-deleted and later restored from the store. */

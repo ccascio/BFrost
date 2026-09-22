@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { z } from 'zod';
 import { config } from './config';
-import { loadAdminSettings, updateAdminJob } from './admin-config';
+import { loadAdminSettings, updateAdminJob, updatePlatformSettings } from './admin-config';
 import { getWorkerJob } from './workers/registry';
 import { saveKvJson, closeDb } from './sqlite';
 import { registerLoadedLocalModule, unregisterLocalWorkerModule } from './workers/registry';
@@ -43,7 +43,7 @@ test('admin settings normalize defaults and persist valid job updates', async ()
   }
 });
 
-test('tweet post settings persist approval and prompt controls', async () => {
+test('automatic missed-job recovery is disabled by default and persists an operator choice', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-admin-'));
   const previousDir = config.adminStoreDir;
   const previousDbPath = config.appDbPath;
@@ -51,13 +51,33 @@ test('tweet post settings persist approval and prompt controls', async () => {
   config.appDbPath = path.join(dir, 'app.sqlite');
 
   try {
-    const updated = await updateAdminJob('tweet-post', {
+    assert.equal((await loadAdminSettings()).platform.automaticMissedRunRecovery, false);
+    const updated = await updatePlatformSettings({ automaticMissedRunRecovery: true });
+    assert.equal(updated.platform.automaticMissedRunRecovery, true);
+    assert.equal((await loadAdminSettings()).platform.automaticMissedRunRecovery, true);
+  } finally {
+    config.adminStoreDir = previousDir;
+    config.appDbPath = previousDbPath;
+    closeDb();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('job settings persist approval and prompt controls', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'bfrost-admin-'));
+  const previousDir = config.adminStoreDir;
+  const previousDbPath = config.appDbPath;
+  config.adminStoreDir = dir;
+  config.appDbPath = path.join(dir, 'app.sqlite');
+
+  try {
+    const updated = await updateAdminJob('finance-news-scan', {
       approvalRequired: false,
       prompt: 'Use this custom prompt with {items}.',
     });
 
-    assert.equal(updated.jobs['tweet-post'].approvalRequired, false);
-    assert.equal(updated.jobs['tweet-post'].prompt, 'Use this custom prompt with {items}.');
+    assert.equal(updated.jobs['finance-news-scan'].approvalRequired, false);
+    assert.equal(updated.jobs['finance-news-scan'].prompt, 'Use this custom prompt with {items}.');
   } finally {
     config.adminStoreDir = previousDir;
     config.appDbPath = previousDbPath;
@@ -75,7 +95,7 @@ test('admin settings reject invalid cron expressions', async () => {
 
   try {
     await assert.rejects(
-      () => updateAdminJob('tweet-post', { cron: 'not a cron' }),
+      () => updateAdminJob('finance-news-scan', { cron: 'not a cron' }),
       /Invalid cron expression/,
     );
   } finally {
@@ -94,7 +114,7 @@ test('admin settings preserve unknown jobs as disabled historical settings', asy
   config.appDbPath = path.join(dir, 'app.sqlite');
 
   try {
-    const current = await updateAdminJob('tweet-post', { enabled: true });
+    const current = await updateAdminJob('finance-news-scan', { enabled: true });
     await saveKvJson('admin.settings', {
       ...current,
       jobs: {
@@ -133,11 +153,11 @@ test('admin settings clear stale model aliases for known jobs', async () => {
   config.appDbPath = path.join(dir, 'app.sqlite');
 
   try {
-    const job = getWorkerJob('personal-research');
+    const job = getWorkerJob('finance-news-scan');
     await saveKvJson('admin.settings', {
       timezone: 'Europe/Rome',
       jobs: {
-        'personal-research': {
+        'finance-news-scan': {
           enabled: true,
           cron: '15 0,7 * * *',
           modelAlias: 'qwen',
@@ -149,7 +169,7 @@ test('admin settings clear stale model aliases for known jobs', async () => {
     });
 
     const normalized = await loadAdminSettings();
-    assert.equal(normalized.jobs['personal-research'].modelAlias, '');
+    assert.equal(normalized.jobs['finance-news-scan'].modelAlias, '');
   } finally {
     config.adminStoreDir = previousDir;
     config.appDbPath = previousDbPath;

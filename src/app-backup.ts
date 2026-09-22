@@ -6,6 +6,7 @@ import { config } from './config';
 import { createBackup, ensureAppDb } from './sqlite';
 import { loadKvJson, saveKvJson } from './sqlite';
 import { recordEventSafe } from './event-log';
+import { withDebugTiming } from './debug';
 
 const BACKUP_RETENTION = 50;
 const AUTO_BACKUP_SETTINGS_KEY = 'admin.autoBackup';
@@ -208,7 +209,9 @@ export async function applyPendingRestoreIfAny(): Promise<void> {
     const db = new Database(backupPath, { readonly: true, fileMustExist: true });
     let integrityOk = false;
     try {
-      const row = db.prepare('PRAGMA integrity_check').get() as { integrity_check?: string } | undefined;
+      const row = withDebugTiming('sqlite.backup.integrity-check', () =>
+        db.prepare('PRAGMA integrity_check').get() as { integrity_check?: string } | undefined,
+      );
       integrityOk = row?.integrity_check === 'ok';
     } finally {
       db.close();
@@ -272,7 +275,9 @@ export async function applyPendingRestoreIfAny(): Promise<void> {
     const staged = new Database(stagingPath, { readonly: true, fileMustExist: true });
     let stagedOk = false;
     try {
-      const row = staged.prepare('PRAGMA integrity_check').get() as { integrity_check?: string } | undefined;
+      const row = withDebugTiming('sqlite.backup.staged-integrity-check', () =>
+        staged.prepare('PRAGMA integrity_check').get() as { integrity_check?: string } | undefined,
+      );
       stagedOk = row?.integrity_check === 'ok';
     } finally {
       staged.close();

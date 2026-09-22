@@ -2,11 +2,13 @@
 /**
  * `npx bfrost` entry point.
  *
- * Runs the BFrost server in the foreground with all state kept in a stable
- * data home (default: ~/.bfrost, override with --home or $BFROST_HOME).
- * The process chdirs into the data home before booting, so every relative
- * path the server uses (./data, ./workers/local, .env) lands there instead
- * of inside the npx cache.
+ * Runs the server in the foreground with all state kept in a stable data home.
+ * The home and its env override are derived from package.json's `name`, so a
+ * fork (e.g. BFrost vs BFrost) keeps state in its own dir (~/.bfrost vs
+ * ~/.bfrost) and never shares a database — the same per-project isolation the
+ * OS-service tooling uses. The process chdirs into the data home before
+ * booting, so every relative path the server uses (./data, ./workers/local,
+ * .env) lands there instead of inside the npx cache.
  */
 import { mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -14,6 +16,25 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+// Per-project identity from package.json name: `bfrost` → slug `bfrost`, home `~/.bfrost`,
+// env override `BFROST_HOME`. Falls back to `app`/`~/.app` if the name is unusable.
+const PKG_NAME = (() => {
+  try {
+    return JSON.parse(readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8')).name || 'app';
+  } catch {
+    return 'app';
+  }
+})();
+const SLUG = String(PKG_NAME).replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'app';
+const DISPLAY = SLUG.charAt(0).toUpperCase() + SLUG.slice(1);
+const HOME_ENV = `${SLUG.toUpperCase()}_HOME`;
+const DEFAULT_HOME = path.join(homedir(), `.${SLUG}`);
+// Only the project-specific env var is honoured (e.g. BFROST_HOME) — never BFROST_HOME, so a
+// globally-set BFrost home can't silently re-point this fork's state on top of BFrost's.
+function resolveHomeEnv() {
+  return process.env[HOME_ENV];
+}
 
 function printHelp() {
   console.log(`Usage: bfrost [command] [options]
@@ -23,8 +44,8 @@ Commands:
   new worker [name]  Scaffold a new local worker into workers/local and exit.
 
 Server options:
-  --home <dir>   Data home for database, workers, and .env (default: ~/.bfrost,
-                 or $BFROST_HOME when set)
+  --home <dir>   Data home for database, workers, and .env (default: ~/.${SLUG},
+                 or $${HOME_ENV} when set)
   --port <n>     Dashboard port (default: 3030)
   --host <addr>  Bind address (default: 127.0.0.1 — keep loopback unless you
                  understand the exposure)
@@ -45,7 +66,7 @@ if (rawArgs[0] === 'new') {
 }
 
 const args = rawArgs;
-let home = process.env.BFROST_HOME || path.join(homedir(), '.bfrost');
+let home = resolveHomeEnv() || DEFAULT_HOME;
 
 for (let i = 0; i < args.length; i += 1) {
   const arg = args[i];
@@ -91,7 +112,7 @@ mkdirSync(path.join(home, 'workers', 'local'), { recursive: true });
 process.chdir(home);
 
 const port = process.env.ADMIN_PORT || '3030';
-console.log('BFrost starting...');
+console.log(`${DISPLAY} starting...`);
 console.log(`  Dashboard: http://127.0.0.1:${port}`);
 console.log(`  Data home: ${home}`);
 console.log('  Stop:      Ctrl+C');
@@ -118,7 +139,7 @@ Options:
   --cron <expr>        Schedule for the job (default: "0 9 * * *")
   --description <text> One-paragraph description
   --prompt <text>      System prompt that steers the job's model call
-  --home <dir>         Data home (default: ~/.bfrost or $BFROST_HOME)
+  --home <dir>         Data home (default: ~/.${SLUG} or $${HOME_ENV})
   -h, --help           Show this help and exit
 
 Example:
@@ -196,7 +217,7 @@ async function runNewCommand(subArgs) {
     process.exit(1);
   }
 
-  const dataHome = path.resolve(opts.home || process.env.BFROST_HOME || path.join(homedir(), '.bfrost'));
+  const dataHome = path.resolve(opts.home || resolveHomeEnv() || DEFAULT_HOME);
   const localRoot = path.join(dataHome, 'workers', 'local');
   const workerDir = path.join(localRoot, scaffold.workerSlug(spec.id));
   mkdirSync(localRoot, { recursive: true });

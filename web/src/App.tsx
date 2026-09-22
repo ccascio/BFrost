@@ -9,7 +9,6 @@ import { AuthCheckingScreen, DashboardSplash, LoginScreen } from './app-shell/Au
 import { DashboardRoutes } from './app-shell/DashboardRoutes';
 import { SettingsModal } from './app-shell/SettingsModal';
 import { QueueDetail, QueueMetrics, StuckDetectorBanner } from './app-shell/QueueViews';
-import { SpecialModeBanners } from './app-shell/SpecialModeBanners';
 import { useChatController } from './app-shell/useChatController';
 import { useDashboardData } from './app-shell/useDashboardData';
 import { useDashboardOperations } from './app-shell/useDashboardOperations';
@@ -22,11 +21,12 @@ import {
   readDashboardRoute,
 } from './app-shell/routing';
 import { workerDashboardUi } from './workers/ui-contract';
+import { SpecialModeBanners } from './app-shell/SpecialModeBanners';
 import {
   ActionClass, ActionRequest, ActionState, AppBackupRecord, AppError, AuthSession, AutoBackupSettings, CORE_CHAT_PROMPTS, CORE_MENU_ENTRIES, CORE_MENU_GROUP_ORDER, ChatProject, ChatPromptButton, ChatPromptExample, ChatThread, ChatTurn, CoreConfigKey, CoreDashboardTab, DASHBOARD_REFRESH_INTERVAL_MS, DashboardSectionName, DashboardState, DashboardTab, EventLogRecord, HealthStatus, JOBS_REFRESH_INTERVAL_MS, JobBaseField, JobBooleanField, JobDashboardField, JobDraft, JobMetricsResponse, JobNumberField, JobParamDraftValue, JobPreset, JobRunMetrics, JobSecretReferenceField, JobSelectField, JobStringListField, JobTextField, JobTextareaField, ModelOption, PERMISSION_INFO, PlatformSettings, QueueFilter, QueueItem, RecipeInputStorage, RegisteredPlatformEntry, RunStatus, SchedulerJobState, SchedulerRunRecord, SettingsTab, SourceQualityRules, StoreWorkerDetail, StoreWorkerListing, StoreWorkerVersion, WhatsNewEntry, WorkerDashboardManifest, WorkerDashboardSurface, WorkerHealthRequirementStatus, WorkerHealthState, WorkerJobSummary, WorkerKind, WorkerLoadIssue, WorkerOnboardingAction, WorkerOwnedSetting, WorkerRecipe, WorkerRecipeInput, WorkerRecipeStep, WorkerRunMetrics, WorkerSummary, WorkerTabDefinition, toAppError,
 } from './app-types';
 import {
-  ChatSuggestions, ChatWelcome, Detail, HealthRow, HelpTip, PipelineNode, PipelineTopology, RUN_ERROR_PREVIEW_CHARS, RunError, STORE_PALETTE_COUNT, STORE_VISUAL_RULES, StatusPill, StoreTrustBadge, StoreVisualWorker, StoreWorkerLogo, buildChatPromptButtons, buildJobParamsDraft, buildPipelineTopology, buildSurfaceDraft, buildWorkerTabDefinitions, configSurfaceKey, coreMenuCount, draftToHosts, eventSeverityTone, formatBytes, formatDate, formatDuration, formatRelativeTime, formatTime, hostsToDraft, jobConfigSummary, jobScheduleChanges, mergeSection, normalizeStringListItem, queueItemReason, queueItemTone, renderPipelineTab, renderWorkerDashboardView, resolveDashboardTab, resolveSeedPath, runDuration, runSeverity, runStatusSummary, runStatusTone, safeWorkerViewCount, sectionEndpoint, sectionsForTab, serializeDashboardFields, serializeJobParams, statusTone, storeAuthorHandle, storeCategoryKey, storeCategoryLabel, storePaletteIndex, storeTrustTone, storeWorkerIcon, workerDeclaresView, workerOwnsEvent, workerTabId,
+  ChatSuggestions, ChatWelcome, Detail, HealthRow, HelpTip, PipelineNode, PipelineTopology, RUN_ERROR_PREVIEW_CHARS, RunError, STORE_PALETTE_COUNT, STORE_VISUAL_RULES, StatusPill, StoreTrustBadge, StoreVisualWorker, StoreWorkerLogo, buildChatPromptButtons, buildJobParamsDraft, buildPipelineTopology, buildSurfaceDraft, buildWorkerTabDefinitions, configSurfaceKey, coreMenuCount, draftToHosts, eventSeverityTone, formatBytes, formatDate, formatDuration, formatRelativeTime, formatTime, hostsToDraft, jobConfigSummary, jobScheduleChanges, mergeSection, normalizeStringListItem, queueItemReason, queueItemTone, renderPipelineTab, renderWorkerDashboardView, resolveDashboardTab, resolveSeedPath, runDuration, runSeverity, runStatusSummary, runStatusTone, safeWorkerViewCount, sectionEndpoint, sectionPendingCheck, sectionsForTab, serializeDashboardFields, serializeJobParams, statusTone, storeAuthorHandle, storeCategoryKey, storeCategoryLabel, storePaletteIndex, storeTrustTone, storeWorkerIcon, workerDeclaresView, workerOwnsEvent, workerTabId,
 } from './app-helpers';
 
 export default function App() {
@@ -109,6 +109,8 @@ export default function App() {
     dashboardViews,
     eventStreamStatus,
     lastStreamEvent,
+    sectionStatus,
+    placeholdersArmed,
     fetchDashboard,
     fetchSection,
     mutate,
@@ -373,10 +375,14 @@ export default function App() {
   const configCoreCount = 3; // platform routing + embedding + security
   const workerTabDefinitions = buildWorkerTabDefinitions(dashboard.workers, dashboardViews);
   const activeWorkerTab = workerTabDefinitions.find((tab) => tab.id === activeTab) ?? null;
+  // Sections arrive after the shell, so a view that reads one needs to know whether an
+  // empty slice means "nothing to show" or "not here yet" before it renders either.
+  const isSectionPending = sectionPendingCheck(sectionStatus, placeholdersArmed);
   const workerViewContext = {
     ui: workerDashboardUi,
     activeWorkerTab,
     dashboard,
+    isSectionPending,
     filteredQueueItems,
     selectedQueueItem,
     selectedRunId,
@@ -386,7 +392,13 @@ export default function App() {
     setSelectedRunId,
     setQueueFilter,
     updateQueueItem,
-    refreshDashboard: () => fetchDashboard(true),
+    refreshDashboard: (workerIds?: readonly string[]) => workerIds && workerIds.length > 0
+      ? Promise.all([
+          fetchSection('workerData', { force: true, workerIds }),
+          fetchSection('cronRuns', { force: true }),
+          fetchSection('pipelineStages', { force: true }),
+        ]).then(() => undefined)
+      : fetchDashboard(true),
     triggerRun,
     renderQueueMetrics: (interactive: boolean) => (
       <QueueMetrics
@@ -584,6 +596,7 @@ export default function App() {
         )}
         dashboardViews={dashboardViews}
         workerViewContext={workerViewContext}
+        isSectionPending={isSectionPending}
         selectedModelAlias={selectedModelAlias}
         setSelectedModelAlias={setSelectedModelAlias}
         saveDefaultModel={saveDefaultModel}

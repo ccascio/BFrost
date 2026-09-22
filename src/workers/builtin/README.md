@@ -9,9 +9,6 @@ builtin/
     job.ts
     runs.ts
     source-quality.ts
-  publisher-x/
-    manifest.ts
-    job.ts
   research/
     manifest.ts
     job.ts
