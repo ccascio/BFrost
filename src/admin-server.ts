@@ -14,6 +14,7 @@ import { handleAuthRoutes } from './http/routes/auth';
 import { detach } from './process-lifecycle';
 import { getActiveScopeId } from './active-scope';
 import { withDebugTimingAsync } from './debug';
+import { guardRequest } from './http/request-guard';
 
 let server: Server | null = null;
 
@@ -59,6 +60,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
   return withDebugTimingAsync(`http.request ${req.method ?? 'GET'}`, async () => {
   try {
     const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    // Before auth: a rebinding page or cross-site form must not reach login or any route.
+    const guard = guardRequest(req, url.pathname, config.adminAllowedHosts);
+    if (!guard.ok) return sendJson(res, guard.status, { error: guard.error });
     const authEnabled = isAdminAuthEnabled();
 
     // Auth endpoints must precede the gate so login/logout remain reachable.

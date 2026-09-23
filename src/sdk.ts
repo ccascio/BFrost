@@ -69,6 +69,17 @@ export function notifyOperatorChannels(
   return (require('./workers/registry') as typeof import('./workers/registry')).notifyOperatorChannels(text, options);
 }
 
+/**
+ * Step-up confirmation for sensitive worker actions: true when `password` matches the
+ * dashboard password (constant-time). Always false when no dashboard password is set, so a
+ * worker gating an action on it stays locked until the operator configures one. The password
+ * itself is never exposed. Lazily resolved so the SDK does not load the admin module at import.
+ */
+export function verifyAdminPassword(password: string): boolean {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return (require('./admin-auth') as typeof import('./admin-auth')).isPasswordValid(password);
+}
+
 export const bfrostSdk = {
   // Per-worker private storage
   openWorkerKv,
@@ -114,6 +125,8 @@ export const bfrostSdk = {
   notifyOperatorChannels,
   // Errors that admin routes can throw to produce a 400
   BadRequestError,
+  // Re-confirm the dashboard password before a sensitive action
+  verifyAdminPassword,
   // Observability
   recordEventSafe,
 };

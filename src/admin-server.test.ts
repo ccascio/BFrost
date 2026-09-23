@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -140,6 +141,22 @@ test('router dispatch serves exact routes, static fallback, and 404s over HTTP',
 
     // Method specificity: /api/dashboard is GET-only, so POST falls through to 404.
     assert.equal((await fetch(`${base}/api/dashboard`, { method: 'POST' })).status, 404);
+
+    // Request guard: cross-site browser writes and rebound host names are refused.
+    const crossSite = await fetch(`${base}/api/backups/restore-cancel`, {
+      method: 'POST',
+      headers: { Origin: 'https://evil.example' },
+    });
+    assert.equal(crossSite.status, 403);
+    const reboundStatus = await new Promise<number>((resolve, reject) => {
+      const req = http.request(
+        { host: '127.0.0.1', port: config.adminPort, path: '/api/dashboard', headers: { Host: `rebound.example:${config.adminPort}` } },
+        (res) => { res.resume(); resolve(res.statusCode ?? 0); },
+      );
+      req.on('error', reject);
+      req.end();
+    });
+    assert.equal(reboundStatus, 403);
   } finally {
     await stopAdminServer();
     config.appDbPath = previous.appDbPath;

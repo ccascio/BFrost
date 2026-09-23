@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { parseAllowedHosts } from './http/request-guard';
 dotenv.config();
 
 export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
@@ -68,6 +69,9 @@ export const config = {
   xAccessTokenSecret: process.env.X_ACCESS_TOKEN_SECRET || '',
   xUsername: process.env.X_USERNAME || '',
   adminHost: process.env.ADMIN_HOST || '127.0.0.1',
+  // Extra host names the dashboard may be served under (reverse proxy, LAN name). IP
+  // literals and localhost are always accepted; other names are refused (DNS rebinding).
+  adminAllowedHosts: parseAllowedHosts(process.env.ADMIN_ALLOWED_HOSTS),
   // Default admin port; forks change it so several instances can run side by side.
   adminPort: Number(process.env.ADMIN_PORT || '3030'),
   adminStoreDir: process.env.ADMIN_STORE_DIR || './data/admin',
